@@ -325,6 +325,45 @@ bundle.
           function-name citations in prompt bodies are legitimate.
   - [ ] **LangSmith / Helicone tracing** wired through `LLMClient`.
 
+### End-to-end agent plumbing (2026-05-20)
+
+The foundation pieces (LLM client → workflow runner → orchestration
+service → prompts → evals) are now accessible from the admin UI, end-
+to-end. Pasting a sector concept into the form actually invokes Claude
+Opus 4.7 against `prompts/decomposition.md` and renders the resulting
+schema back for review.
+
+- **sector-service**: new `agent.*` tRPC router proxying to
+  agent-orchestration. `startDecomposition` / `getWorkflow` /
+  `listWorkflows` / `cancelWorkflow`. `agent-proxy.ts` mirrors
+  sim-proxy.ts shape; `AGENT_ORCHESTRATION_URL` is optional so dev
+  setups without the agent layer get a clean PRECONDITION_FAILED
+  rather than a 500. 9 new vitest cases covering happy paths +
+  upstream 404 / 422 / missing-URL.
+- **apps/admin**: three new pages.
+  - `/agent-runs` — list of past + in-flight runs, kind/status/id/
+    cost/description columns, deep links.
+  - `/agent-runs/new` — kickoff form (description + optional
+    reference_data). Submitting routes to the run detail page.
+  - `/agent-runs/[id]` — server-hydrated record + a `RunWatcher`
+    client component polling every 1.5 s until terminal. On
+    `succeeded`, renders the `Decomposition` (grouped drivers,
+    intermediates, outputs) with a "not yet a registered sector"
+    note pointing at the next pipeline slices.
+  - Home page stub buttons updated — `+ Propose new sector (agent)`
+    and `↻ Agent runs` now real links; `Run ingest` and `Approve
+    queue` stay stubbed.
+  - Top nav gains an `Agent runs` link.
+- **Wiring**: `docker-compose.yml` plumbs
+  `AGENT_ORCHESTRATION_URL=http://agent-orchestration:8002` into
+  sector-service + adds the agent-orchestration `depends_on` edge.
+- **Side-fix**: pre-existing tRPC typecheck errors in
+  `tests/{sim,scenario}.test.ts` and `src/server.ts` (the
+  `Parameters<typeof createCaller>[0]["log"]` union access stopped
+  working after a tRPC bump) — fixed by referencing `Context`
+  directly + typing the `onError` callback. Sector-service typecheck
+  is now clean.
+
 ### Out of scope for now
 
 - Monte Carlo / probabilistic drivers (`SimulationBase.monte_carlo` still

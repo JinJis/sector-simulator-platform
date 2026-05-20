@@ -46,9 +46,20 @@ export default async function AdminHome() {
       </div>
 
       <div className="mb-6 flex flex-wrap gap-2">
-        <StubAction title="Phase 2 later slice — agent triggers a research pass">
+        <Link
+          href="/agent-runs/new"
+          className="rounded border border-rose-700 bg-rose-900/40 px-3 py-1.5 text-[11px] font-medium text-rose-200 hover:bg-rose-800/60"
+          title="Kick off the Decomposition Agent against a free-form sector concept"
+        >
           + Propose new sector (agent)
-        </StubAction>
+        </Link>
+        <Link
+          href="/agent-runs"
+          className="rounded border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-[11px] font-medium text-neutral-300 hover:bg-neutral-800"
+          title="See past + in-flight agent runs"
+        >
+          ↻ Agent runs
+        </Link>
         <StubAction title="Phase 2 later slice — kicks data-pipeline-service">
           ↻ Run ingest (all)
         </StubAction>

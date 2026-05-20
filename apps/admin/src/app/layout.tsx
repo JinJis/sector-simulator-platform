@@ -31,6 +31,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <Link href="/scenarios" className="hover:text-neutral-100">
                 Scenarios
               </Link>
+              <Link href="/agent-runs" className="hover:text-neutral-100">
+                Agent runs
+              </Link>
               <a
                 href="http://localhost:3000"
                 className="text-cyan-400 hover:text-cyan-300"

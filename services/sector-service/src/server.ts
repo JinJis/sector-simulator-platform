@@ -45,7 +45,7 @@ async function main(): Promise<void> {
     trpcOptions: {
       router: appRouter,
       createContext,
-      onError({ path, error }) {
+      onError({ path, error }: { path?: string; error: { code: string; message: string } }) {
         fastify.log.error({ proc: path, code: error.code, err: error.message }, "trpc.error");
       },
     },

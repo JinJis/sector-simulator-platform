@@ -3,6 +3,7 @@
  * `import type { AppRouter } from "@platform/sector-service"`.
  */
 
+import { agentRouter } from "./agent.js";
 import { router } from "./init.js";
 import { scenarioRouter } from "./scenario.js";
 import { simRouter } from "./sim.js";
@@ -10,6 +11,7 @@ import { simRouter } from "./sim.js";
 export const appRouter = router({
   sim: simRouter,
   scenario: scenarioRouter,
+  agent: agentRouter,
 });
 
 export type AppRouter = typeof appRouter;

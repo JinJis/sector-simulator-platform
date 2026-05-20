@@ -33,6 +33,33 @@ export type DriverSchema = SimMetadata["drivers"][number];
 export type ProvenanceSchema = SimMetadata["provenance"][string];
 export type SourceSchema = ProvenanceSchema["sources"][number];
 export type Scenario = RouterOutput["scenario"]["get"];
+export type AgentWorkflow = RouterOutput["agent"]["getWorkflow"];
+export type AgentDecomposition = {
+  // Mirror of the orchestration Decomposition shape; the upstream
+  // procedure types this as `Record<string, unknown>` because the
+  // tRPC schema doesn't model the dynamic output, so we narrow it
+  // here for the admin UI's benefit.
+  name: string;
+  slug: string;
+  description: string;
+  horizon_years: number;
+  drivers: {
+    name: string;
+    group: string;
+    unit: string;
+    default: number;
+    min: number;
+    max: number;
+    description: string;
+  }[];
+  intermediates: { name: string; unit: string; description: string }[];
+  outputs: {
+    name: string;
+    kind: "scalar" | "series";
+    unit: string;
+    description: string;
+  }[];
+};
 
 export async function fetchSims(): Promise<SimMetadata[]> {
   return rethrow(() => trpc.sim.list.query(), "fetchSims");
@@ -50,6 +77,46 @@ export async function fetchScenarios(sectorSlug?: string): Promise<Scenario[]> {
         limit: 200,
       }),
     `fetchScenarios(${sectorSlug ?? "*"})`,
+  );
+}
+
+// ---------- Agent (orchestration proxy) ----------
+
+export async function startDecomposition(input: {
+  description: string;
+  reference_data?: string;
+}): Promise<AgentWorkflow> {
+  return rethrow(
+    () => trpc.agent.startDecomposition.mutate(input),
+    "startDecomposition",
+  );
+}
+
+export async function getAgentWorkflow(id: string): Promise<AgentWorkflow> {
+  return rethrow(
+    () => trpc.agent.getWorkflow.query({ id }),
+    `getAgentWorkflow(${id})`,
+  );
+}
+
+export async function listAgentWorkflows(input: {
+  kind?: string;
+  limit?: number;
+} = {}): Promise<AgentWorkflow[]> {
+  return rethrow(
+    () =>
+      trpc.agent.listWorkflows.query({
+        kind: input.kind,
+        limit: input.limit ?? 50,
+      }),
+    "listAgentWorkflows",
+  );
+}
+
+export async function cancelAgentWorkflow(id: string): Promise<AgentWorkflow> {
+  return rethrow(
+    () => trpc.agent.cancelWorkflow.mutate({ id }),
+    `cancelAgentWorkflow(${id})`,
   );
 }
 
