@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import math
+import time
+from datetime import UTC, datetime
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from platform_sdk import SimulationBase
@@ -7,15 +11,19 @@ from platform_sdk import SimulationBase
 from simulation_service.registry import all_sims, get_sim
 from simulation_service.schemas import (
     DriverSchema,
+    HistoryPointSchema,
+    LiveResponse,
     OutputSchema,
+    ProvenanceSchema,
     SensitivityEntry,
     SensitivityResponse,
     SimMetadata,
     SimRunRequest,
     SimRunResponse,
+    SourceSchema,
 )
 
-app = FastAPI(title="simulation-service", version="0.2.0")
+app = FastAPI(title="simulation-service", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,6 +31,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Live tick window in seconds. Within a tick, /live returns stable values.
+LIVE_TICK_SECONDS = 3
+# Drift amplitude as a fraction of (max - min) per driver. ±5% of range.
+LIVE_AMPLITUDE = 0.05
+# Period of the sinusoid, in ticks. ~60 ticks * 3s = 3 minutes per cycle.
+LIVE_PERIOD_TICKS = 60.0
 
 
 def _metadata(sim_cls: type[SimulationBase]) -> SimMetadata:
@@ -44,7 +59,32 @@ def _metadata(sim_cls: type[SimulationBase]) -> SimMetadata:
             for name, d in sim_cls.drivers.items()
         ],
         presets=dict(sim_cls.presets),
+        provenance={
+            name: ProvenanceSchema(
+                history=[HistoryPointSchema(date=h.date, value=h.value) for h in p.history],
+                sources=[
+                    SourceSchema(
+                        title=s.title, url=s.url, excerpt=s.excerpt, as_of=s.as_of
+                    )
+                    for s in p.sources
+                ],
+                note=p.note,
+            )
+            for name, p in sim_cls.provenance.items()
+        },
     )
+
+
+def _live_drivers(sim_cls: type[SimulationBase], tick: int) -> dict[str, float]:
+    """Deterministic smooth drift around each driver's default value."""
+    out: dict[str, float] = {}
+    for i, (name, d) in enumerate(sim_cls.drivers.items()):
+        amp = (d.range[1] - d.range[0]) * LIVE_AMPLITUDE
+        phase = (i * 0.7) % (2 * math.pi)
+        delta = amp * math.sin(2 * math.pi * tick / LIVE_PERIOD_TICKS + phase)
+        value = d.default + delta
+        out[name] = max(d.range[0], min(d.range[1], value))
+    return out
 
 
 @app.get("/health")
@@ -108,3 +148,37 @@ def sim_sensitivity(slug: str) -> SensitivityResponse:
         entries.sort(key=lambda e: abs(e.swing), reverse=True)
         by_output[out_name] = entries
     return SensitivityResponse(slug=slug, by_output=by_output)
+
+
+@app.get("/sims/{slug}/live", response_model=LiveResponse)
+def sim_live(slug: str) -> LiveResponse:
+    """Mock live feed: smoothly drifting driver values + sim outputs.
+
+    Phase 2 will replace the drift logic with real data-pipeline-service feeds
+    keyed off `Provenance.sources`. Until then this is honest about being a
+    demo signal.
+    """
+    try:
+        sim_cls = get_sim(slug)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=f"sim not found: {slug}") from e
+
+    tick = int(time.time() // LIVE_TICK_SECONDS)
+    drivers = _live_drivers(sim_cls, tick)
+    outputs = sim_cls().simulate(**drivers)
+    return LiveResponse(
+        slug=slug,
+        tick=tick,
+        timestamp=datetime.now(UTC).isoformat(timespec="seconds"),
+        drivers=drivers,
+        outputs=[
+            OutputSchema(
+                name=name,
+                series=out.series,
+                scalar=out.scalar,
+                unit=out.unit,
+                description=out.description,
+            )
+            for name, out in outputs.items()
+        ],
+    )

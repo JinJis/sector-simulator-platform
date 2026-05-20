@@ -20,7 +20,16 @@ Conventions
 
 from __future__ import annotations
 
-from platform_sdk import Driver, Output, SimulationBase
+from platform_sdk import Driver, HistoryPoint, Output, Provenance, SimulationBase, Source
+
+
+def _hist(points: list[tuple[str, float]]) -> tuple[HistoryPoint, ...]:
+    return tuple(HistoryPoint(date=d, value=v) for d, v in points)
+
+
+_DEMO_NOTE = (
+    "Seeded demo provenance. Phase 2에서 data-pipeline-service를 통해 실제 소스로 교체."
+)
 
 
 class SpaceDataCenterSim(SimulationBase):
@@ -164,6 +173,231 @@ class SpaceDataCenterSim(SimulationBase):
             "mission_lifetime_years": 5.0,
             "annual_opex_pct_of_capex": 8.0,
         },
+    }
+
+    # Historical points + citations per driver. Demo seed data — Phase 2 will
+    # replace these via data-pipeline-service hooks.
+    provenance: dict[str, Provenance] = {
+        "launch_cost_usd_per_kg": Provenance(
+            history=_hist(
+                [
+                    ("2010", 12000.0),
+                    ("2015", 4500.0),
+                    ("2018", 2720.0),
+                    ("2021", 2500.0),
+                    ("2024", 1500.0),
+                    ("2026E", 800.0),
+                ]
+            ),
+            sources=(
+                Source(
+                    title="FAA Commercial Space Transportation: Year in Review",
+                    url="https://www.faa.gov/space/additional_information/cst_reports",
+                    excerpt="Falcon 9 rideshare achieves ~$2.7k/kg LEO as of 2022.",
+                    as_of="2024-Q1",
+                ),
+                Source(
+                    title="SpaceX Starship capability statements",
+                    url="https://www.spacex.com/vehicles/starship/",
+                    excerpt="Target operational cost: $200-500/kg LEO.",
+                    as_of="2024-Q3",
+                ),
+            ),
+            note="LEO 진입 cost는 2010년 대비 8배 감소. Starship으로 추가 감소 전망.",
+        ),
+        "payload_overhead_factor": Provenance(
+            history=_hist([("2015", 2.0), ("2020", 1.8), ("2024", 1.6), ("2027E", 1.4)]),
+            sources=(
+                Source(
+                    title="NASA Spacecraft Bus Mass Breakdown (planning factor)",
+                    url="https://ntrs.nasa.gov/",
+                    excerpt="Structure+ADCS+propellant typically 40-80% of payload dry mass.",
+                    as_of="2023-Q4",
+                ),
+            ),
+            note="버스 mass 비율은 점진적으로 감소 (구조 경량화 + electric propulsion).",
+        ),
+        "compute_demand_pflops": Provenance(
+            history=_hist([("2024", 5.0), ("2025", 8.0), ("2026E", 10.0), ("2027E", 25.0)]),
+            sources=(
+                Source(
+                    title="Hyperscaler GPU footprint estimates",
+                    url="https://example.com/hyperscaler-gpu-estimates",
+                    excerpt="Edge inference workloads sized 1-50 PFLOPS per orbital node.",
+                    as_of="2025-Q2",
+                ),
+            ),
+            note="섹터 규모 가정. 사용자 시나리오에 따라 조정 가능.",
+        ),
+        "chip_pflops_per_kw": Provenance(
+            history=_hist(
+                [
+                    ("2016", 5.0),
+                    ("2018", 10.0),
+                    ("2020", 18.0),
+                    ("2022", 28.0),
+                    ("2024", 40.0),
+                    ("2026E", 65.0),
+                ]
+            ),
+            sources=(
+                Source(
+                    title="NVIDIA H100 datasheet",
+                    url="https://www.nvidia.com/en-us/data-center/h100/",
+                    excerpt="~40 BF16 PFLOPS/kW at SXM5 700W TDP.",
+                    as_of="2024-Q3",
+                ),
+                Source(
+                    title="MLPerf v4 trends",
+                    url="https://mlcommons.org/benchmarks/",
+                    excerpt="Perf/W 2x every ~24mo on recent accelerator generations.",
+                    as_of="2024-Q4",
+                ),
+            ),
+            note="가속기 perf/W는 2년마다 약 2배. 차세대(2026E) ~65 PFLOPS/kW 추정.",
+        ),
+        "chip_capex_usd_per_pflops": Provenance(
+            history=_hist(
+                [
+                    ("2020", 800_000.0),
+                    ("2022", 500_000.0),
+                    ("2024", 250_000.0),
+                    ("2026E", 150_000.0),
+                ]
+            ),
+            sources=(
+                Source(
+                    title="Hyperscaler GPU procurement (analyst estimates)",
+                    url="https://example.com/gpu-procurement",
+                    excerpt="H100 SXM5 ~$30k street price / ~2 PFLOPS FP16 ≈ $15k/PFLOPS chip-only; rack+integration 적용 시 약 $250k/PFLOPS.",
+                    as_of="2024-Q4",
+                ),
+            ),
+            note="보드+전원+냉각 통합 단가. 칩-only 가격과 구분.",
+        ),
+        "chip_radiation_degradation_pct_per_year": Provenance(
+            history=_hist([("2020", 5.0), ("2024", 3.0), ("2027E", 2.0)]),
+            sources=(
+                Source(
+                    title="ESA Total Ionizing Dose effects on commercial silicon",
+                    url="https://www.esa.int/",
+                    excerpt="Commercial 7nm logic shows 2-5%/yr perf loss at LEO TID rates with adequate shielding.",
+                    as_of="2023-Q2",
+                ),
+            ),
+            note="방사선 차폐 + radiation-hardened 설계로 감소 추세.",
+        ),
+        "panel_efficiency_w_per_kg": Provenance(
+            history=_hist(
+                [
+                    ("2000", 40.0),
+                    ("2010", 80.0),
+                    ("2018", 120.0),
+                    ("2022", 150.0),
+                    ("2026E", 250.0),
+                ]
+            ),
+            sources=(
+                Source(
+                    title="NASA ROSA (Roll-Out Solar Array) performance",
+                    url="https://www1.grc.nasa.gov/space/sep/",
+                    excerpt="ROSA achieves ~150 W/kg, next-gen target 300+ W/kg.",
+                    as_of="2024-Q2",
+                ),
+            ),
+            note="박막 + roll-out 구조로 비출력 빠르게 상승 중.",
+        ),
+        "panel_degradation_pct_per_year": Provenance(
+            history=_hist([("2010", 4.0), ("2020", 2.5), ("2024", 2.0)]),
+            sources=(
+                Source(
+                    title="NREL outdoor PV degradation meta-analysis",
+                    url="https://www.nrel.gov/",
+                    excerpt="LEO 환경에서 multi-junction GaAs 패널 평균 1.5-3%/yr.",
+                    as_of="2023-Q4",
+                ),
+            ),
+            note="LEO 방사선 환경 가정. GEO는 더 낮음.",
+        ),
+        "solar_duty_cycle": Provenance(
+            history=_hist([("2020", 0.60), ("2024", 0.65), ("2026E", 0.70)]),
+            sources=(
+                Source(
+                    title="LEO eclipse + battery sizing models",
+                    url="https://example.com/leo-eclipse-models",
+                    excerpt="Sun-synchronous LEO: ~60% sunlit; battery buffering achieves 65-70% effective.",
+                    as_of="2024-Q1",
+                ),
+            ),
+            note="배터리 비중 증가로 실효 duty cycle 상승. GEO ≈ 0.99.",
+        ),
+        "radiator_kg_per_kw_heat": Provenance(
+            history=_hist([("2015", 50.0), ("2020", 35.0), ("2024", 25.0), ("2027E", 15.0)]),
+            sources=(
+                Source(
+                    title="AIAA: Two-phase radiator scaling for high-power spacecraft",
+                    url="https://arc.aiaa.org/",
+                    excerpt="Deployable two-phase loop: 20-30 kg/kW at 100 kW class.",
+                    as_of="2023-Q1",
+                ),
+            ),
+            note="우주 냉각의 최대 mass 변수. 2-phase radiator로 감소 추세.",
+        ),
+        "mission_lifetime_years": Provenance(
+            history=_hist([("2015", 5.0), ("2020", 7.0), ("2024", 10.0)]),
+            sources=(
+                Source(
+                    title="NASA Heliophysics mission lifetime survey",
+                    url="https://nasa.gov/heliophysics",
+                    excerpt="LEO scientific missions: 5-15 year nominal lifetime.",
+                    as_of="2023-Q3",
+                ),
+            ),
+            note="실제 운영 기간. Deorbit 후 잔존가치 0 가정.",
+        ),
+        "annual_opex_pct_of_capex": Provenance(
+            history=_hist([("2020", 8.0), ("2024", 5.0), ("2027E", 4.0)]),
+            sources=(
+                Source(
+                    title="SpaceOps cost benchmarks",
+                    url="https://example.com/spaceops-cost",
+                    excerpt="지상국 + comms + station-keeping: typical 3-10% of capex annually.",
+                    as_of="2024-Q2",
+                ),
+            ),
+            note="자동화 + ground station sharing으로 감소 추세.",
+        ),
+        "discount_rate_pct": Provenance(
+            history=_hist([("2020", 5.0), ("2022", 7.0), ("2024", 8.0)]),
+            sources=(
+                Source(
+                    title="WACC for early-stage space infrastructure (analyst)",
+                    url="https://example.com/space-infra-wacc",
+                    excerpt="Pre-revenue space infra typically discounted 7-12%.",
+                    as_of="2024-Q4",
+                ),
+            ),
+            note="자본비용. 시장 금리 + 섹터 리스크 프리미엄 반영.",
+        ),
+        "ground_baseline_cost_per_pflops_year_usd": Provenance(
+            history=_hist(
+                [
+                    ("2020", 1_400_000.0),
+                    ("2022", 1_000_000.0),
+                    ("2024", 800_000.0),
+                    ("2027E", 600_000.0),
+                ]
+            ),
+            sources=(
+                Source(
+                    title="Hyperscaler PUE + GPU TCO breakdowns",
+                    url="https://example.com/hyperscaler-pue-tco",
+                    excerpt="$0.07/kWh + 1.15 PUE + 4yr GPU depreciation ≈ $800k/PFLOPS·yr.",
+                    as_of="2024-Q3",
+                ),
+            ),
+            note="지상 데이터센터의 fully-loaded $/PFLOPS·yr. 전력+감가+ops 포함.",
+        ),
     }
 
     def simulate(self, **kwargs: float) -> dict[str, Output]:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import ClassVar
 
 
@@ -28,6 +28,31 @@ class Output:
     description: str = ""
 
 
+@dataclass(frozen=True)
+class Source:
+    """Citation for a driver value or historical data point."""
+
+    title: str
+    url: str = ""
+    excerpt: str = ""  # short justification snippet
+    as_of: str = ""  # ISO date or quarter, e.g. "2024-Q4"
+
+
+@dataclass(frozen=True)
+class HistoryPoint:
+    date: str  # ISO date or year, e.g. "2020" or "2024-06"
+    value: float
+
+
+@dataclass(frozen=True)
+class Provenance:
+    """Where a driver's current value came from + how it's evolved."""
+
+    history: tuple[HistoryPoint, ...] = field(default_factory=tuple)
+    sources: tuple[Source, ...] = field(default_factory=tuple)
+    note: str = ""  # one-line summary shown next to driver
+
+
 class SimulationBase:
     slug: ClassVar[str] = ""
     name: ClassVar[str] = ""
@@ -37,6 +62,8 @@ class SimulationBase:
     # Named driver-override bundles surfaced to the UI as one-click scenarios.
     # Each value is a partial driver override; missing keys fall back to defaults.
     presets: ClassVar[dict[str, dict[str, float]]] = {}
+    # Per-driver provenance (history + citations). Missing entries = no provenance.
+    provenance: ClassVar[dict[str, Provenance]] = {}
 
     def simulate(self, **kwargs: float) -> dict[str, Output]:
         raise NotImplementedError

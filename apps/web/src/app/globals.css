@@ -9,4 +9,73 @@
 body {
   @apply bg-neutral-950 text-neutral-100;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Subtle radial backdrop so cards have something to lift off of. */
+  background-image:
+    radial-gradient(circle at 0% 0%, rgba(34, 211, 238, 0.04), transparent 40%),
+    radial-gradient(circle at 100% 100%, rgba(249, 115, 22, 0.03), transparent 40%);
+  background-attachment: fixed;
+}
+
+/* Polished range slider — WebKit + Firefox. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 1.25rem;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, rgb(20 25 35), rgb(38 38 38));
+}
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: rgb(38 38 38);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: rgb(34 211 238);
+  border: 2px solid rgb(10 10 10);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.4), 0 0 8px rgba(34, 211, 238, 0.4);
+  margin-top: -5px;
+  transition: transform 120ms, box-shadow 120ms;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: rgb(34 211 238);
+  border: 2px solid rgb(10 10 10);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.4), 0 0 8px rgba(34, 211, 238, 0.4);
+}
+input[type="range"]:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.6), 0 0 12px rgba(34, 211, 238, 0.6);
+}
+input[type="range"]:focus {
+  outline: none;
+}
+input[type="range"]:focus::-webkit-slider-thumb {
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.6), 0 0 12px rgba(34, 211, 238, 0.6);
+}
+
+/* Subtle scrollbar in dark surfaces. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(115, 115, 115, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(115, 115, 115, 0.45);
 }

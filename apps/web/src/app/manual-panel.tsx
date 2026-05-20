@@ -17,22 +17,34 @@ import {
 } from "recharts";
 
 import {
+  fetchLive,
   runSim,
   type DriverSchema,
   type OutputSchema,
+  type ProvenanceSchema,
   type SensitivityEntry,
   type SensitivityResponse,
   type SimMetadata,
 } from "@/lib/sim-client";
+
+import {
+  COLORS,
+  compactNumber,
+  formatDriverValue,
+  formatValue,
+  GROUP_ORDER,
+  pairSeries,
+  prettyName,
+  seriesLabel,
+  type SeriesPair,
+} from "./shared";
 
 interface Props {
   meta: SimMetadata;
   sensitivity: SensitivityResponse | null;
 }
 
-const GROUP_ORDER = ["Launch", "Compute", "Power", "Thermal", "Economics"];
-
-export function SimWorkspace({ meta, sensitivity }: Props) {
+export function ManualPanel({ meta, sensitivity }: Props) {
   const initial = useMemo(
     () => Object.fromEntries(meta.drivers.map((d) => [d.name, d.default])),
     [meta.drivers],
@@ -85,14 +97,31 @@ export function SimWorkspace({ meta, sensitivity }: Props) {
     setActivePreset(null);
   }
 
+  async function initFromLive() {
+    try {
+      const r = await fetchLive(meta.slug);
+      setValues(r.drivers);
+      setActivePreset(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "live fetch failed");
+    }
+  }
+
+  const dirty = useMemo(
+    () => meta.drivers.some((d) => Math.abs((values[d.name] ?? d.default) - d.default) > 1e-9),
+    [meta.drivers, values],
+  );
+
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
-      <aside className="space-y-5">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[360px_1fr]">
+      <aside className="space-y-5 lg:sticky lg:top-[120px] lg:max-h-[calc(100vh-140px)] lg:overflow-y-auto lg:pr-2">
         <PresetBar
           presets={Object.keys(meta.presets)}
           active={activePreset}
+          dirty={dirty}
           onSelect={applyPreset}
           onReset={resetAll}
+          onInitFromLive={initFromLive}
         />
         {groupNames.map((g) => (
           <DriverGroup
@@ -100,6 +129,7 @@ export function SimWorkspace({ meta, sensitivity }: Props) {
             name={g}
             drivers={grouped.get(g) ?? []}
             values={values}
+            provenance={meta.provenance}
             onChange={(name, n) => {
               setActivePreset(null);
               setValues((prev) => ({ ...prev, [name]: n }));
@@ -111,10 +141,23 @@ export function SimWorkspace({ meta, sensitivity }: Props) {
             {error}
           </p>
         )}
-        {isPending && <p className="text-xs text-neutral-500">simulating…</p>}
       </aside>
 
       <section className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-neutral-100">
+            Outputs{" "}
+            <span className="ml-1 text-[11px] font-normal text-neutral-500">
+              현재 슬라이더 값으로 계산
+            </span>
+          </h2>
+          {isPending && (
+            <span className="flex items-center gap-1.5 text-[11px] text-neutral-500">
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
+              simulating…
+            </span>
+          )}
+        </div>
         <ScalarGrid outputs={scalarOutputs} />
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           {pairs.map((p) => (
@@ -130,32 +173,45 @@ export function SimWorkspace({ meta, sensitivity }: Props) {
   );
 }
 
-// ----- Subcomponents -----
-
 function PresetBar({
   presets,
   active,
+  dirty,
   onSelect,
   onReset,
+  onInitFromLive,
 }: {
   presets: string[];
   active: string | null;
+  dirty: boolean;
   onSelect: (name: string) => void;
   onReset: () => void;
+  onInitFromLive: () => void;
 }) {
-  if (presets.length === 0) return null;
   return (
-    <div className="rounded border border-neutral-800 bg-neutral-900/40 p-3">
+    <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-3">
       <div className="mb-2 flex items-baseline justify-between">
-        <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
           Scenario presets
+          {dirty && (
+            <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
+          )}
         </span>
-        <button
-          onClick={onReset}
-          className="text-xs text-neutral-500 underline-offset-4 hover:text-neutral-300 hover:underline"
-        >
-          reset
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={onInitFromLive}
+            className="text-[11px] text-cyan-400 underline-offset-4 hover:underline"
+            title="현재 라이브 데이터로 드라이버 초기화"
+          >
+            ↻ from live
+          </button>
+          <button
+            onClick={onReset}
+            className="text-[11px] text-neutral-500 underline-offset-4 hover:text-neutral-300 hover:underline"
+          >
+            reset
+          </button>
+        </div>
       </div>
       <div className="flex flex-wrap gap-1.5">
         {presets.map((p) => {
@@ -164,9 +220,9 @@ function PresetBar({
             <button
               key={p}
               onClick={() => onSelect(p)}
-              className={`rounded-full px-2.5 py-1 text-xs transition ${
+              className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
                 isActive
-                  ? "bg-cyan-500 text-neutral-950"
+                  ? "bg-cyan-500 text-neutral-950 shadow-sm shadow-cyan-500/30"
                   : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
               }`}
             >
@@ -183,16 +239,19 @@ function DriverGroup({
   name,
   drivers,
   values,
+  provenance,
   onChange,
 }: {
   name: string;
   drivers: DriverSchema[];
   values: Record<string, number>;
+  provenance: Record<string, ProvenanceSchema>;
   onChange: (name: string, n: number) => void;
 }) {
   return (
-    <div>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-cyan-400">
+    <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-3">
+      <h3 className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-cyan-400">
+        <span className="inline-block h-1.5 w-1.5 rounded-full bg-cyan-400" />
         {name}
       </h3>
       <div className="space-y-4">
@@ -201,6 +260,7 @@ function DriverGroup({
             key={d.name}
             driver={d}
             value={values[d.name] ?? d.default}
+            provenance={provenance[d.name] ?? null}
             onChange={(n) => onChange(d.name, n)}
           />
         ))}
@@ -212,32 +272,69 @@ function DriverGroup({
 function DriverSlider({
   driver,
   value,
+  provenance,
   onChange,
 }: {
   driver: DriverSchema;
   value: number;
+  provenance: ProvenanceSchema | null;
   onChange: (n: number) => void;
 }) {
   const step = (driver.max - driver.min) / 200;
+  const isDirty = Math.abs(value - driver.default) > 1e-9;
+  const histPts = provenance?.history ?? [];
+
   return (
     <div>
-      <label className="flex items-baseline justify-between text-sm">
-        <span className="font-medium">{prettyName(driver.name)}</span>
-        <span className="text-neutral-400">
+      <label className="flex items-baseline justify-between gap-2 text-sm">
+        <span className="font-medium text-neutral-200">{prettyName(driver.name)}</span>
+        <span
+          className={`tabular-nums ${isDirty ? "text-cyan-300" : "text-neutral-400"}`}
+        >
           {formatDriverValue(value, driver.unit)}
         </span>
       </label>
-      <input
-        type="range"
-        min={driver.min}
-        max={driver.max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-2 w-full accent-cyan-400"
-      />
+      <div className="mt-2 flex items-center gap-2">
+        <input
+          type="range"
+          min={driver.min}
+          max={driver.max}
+          step={step}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="flex-1 accent-cyan-400"
+        />
+        {histPts.length >= 2 && (
+          <div className="h-6 w-14 shrink-0">
+            <ResponsiveContainer>
+              <LineChart
+                data={histPts.map((h) => ({ date: h.date, value: h.value }))}
+                margin={{ top: 2, right: 0, bottom: 2, left: 0 }}
+              >
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  stroke={COLORS.muted}
+                  strokeWidth={1.5}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+      <div className="mt-1 flex items-baseline justify-between text-[10px] text-neutral-600 tabular-nums">
+        <span>{formatDriverValue(driver.min, driver.unit)}</span>
+        <span title={`default ${formatDriverValue(driver.default, driver.unit)}`}>
+          default {formatDriverValue(driver.default, driver.unit)}
+        </span>
+        <span>{formatDriverValue(driver.max, driver.unit)}</span>
+      </div>
       {driver.description && (
-        <p className="mt-1 text-xs text-neutral-500">{driver.description}</p>
+        <p className="mt-1 text-[11px] leading-snug text-neutral-500">
+          {driver.description}
+        </p>
       )}
     </div>
   );
@@ -260,17 +357,17 @@ function ScalarCard({ output }: { output: OutputSchema }) {
   const isNpv = output.name.startsWith("npv_");
   const accent = isNpv
     ? value > 0
-      ? "text-emerald-400"
+      ? "text-emerald-300"
       : value < 0
-        ? "text-rose-400"
-        : "text-neutral-200"
+        ? "text-rose-300"
+        : "text-neutral-100"
     : isBreakeven && value < 0
-      ? "text-rose-400"
+      ? "text-rose-300"
       : "text-neutral-100";
 
   return (
-    <div className="rounded border border-neutral-800 bg-neutral-900/40 p-3">
-      <p className="text-xs uppercase tracking-wide text-neutral-500">
+    <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-4 transition hover:border-neutral-700">
+      <p className="text-[10px] font-medium uppercase tracking-wider text-neutral-500">
         {prettyName(output.name)}
       </p>
       <p className={`mt-1 text-xl font-semibold tabular-nums ${accent}`}>
@@ -279,20 +376,12 @@ function ScalarCard({ output }: { output: OutputSchema }) {
           : formatValue(value, output.unit)}
       </p>
       {output.description && (
-        <p className="mt-1 line-clamp-2 text-xs text-neutral-500">
+        <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-neutral-500">
           {output.description}
         </p>
       )}
     </div>
   );
-}
-
-interface SeriesPair {
-  key: string;
-  title: string;
-  unit: string;
-  description: string;
-  outputs: OutputSchema[];
 }
 
 function SeriesCard({ pair }: { pair: SeriesPair }) {
@@ -305,25 +394,29 @@ function SeriesCard({ pair }: { pair: SeriesPair }) {
     }
     return row;
   });
-  const colors = ["#22d3ee", "#f97316", "#a3e635"];
+  const lineColors = [COLORS.primary, COLORS.secondary, COLORS.tertiary];
 
   return (
-    <div className="rounded border border-neutral-800 p-4">
-      <h2 className="text-sm font-medium">
+    <div className="rounded-lg border border-neutral-800 bg-neutral-900/30 p-4">
+      <h2 className="text-sm font-medium text-neutral-100">
         {pair.title}
-        {pair.unit && <span className="ml-2 text-neutral-500">({pair.unit})</span>}
+        {pair.unit && <span className="ml-2 text-xs text-neutral-500">({pair.unit})</span>}
       </h2>
       {pair.description && (
-        <p className="mt-1 text-xs text-neutral-500">{pair.description}</p>
+        <p className="mt-1 text-[11px] text-neutral-500">{pair.description}</p>
       )}
-      <div className="mt-3 h-64">
+      <div className="mt-3 h-56">
         <ResponsiveContainer>
           <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-            <CartesianGrid stroke="#262626" strokeDasharray="3 3" />
-            <XAxis dataKey="year" stroke="#737373" />
-            <YAxis stroke="#737373" tickFormatter={(v) => compactNumber(v)} />
+            <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" />
+            <XAxis dataKey="year" stroke={COLORS.muted} fontSize={11} />
+            <YAxis stroke={COLORS.muted} fontSize={11} tickFormatter={(v) => compactNumber(v)} />
             <Tooltip
-              contentStyle={{ backgroundColor: "#0a0a0a", border: "1px solid #262626" }}
+              contentStyle={{
+                backgroundColor: COLORS.surface,
+                border: `1px solid ${COLORS.grid}`,
+                fontSize: 12,
+              }}
               formatter={(v: number) => formatValue(v, pair.unit)}
               labelFormatter={(y) => `year ${y}`}
             />
@@ -335,7 +428,7 @@ function SeriesCard({ pair }: { pair: SeriesPair }) {
                 key={out.name}
                 type="monotone"
                 dataKey={seriesLabel(out)}
-                stroke={colors[i % colors.length]}
+                stroke={lineColors[i % lineColors.length]}
                 strokeWidth={2}
                 dot={false}
                 isAnimationActive={false}
@@ -371,12 +464,12 @@ function SensitivityCard({
       driver: prettyName(e.driver),
       swing: e.swing,
     }))
-    .reverse(); // recharts BarChart with layout="vertical": last item is on top
+    .reverse();
 
   return (
-    <div className="rounded border border-neutral-800 p-4">
+    <div className="rounded-lg border border-neutral-800 bg-neutral-900/30 p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 className="text-sm font-medium">Sensitivity (tornado)</h2>
+        <h2 className="text-sm font-medium text-neutral-100">Sensitivity (tornado)</h2>
         <select
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
@@ -389,7 +482,7 @@ function SensitivityCard({
           ))}
         </select>
       </div>
-      <p className="mt-1 text-xs text-neutral-500">
+      <p className="mt-1 text-[11px] text-neutral-500">
         각 드라이버를 min↔max로 휘둘렀을 때 결과의 swing. 막대 길이가 길수록 그 드라이버에 더 민감.
       </p>
       <div className="mt-3 h-72">
@@ -399,10 +492,11 @@ function SensitivityCard({
             layout="vertical"
             margin={{ top: 5, right: 20, left: 90, bottom: 0 }}
           >
-            <CartesianGrid stroke="#262626" strokeDasharray="3 3" horizontal={false} />
+            <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" horizontal={false} />
             <XAxis
               type="number"
-              stroke="#737373"
+              stroke={COLORS.muted}
+              fontSize={11}
               tickFormatter={(v) => compactNumber(v)}
             />
             <YAxis
@@ -413,13 +507,17 @@ function SensitivityCard({
               width={140}
             />
             <Tooltip
-              contentStyle={{ backgroundColor: "#0a0a0a", border: "1px solid #262626" }}
+              contentStyle={{
+                backgroundColor: COLORS.surface,
+                border: `1px solid ${COLORS.grid}`,
+                fontSize: 12,
+              }}
               formatter={(v: number) => formatValue(v, unit)}
             />
             <ReferenceLine x={0} stroke="#525252" />
             <Bar dataKey="swing" isAnimationActive={false}>
               {data.map((d) => (
-                <Cell key={d.driver} fill={d.swing >= 0 ? "#22d3ee" : "#f87171"} />
+                <Cell key={d.driver} fill={d.swing >= 0 ? COLORS.primary : COLORS.negative} />
               ))}
             </Bar>
           </BarChart>
@@ -428,8 +526,6 @@ function SensitivityCard({
     </div>
   );
 }
-
-// ----- helpers -----
 
 function groupBy<T, K>(items: T[], keyFn: (t: T) => K): Map<K, T[]> {
   const m = new Map<K, T[]>();
@@ -440,87 +536,4 @@ function groupBy<T, K>(items: T[], keyFn: (t: T) => K): Map<K, T[]> {
     else m.set(k, [it]);
   }
   return m;
-}
-
-function pairSeries(series: OutputSchema[]): SeriesPair[] {
-  // Pair outputs by stripping _space_usd / _ground_usd / similar suffixes.
-  const pairs = new Map<string, OutputSchema[]>();
-  const order: string[] = [];
-  for (const out of series) {
-    const key = out.name
-      .replace(/_(space|ground)_usd$/, "")
-      .replace(/_(space|ground)$/, "");
-    if (!pairs.has(key)) {
-      pairs.set(key, []);
-      order.push(key);
-    }
-    pairs.get(key)!.push(out);
-  }
-  return order.map((key) => {
-    const outputs = pairs.get(key)!;
-    const first = outputs[0]!;
-    return {
-      key,
-      title: prettyName(key),
-      unit: first.unit,
-      description: first.description,
-      outputs,
-    };
-  });
-}
-
-function seriesLabel(out: OutputSchema): string {
-  if (/_space_usd$/.test(out.name) || /_space$/.test(out.name)) return "space";
-  if (/_ground_usd$/.test(out.name) || /_ground$/.test(out.name)) return "ground";
-  return prettyName(out.name);
-}
-
-function prettyName(snake: string): string {
-  return snake
-    .replace(/_/g, " ")
-    .replace(/\busd\b/gi, "USD")
-    .replace(/\bpflops\b/gi, "PFLOPS")
-    .replace(/\bnpv\b/gi, "NPV")
-    .replace(/\bpct\b/gi, "%")
-    .replace(/\byr\b/gi, "yr")
-    .replace(/\bkw\b/gi, "kW")
-    .replace(/\bw\b/gi, "W")
-    .replace(/\bkg\b/gi, "kg")
-    .replace(/\s+per\s+/g, "/")
-    .trim();
-}
-
-function formatDriverValue(v: number, unit: string): string {
-  const abs = Math.abs(v);
-  let body: string;
-  if (Number.isInteger(v) && abs < 1000) body = v.toFixed(0);
-  else if (abs >= 1000) body = v.toLocaleString("en-US", { maximumFractionDigits: 0 });
-  else if (abs >= 10) body = v.toFixed(1);
-  else body = v.toFixed(2);
-  return unit ? `${body} ${unit}` : body;
-}
-
-function formatValue(v: number, unit: string): string {
-  if (!Number.isFinite(v)) return "—";
-  const abs = Math.abs(v);
-  if (unit === "USD" || unit === "$") {
-    const sign = v < 0 ? "-" : "";
-    if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(2)}B`;
-    if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(2)}M`;
-    if (abs >= 1e3) return `${sign}$${(abs / 1e3).toFixed(1)}k`;
-    return `${sign}$${abs.toFixed(0)}`;
-  }
-  if (unit === "yr") return `${v.toFixed(1)} yr`;
-  if (abs >= 1e6) return `${(v / 1e6).toFixed(2)}M ${unit}`;
-  if (abs >= 1e3) return `${(v / 1e3).toFixed(1)}k ${unit}`;
-  if (abs >= 10) return `${v.toFixed(1)} ${unit}`;
-  return `${v.toFixed(2)} ${unit}`;
-}
-
-function compactNumber(v: number): string {
-  const abs = Math.abs(v);
-  if (abs >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
-  if (abs >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
-  if (abs >= 1e3) return `${(v / 1e3).toFixed(1)}k`;
-  return v.toFixed(0);
 }

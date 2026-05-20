@@ -21,6 +21,24 @@ class OutputSchema(BaseModel):
     description: str = ""
 
 
+class SourceSchema(BaseModel):
+    title: str
+    url: str = ""
+    excerpt: str = ""
+    as_of: str = ""
+
+
+class HistoryPointSchema(BaseModel):
+    date: str
+    value: float
+
+
+class ProvenanceSchema(BaseModel):
+    history: list[HistoryPointSchema] = Field(default_factory=list)
+    sources: list[SourceSchema] = Field(default_factory=list)
+    note: str = ""
+
+
 class SimMetadata(BaseModel):
     slug: str
     name: str
@@ -28,6 +46,7 @@ class SimMetadata(BaseModel):
     horizon_years: int
     drivers: list[DriverSchema]
     presets: dict[str, dict[str, float]] = Field(default_factory=dict)
+    provenance: dict[str, ProvenanceSchema] = Field(default_factory=dict)
 
 
 class SimRunRequest(BaseModel):
@@ -47,5 +66,18 @@ class SensitivityEntry(BaseModel):
 
 class SensitivityResponse(BaseModel):
     slug: str
-    # output name → driver entries sorted by |swing| desc.
     by_output: dict[str, list[SensitivityEntry]]
+
+
+class LiveResponse(BaseModel):
+    """Live snapshot: time-drifted driver values + immediate sim outputs.
+
+    The drivers are deterministic given the tick, so repeated polling within
+    the same tick window returns identical values (frontend can cache).
+    """
+
+    slug: str
+    tick: int
+    timestamp: str  # ISO-8601 UTC
+    drivers: dict[str, float]
+    outputs: list[OutputSchema]

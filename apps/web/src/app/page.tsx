@@ -1,21 +1,28 @@
-import { SimWorkspace } from "./sim-workspace";
 import {
+  fetchLive,
   fetchSensitivity,
   fetchSim,
   SIM_SERVICE_URL,
+  type LiveResponse,
   type SensitivityResponse,
   type SimMetadata,
 } from "@/lib/sim-client";
+
+import { LiveStrip } from "./live-strip";
+import { Workspace } from "./workspace";
 
 const SIM_SLUG = "space-data-center";
 
 export default async function Home() {
   let meta: SimMetadata;
   let sensitivity: SensitivityResponse | null = null;
+  let initialLive: LiveResponse | null = null;
   try {
     meta = await fetchSim(SIM_SLUG);
-    // Sensitivity is static per sim definition — fetch alongside metadata.
-    sensitivity = await fetchSensitivity(SIM_SLUG).catch(() => null);
+    [sensitivity, initialLive] = await Promise.all([
+      fetchSensitivity(SIM_SLUG).catch(() => null),
+      fetchLive(SIM_SLUG).catch(() => null),
+    ]);
   } catch (err) {
     return (
       <main className="mx-auto max-w-6xl px-6 py-10">
@@ -34,19 +41,25 @@ export default async function Home() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
-      <header className="mb-8">
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-2xl font-semibold">{meta.name}</h1>
-          <span className="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-300">
+    <main className="mx-auto min-h-screen max-w-7xl px-6 pb-16">
+      <LiveStrip slug={meta.slug} initial={initialLive} />
+      <header className="mb-6 mt-2">
+        <div className="flex flex-wrap items-baseline gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-50">
+            {meta.name}
+          </h1>
+          <span className="rounded-full border border-cyan-900/60 bg-cyan-950/40 px-2.5 py-0.5 text-[11px] font-medium text-cyan-300">
             sector · {meta.slug}
+          </span>
+          <span className="text-[11px] uppercase tracking-wider text-neutral-600">
+            horizon {meta.horizon_years} yr
           </span>
         </div>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-neutral-400">
           {meta.description}
         </p>
       </header>
-      <SimWorkspace meta={meta} sensitivity={sensitivity} />
+      <Workspace meta={meta} sensitivity={sensitivity} initialLive={initialLive} />
     </main>
   );
 }

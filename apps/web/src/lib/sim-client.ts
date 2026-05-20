@@ -33,6 +33,24 @@ export interface OutputSchema {
   description: string;
 }
 
+export interface SourceSchema {
+  title: string;
+  url: string;
+  excerpt: string;
+  as_of: string;
+}
+
+export interface HistoryPointSchema {
+  date: string;
+  value: number;
+}
+
+export interface ProvenanceSchema {
+  history: HistoryPointSchema[];
+  sources: SourceSchema[];
+  note: string;
+}
+
 export interface SimMetadata {
   slug: string;
   name: string;
@@ -40,6 +58,7 @@ export interface SimMetadata {
   horizon_years: number;
   drivers: DriverSchema[];
   presets: Record<string, Record<string, number>>;
+  provenance: Record<string, ProvenanceSchema>;
 }
 
 export interface SimRunResponse {
@@ -56,6 +75,14 @@ export interface SensitivityEntry {
 export interface SensitivityResponse {
   slug: string;
   by_output: Record<string, SensitivityEntry[]>;
+}
+
+export interface LiveResponse {
+  slug: string;
+  tick: number;
+  timestamp: string;
+  drivers: Record<string, number>;
+  outputs: OutputSchema[];
 }
 
 export async function fetchSim(slug: string): Promise<SimMetadata> {
@@ -85,4 +112,10 @@ export async function fetchSensitivity(slug: string): Promise<SensitivityRespons
   if (!res.ok)
     throw new Error(`fetchSensitivity failed: ${res.status} ${res.statusText}`);
   return res.json() as Promise<SensitivityResponse>;
+}
+
+export async function fetchLive(slug: string): Promise<LiveResponse> {
+  const res = await fetch(`${FETCH_BASE}/sims/${slug}/live`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`fetchLive failed: ${res.status} ${res.statusText}`);
+  return res.json() as Promise<LiveResponse>;
 }
