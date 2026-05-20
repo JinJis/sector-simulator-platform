@@ -1,0 +1,44 @@
+# Prod mode — production deploy.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# - Builds the `prod` Dockerfile stage.
+# - simulation-service is NOT exposed to the host — it's reachable only on the
+#   internal network. The gateway/ingress (not yet in repo) is expected to
+#   front the web app and terminate TLS.
+# - `restart: always` so containers survive host reboots.
+
+services:
+  simulation-service:
+    build:
+      target: prod
+    environment:
+      PYTHONUNBUFFERED: "1"
+      LOG_LEVEL: info
+      ENVIRONMENT: production
+    expose:
+      - "8000"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  web:
+    build:
+      target: prod
+    environment:
+      NODE_ENV: production
+      # In prod the browser hits the public origin. Override via .env or your
+      # orchestrator (e.g. NEXT_PUBLIC_SIMULATION_SERVICE_URL=https://api.example.com).
+      NEXT_PUBLIC_SIMULATION_SERVICE_URL: ${NEXT_PUBLIC_SIMULATION_SERVICE_URL:-http://localhost:8000}
+      ENVIRONMENT: production
+    ports:
+      - "3000:3000"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M

@@ -1,0 +1,30 @@
+# Dev mode — shared dev/staging environment.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#
+# - Builds the `prod` Dockerfile stage (no --reload, no dev deps mounted).
+# - Ports exposed to host for direct probing.
+# - Verbose logs. Auto-restart on crash, not on host reboot.
+
+services:
+  simulation-service:
+    build:
+      target: prod
+    environment:
+      PYTHONUNBUFFERED: "1"
+      LOG_LEVEL: debug
+      ENVIRONMENT: dev
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  web:
+    build:
+      target: prod
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_SIMULATION_SERVICE_URL: http://localhost:8000
+      ENVIRONMENT: dev
+    ports:
+      - "3000:3000"
+    restart: unless-stopped

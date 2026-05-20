@@ -1,0 +1,30 @@
+# Base Compose file — shared service definitions.
+# Always combined with one of: docker-compose.local.yml / .dev.yml / .prod.yml
+#
+# Example:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+
+name: tech-sector-simulator
+
+services:
+  simulation-service:
+    image: tssp/simulation-service:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: infra/docker/simulation-service.Dockerfile
+    networks:
+      - internal
+
+  web:
+    image: tssp/web:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: infra/docker/web.Dockerfile
+    depends_on:
+      - simulation-service
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge

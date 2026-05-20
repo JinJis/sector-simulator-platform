@@ -1,0 +1,66 @@
+# Node
+node_modules/
+.next/
+out/
+dist/
+.turbo/
+.pnpm-store/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+*.egg-info/
+build/
+.coverage
+.coverage.*
+htmlcov/
+.ipynb_checkpoints/
+
+# Test artifacts
+coverage/
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Build artifacts
+storybook-static/
+.cache/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+.doppler.yaml
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# OS
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.history/

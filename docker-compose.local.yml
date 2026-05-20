@@ -1,0 +1,50 @@
+# Local mode — hot reload.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+#
+# - Builds the `dev` Dockerfile stage.
+# - Bind-mounts source so edits trigger Next.js Fast Refresh / uvicorn --reload.
+# - node_modules stays on a named volume to avoid host/container ABI mismatches.
+
+services:
+  simulation-service:
+    build:
+      target: dev
+    environment:
+      PYTHONUNBUFFERED: "1"
+      # Same as the Dockerfile's PYTHONPATH, repeated here so it survives
+      # any future docker-compose env_file additions overriding it.
+      PYTHONPATH: /repo/services/simulation-service:/repo/packages/sdk-python
+    volumes:
+      - ./services/simulation-service:/repo/services/simulation-service
+      - ./packages/sdk-python:/repo/packages/sdk-python
+    ports:
+      - "8000:8000"
+    restart: "no"
+
+  web:
+    build:
+      target: dev
+    environment:
+      NODE_ENV: development
+      # Browser-side fetch — uses the host port mapped from simulation-service.
+      NEXT_PUBLIC_SIMULATION_SERVICE_URL: http://localhost:8000
+      # Make file watching work reliably on Docker Desktop bind mounts.
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./apps/web:/repo/apps/web
+      # tsconfig.base.json is extended by apps/web/tsconfig.json — mount
+      # read-only so host edits are picked up without leaking writes.
+      - ./tsconfig.base.json:/repo/tsconfig.base.json:ro
+      # Keep node_modules inside the container (named volume) so the Linux
+      # binaries built during install aren't shadowed by the host mount.
+      - web_node_modules:/repo/apps/web/node_modules
+      - web_next_cache:/repo/apps/web/.next
+    ports:
+      - "3000:3000"
+    restart: "no"
+
+volumes:
+  web_node_modules:
+  web_next_cache:

@@ -1,0 +1,12 @@
+{
+  "name": "@platform/simulation-service",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "uv run --package simulation-service uvicorn simulation_service.main:app --reload --port 8000",
+    "build": "echo 'python: no build step'",
+    "lint": "uv run --package simulation-service ruff check .",
+    "typecheck": "uv run --package simulation-service mypy simulation_service",
+    "test": "uv run --package simulation-service pytest"
+  }
+}
