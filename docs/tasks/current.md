@@ -259,8 +259,36 @@ bundle.
         - Modal sandbox / persistence / multi-tenant scoping
           intentionally deferred — they're separate later slices.
   - [ ] **Sandbox (Modal) integration** for executing generated sim code.
-  - [ ] **More agent prompts**: research / driver-inference / edge-inference /
-        code-gen / code-review (each their own slice — author + eval).
+  - [x] **More agent prompts** (2026-05-20). The five remaining pipeline
+        prompts ship as authored markdown alongside `decomposition.md`,
+        plus a structured catalog so future workflow slices can pick
+        them up consistently:
+        - `prompts/research.md` (sonnet → `ResearchBrief`) — numeric
+          anchor extraction with kind-labeled citations.
+        - `prompts/driver-inference.md` (sonnet → `DriverInferenceResult`)
+          — calibrated defaults / ranges / history / sources per
+          driver.
+        - `prompts/edge-inference.md` (opus → `EdgeInferenceResult`) —
+          causal DAG with labeled edges, formulas, dimensional
+          checks, and explicit `assumptions`.
+        - `prompts/code-gen.md` (sonnet → `CodeGenResult`) —
+          transcribes the structured spec to a `SimulationBase`
+          subclass file matching the existing sim house style.
+        - `prompts/code-review.md` (sonnet → `CodeReviewResult`) —
+          finding-oriented review with severity rubric (Sonnet on
+          purpose; the Opus 4.7 literal-severity-filter shift would
+          depress recall here).
+        - Convention: YAML-ish front-matter at the top of each file
+          (`role`, `tier`, `inputs`, `outputs`, `version`), parsed by
+          a tiny in-house parser (no pyyaml dep) in
+          `agent_orchestration/prompts.py`. `load_prompt()` returns
+          body only (cache-stable); `prompt_metadata()` /
+          `prompt_catalog()` expose the structured fields.
+          `decomposition.md` refactored to match.
+        - 11 new pytest cases (24 total in the suite) cover catalog
+          membership, tier routing, body sanity, and every front-matter
+          error path. Future workflows wiring these prompts is its own
+          slice.
   - [ ] **`tests/agent-evals`** harness + cases per agent.
   - [ ] **LangSmith / Helicone tracing** wired through `LLMClient`.
 
