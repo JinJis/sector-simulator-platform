@@ -13,7 +13,16 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,css}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,css}\""
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,css}\"",
+    "db:generate": "pnpm --filter @platform/db generate",
+    "db:migrate": "pnpm --filter @platform/db migrate:dev",
+    "db:migrate:deploy": "pnpm --filter @platform/db migrate:deploy",
+    "db:migrate:reset": "pnpm --filter @platform/db migrate:reset",
+    "db:seed": "pnpm --filter @platform/db seed",
+    "db:studio": "pnpm --filter @platform/db studio",
+    "db:up": "docker compose -f docker-compose.yml -f docker-compose.local.yml up -d postgres",
+    "db:down": "docker compose -f docker-compose.yml -f docker-compose.local.yml stop postgres",
+    "db:logs": "docker compose -f docker-compose.yml -f docker-compose.local.yml logs -f postgres"
   },
   "devDependencies": {
     "prettier": "^3.3.3",

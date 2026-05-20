@@ -47,10 +47,13 @@ This is the sequence to take us from "3 hand-coded sectors" to "agents
 generate sectors from research". Each item is a distinct slice — do not
 bundle.
 
-- [ ] **Postgres + Prisma schema v1**: `sectors`, `simulations`,
-      `scenarios` tables. Sector metadata still authored in code; scenarios
-      (driver-override bundles + notes) get persisted. Enables Scenario CRUD
-      and shareable URLs.
+- [x] **Postgres + Prisma schema v1** (2026-05-20). `packages/db`
+      workspace package with Prisma 5.22, schema with `sectors` + `scenarios`
+      tables, initial migration applied, seed script registers the 3
+      in-code sims, Docker `postgres:16-alpine` service wired into base
+      compose with port exposure in `local.yml`. Root scripts:
+      `pnpm db:{up,down,migrate,seed,studio,generate}`. `tenant_id`
+      intentionally absent — added when auth lands.
 - [ ] **`services/sector-service`** (Fastify + tRPC): proxy + auth boundary
       over simulation-service. Adds auditable per-request logging.
 - [ ] **Scenario CRUD UI**: save / load / share / fork from any tab.

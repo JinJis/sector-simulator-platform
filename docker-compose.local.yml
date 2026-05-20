@@ -7,6 +7,13 @@
 # - node_modules stays on a named volume to avoid host/container ABI mismatches.
 
 services:
+  postgres:
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: "no"
+
   simulation-service:
     build:
       target: dev
@@ -52,3 +59,4 @@ services:
 volumes:
   web_node_modules:
   web_next_cache:
+  postgres_data:

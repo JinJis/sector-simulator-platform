@@ -1,0 +1,62 @@
+// Phase 2 schema v1.
+//
+// Two entities for the entry slice:
+//   - sectors   : 1 row per registered simulation. Source-of-truth for the
+//                 sector picker once the FastAPI registry becomes
+//                 DB-driven. For now the Python registry is still
+//                 canonical and we just mirror its slugs here for the
+//                 scenarios FK.
+//   - scenarios : a named bundle of driver overrides for a given sector,
+//                 plus notes. This is the first persisted user artifact.
+//
+// Multi-tenancy: tenant_id is intentionally absent. Auth (Clerk) lands in
+// a later slice and that's when we add tenant scoping + Postgres RLS as
+// the second line of defense.
+//
+// Conventions: snake_case columns, plural table names (CLAUDE.md).
+
+generator client {
+  provider      = "prisma-client-js"
+  // linux-musl is needed for the alpine-based simulation-service / sector-
+  // service Docker images. Native covers macOS + glibc Linux dev hosts.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Sector {
+  id             String   @id @default(cuid())
+  slug           String   @unique
+  name           String
+  description    String?
+  // Python module path for the in-code sim. Agent-generated sectors will
+  // store a code-version ref instead (Phase 2 later slice).
+  source_module  String?  @map("source_module")
+  created_at     DateTime @default(now()) @map("created_at")
+  updated_at     DateTime @updatedAt        @map("updated_at")
+
+  scenarios      Scenario[]
+
+  @@map("sectors")
+}
+
+model Scenario {
+  id                String   @id @default(cuid())
+  sector_slug       String   @map("sector_slug")
+  sector            Sector   @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+  name              String
+  notes             String?
+  // {driver_name: value} for any driver overridden from sector default.
+  // Missing keys = use the sector's default for that driver.
+  driver_overrides  Json     @map("driver_overrides")
+  // Free-form author label. Becomes a real users(id) FK when auth lands.
+  author_label      String?  @map("author_label")
+  created_at        DateTime @default(now()) @map("created_at")
+  updated_at        DateTime @updatedAt        @map("updated_at")
+
+  @@index([sector_slug])
+  @@map("scenarios")
+}

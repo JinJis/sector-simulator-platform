@@ -7,6 +7,11 @@
 # - Verbose logs. Auto-restart on crash, not on host reboot.
 
 services:
+  postgres:
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
   simulation-service:
     build:
       target: prod
@@ -30,3 +35,6 @@ services:
     ports:
       - "3000:3000"
     restart: unless-stopped
+
+volumes:
+  postgres_data:
