@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-
 from platform_sdk import SimulationBase
+
 from simulation_service.registry import all_sims, get_sim
 from simulation_service.schemas import (
     DriverSchema,

@@ -458,11 +458,12 @@ function pairSeries(series: OutputSchema[]): SeriesPair[] {
   }
   return order.map((key) => {
     const outputs = pairs.get(key)!;
+    const first = outputs[0]!;
     return {
       key,
       title: prettyName(key),
-      unit: outputs[0].unit,
-      description: outputs[0].description,
+      unit: first.unit,
+      description: first.description,
       outputs,
     };
   });

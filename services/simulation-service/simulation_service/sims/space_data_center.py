@@ -194,9 +194,7 @@ class SpaceDataCenterSim(SimulationBase):
         panel_drop = v["panel_degradation_pct_per_year"] / 100.0
         chip_drop = v["chip_radiation_degradation_pct_per_year"] / 100.0
         effective_pflops: list[float] = [
-            v["compute_demand_pflops"]
-            * (1.0 - panel_drop) ** t
-            * (1.0 - chip_drop) ** t
+            v["compute_demand_pflops"] * (1.0 - panel_drop) ** t * (1.0 - chip_drop) ** t
             for t in years
         ]
 
@@ -262,7 +260,9 @@ class SpaceDataCenterSim(SimulationBase):
             "break_even_year": Output(
                 scalar=break_even,
                 unit="yr",
-                description="누적 비용이 지상 대비 같아지는 첫 해. -1이면 미션 내 break-even 미달성.",
+                description=(
+                    "누적 비용이 지상 대비 같아지는 첫 해. -1이면 미션 내 break-even 미달성."
+                ),
             ),
             "effective_compute_pflops": Output(
                 series=effective_pflops,
