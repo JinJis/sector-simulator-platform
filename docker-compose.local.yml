@@ -9,7 +9,10 @@
 services:
   postgres:
     ports:
-      - "5432:5432"
+      # Host port 6543 → container 5432 so we don't collide with any system
+      # postgresql install. Inside the compose network services still talk
+      # to postgres:5432 (container-internal port is unchanged).
+      - "6543:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: "no"
