@@ -54,24 +54,33 @@ services:
       target: dev
     environment:
       NODE_ENV: development
-      # Browser-side fetch — uses the host port mapped from simulation-service.
-      NEXT_PUBLIC_SIMULATION_SERVICE_URL: http://localhost:8000
-      # Server-side fetch (RSC / route handlers) — uses the compose-internal
-      # hostname. Inside the web container, `localhost` is the container
-      # itself, not the host, so the public URL above is unreachable from Node.
-      SIMULATION_SERVICE_URL: http://simulation-service:8000
+      # Server-side fetch from RSC / route handlers runs inside this
+      # container, so `localhost` would resolve to the container itself,
+      # not the host — point at the compose-internal hostname instead.
+      # Browser-side fetch goes through the `/api/sim` Next.js rewrite (see
+      # apps/web/next.config.ts), which uses this same URL server-side, so
+      # no `NEXT_PUBLIC_*` var is needed.
+      SECTOR_SERVICE_URL: http://sector-service:8001
       # Make file watching work reliably on Docker Desktop bind mounts.
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
     volumes:
       - ./apps/web:/repo/apps/web
+      # The web app type-imports @platform/sector-service / @platform/db.
+      # Bind-mount their source too so changes to the tRPC router type
+      # surface live in `next dev` without rebuilding the image.
+      - ./services/sector-service:/repo/services/sector-service
+      - ./packages/db:/repo/packages/db
       # tsconfig.base.json is extended by apps/web/tsconfig.json — mount
       # read-only so host edits are picked up without leaking writes.
       - ./tsconfig.base.json:/repo/tsconfig.base.json:ro
-      # Keep node_modules inside the container (named volume) so the Linux
-      # binaries built during install aren't shadowed by the host mount.
+      # Keep node_modules inside the container (named volumes) so the Linux
+      # binaries built during install aren't shadowed by the host mount —
+      # one volume per workspace package that's bind-mounted.
       - web_node_modules:/repo/apps/web/node_modules
       - web_next_cache:/repo/apps/web/.next
+      - web_sector_service_node_modules:/repo/services/sector-service/node_modules
+      - web_db_node_modules:/repo/packages/db/node_modules
     ports:
       - "3000:3000"
     restart: "no"
@@ -79,6 +88,8 @@ services:
 volumes:
   web_node_modules:
   web_next_cache:
+  web_sector_service_node_modules:
+  web_db_node_modules:
   postgres_data:
   sector_service_node_modules:
   db_node_modules:

@@ -17,9 +17,14 @@ WORKDIR /repo
 
 # ---------- deps: install workspace dependencies ----------
 FROM base AS deps
-# Copy only the manifests so Docker can cache this layer.
+# Manifests for the web app + its workspace deps. `@platform/web` consumes
+# `@platform/sector-service` for the `AppRouter` type, and sector-service
+# in turn depends on `@platform/db` — so pnpm needs to see all three
+# manifests to resolve the workspace graph.
 COPY package.json pnpm-workspace.yaml ./
 COPY apps/web/package.json ./apps/web/package.json
+COPY services/sector-service/package.json ./services/sector-service/package.json
+COPY packages/db/package.json ./packages/db/package.json
 # Lockfile may not exist yet during Phase 0 — fall back to a non-frozen install.
 COPY pnpm-lock.yaml* ./
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
@@ -28,6 +33,14 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     else \
       pnpm install --filter @platform/web...; \
     fi
+# `@platform/sector-service`'s package entry is ./src/index.ts, so TS needs
+# its source (transitively packages/db + the generated prisma client) to
+# walk the `AppRouter` type. The runtime never executes any of this — these
+# files exist purely to satisfy type resolution during `next dev` /
+# `next build`.
+COPY services/sector-service ./services/sector-service
+COPY packages/db ./packages/db
+RUN pnpm --filter @platform/db generate
 
 # ---------- dev: hot-reload target (local mode) ----------
 FROM deps AS dev

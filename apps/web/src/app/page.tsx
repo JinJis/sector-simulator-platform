@@ -3,7 +3,7 @@ import {
   fetchSensitivity,
   fetchSim,
   fetchSims,
-  SIM_SERVICE_URL,
+  SECTOR_SERVICE_URL,
   type LiveResponse,
   type SensitivityResponse,
   type SimMetadata,
@@ -34,13 +34,13 @@ export default async function Home({
       <main className="mx-auto max-w-6xl px-6 py-10">
         <h1 className="text-2xl font-semibold">Tech Sector Simulator</h1>
         <p className="mt-4 text-sm text-red-400">
-          simulation-service에 연결할 수 없습니다 ({SIM_SERVICE_URL}).
+          sector-service에 연결할 수 없습니다 ({SECTOR_SERVICE_URL}).
         </p>
         <p className="mt-2 text-xs text-neutral-500">
           {err instanceof Error ? err.message : String(err)}
         </p>
         <pre className="mt-4 rounded bg-neutral-900 p-3 text-xs text-neutral-300">
-          pnpm dev # 또는 services/simulation-service 단독 기동
+          pnpm dev # sector-service + simulation-service 동시 기동
         </pre>
       </main>
     );

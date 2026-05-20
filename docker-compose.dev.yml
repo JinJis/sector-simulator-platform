@@ -38,9 +38,10 @@ services:
       target: prod
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_SIMULATION_SERVICE_URL: http://localhost:8000
-      # Server-side fetch — see docker-compose.local.yml for rationale.
-      SIMULATION_SERVICE_URL: http://simulation-service:8000
+      # Web only ever talks to sector-service now — the browser goes through
+      # the /api/sim Next.js rewrite, server-side fetch uses the
+      # compose-internal hostname.
+      SECTOR_SERVICE_URL: http://sector-service:8001
       ENVIRONMENT: dev
     ports:
       - "3000:3000"

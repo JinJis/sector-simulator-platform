@@ -1,129 +1,115 @@
-// Browser-side: same-origin via Next.js rewrites (see next.config.ts). This
-// keeps the simulation-service off the public internet and dodges CORS /
-// host-mismatch issues when apps/web is served from a non-localhost origin
-// (Docker on a remote host, cloud-workstation preview URL, etc.).
-const BROWSER_BASE = "/api/sim";
+/**
+ * Typed client for the sector-service tRPC API.
+ *
+ * Boundary topology:
+ *   Browser  → /api/sim/trpc/*           (Next.js rewrite, set in next.config.ts)
+ *              ↓ same-origin, dodges CORS / non-localhost dev origins
+ *              → sector-service:8001/trpc/*
+ *
+ *   RSC / route handler (Node side of Next)
+ *            → ${SECTOR_SERVICE_URL}/trpc/*   default http://localhost:8001
+ *              ↓ runs inside the web container — must use the docker-internal
+ *                hostname, not the host port mapping.
+ *
+ * The wrapper functions below preserve the previous REST-era surface
+ * (fetchSims / fetchSim / runSim / fetchSensitivity / fetchLive) so call
+ * sites don't change. Types are inferred from the AppRouter export instead
+ * of duplicated, so any schema change in sector-service surfaces here as a
+ * type error.
+ */
 
-// Server-side (RSC / route handlers): run inside the web container, so prefer
-// the docker-internal hostname. Falls back to the public URL when unset
-// (host-mode dev).
-const SERVER_BASE =
-  process.env.SIMULATION_SERVICE_URL ?? "http://localhost:8000";
+import type { AppRouter } from "@platform/sector-service";
+import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
+import type { inferRouterOutputs } from "@trpc/server";
 
-const FETCH_BASE = typeof window === "undefined" ? SERVER_BASE : BROWSER_BASE;
+// ---------- URL resolution ----------
 
-// Exported for diagnostic UI text only.
-export const SIM_SERVICE_URL = SERVER_BASE;
+const BROWSER_BASE = "/api/sim/trpc";
 
-export interface DriverSchema {
-  name: string;
-  default: number;
-  min: number;
-  max: number;
-  unit: string;
-  description: string;
-  group: string;
-}
+const SERVER_BASE = `${process.env.SECTOR_SERVICE_URL ?? "http://localhost:8001"}/trpc`;
 
-export interface OutputSchema {
-  name: string;
-  series: number[] | null;
-  scalar: number | null;
-  unit: string;
-  description: string;
-}
+const TRPC_URL = typeof window === "undefined" ? SERVER_BASE : BROWSER_BASE;
 
-export interface SourceSchema {
-  title: string;
-  url: string;
-  excerpt: string;
-  as_of: string;
-  /** paper | vendor_doc | analyst | benchmark | gov_report | dataset | news | filing | "" */
-  kind: string;
-}
+// Exported only for diagnostic UI text — surfaces the upstream the *server*
+// side sees, which is the one that fails first when sector-service is down.
+export const SECTOR_SERVICE_URL =
+  process.env.SECTOR_SERVICE_URL ?? "http://localhost:8001";
 
-export interface HistoryPointSchema {
-  date: string;
-  value: number;
-}
+// ---------- tRPC client ----------
 
-export interface ProvenanceSchema {
-  history: HistoryPointSchema[];
-  sources: SourceSchema[];
-  note: string;
-}
+export const trpc = createTRPCClient<AppRouter>({
+  links: [
+    httpBatchLink({
+      url: TRPC_URL,
+      // `/live` polls every 3s — Next's default fetch cache would happily
+      // serve a stale tick. Force no-store on every tRPC HTTP call.
+      fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
+    }),
+  ],
+});
 
-export interface SimMetadata {
-  slug: string;
-  name: string;
-  description: string;
-  horizon_years: number;
-  drivers: DriverSchema[];
-  presets: Record<string, Record<string, number>>;
-  provenance: Record<string, ProvenanceSchema>;
-}
+// ---------- Inferred types (replace the previously hand-maintained interfaces) ----------
 
-export interface SimRunResponse {
-  slug: string;
-  drivers: Record<string, number>;
-  outputs: OutputSchema[];
-}
+type RouterOutput = inferRouterOutputs<AppRouter>;
 
-export interface SensitivityEntry {
-  driver: string;
-  swing: number;
-}
+export type SimMetadata = RouterOutput["sim"]["get"];
+export type SimRunResponse = RouterOutput["sim"]["run"];
+export type SensitivityResponse = RouterOutput["sim"]["sensitivity"];
+export type LiveResponse = RouterOutput["sim"]["live"];
 
-export interface SensitivityResponse {
-  slug: string;
-  by_output: Record<string, SensitivityEntry[]>;
-}
+export type DriverSchema = SimMetadata["drivers"][number];
+export type OutputSchema = SimRunResponse["outputs"][number];
+export type ProvenanceSchema = SimMetadata["provenance"][string];
+export type SourceSchema = ProvenanceSchema["sources"][number];
+export type HistoryPointSchema = ProvenanceSchema["history"][number];
+export type SensitivityEntry = SensitivityResponse["by_output"][string][number];
 
-export interface LiveResponse {
-  slug: string;
-  tick: number;
-  timestamp: string;
-  drivers: Record<string, number>;
-  outputs: OutputSchema[];
-}
+// ---------- Functional surface (unchanged shape) ----------
+//
+// We wrap rather than re-export `trpc.sim.*.query/mutate` directly so the
+// callers continue to read like plain async functions — and so that, if we
+// later need to swap clients again (e.g. add suspense, change transport),
+// the seam is here.
 
 export async function fetchSims(): Promise<SimMetadata[]> {
-  const res = await fetch(`${FETCH_BASE}/sims`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`fetchSims failed: ${res.status} ${res.statusText}`);
-  return res.json() as Promise<SimMetadata[]>;
+  return rethrow(() => trpc.sim.list.query(), "fetchSims");
 }
 
 export async function fetchSim(slug: string): Promise<SimMetadata> {
-  const res = await fetch(`${FETCH_BASE}/sims/${slug}`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`fetchSim failed: ${res.status} ${res.statusText}`);
-  return res.json() as Promise<SimMetadata>;
+  return rethrow(() => trpc.sim.get.query({ slug }), `fetchSim(${slug})`);
 }
 
 export async function runSim(
   slug: string,
   drivers: Record<string, number>,
 ): Promise<SimRunResponse> {
-  const res = await fetch(`${FETCH_BASE}/sims/${slug}/run`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ drivers }),
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`runSim failed: ${res.status} ${res.statusText}`);
-  return res.json() as Promise<SimRunResponse>;
+  return rethrow(() => trpc.sim.run.mutate({ slug, drivers }), `runSim(${slug})`);
 }
 
 export async function fetchSensitivity(slug: string): Promise<SensitivityResponse> {
-  const res = await fetch(`${FETCH_BASE}/sims/${slug}/sensitivity`, {
-    cache: "no-store",
-  });
-  if (!res.ok)
-    throw new Error(`fetchSensitivity failed: ${res.status} ${res.statusText}`);
-  return res.json() as Promise<SensitivityResponse>;
+  return rethrow(
+    () => trpc.sim.sensitivity.query({ slug }),
+    `fetchSensitivity(${slug})`,
+  );
 }
 
 export async function fetchLive(slug: string): Promise<LiveResponse> {
-  const res = await fetch(`${FETCH_BASE}/sims/${slug}/live`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`fetchLive failed: ${res.status} ${res.statusText}`);
-  return res.json() as Promise<LiveResponse>;
+  return rethrow(() => trpc.sim.live.query({ slug }), `fetchLive(${slug})`);
+}
+
+// ---------- Error normalization ----------
+//
+// tRPC throws TRPCClientError, whose `message` is the upstream error body.
+// We prepend the calling function name so the existing error-handling UI
+// (which prints `err.message`) keeps its previous level of detail.
+
+async function rethrow<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof TRPCClientError) {
+      throw new Error(`${label} failed: ${e.message}`);
+    }
+    throw e;
+  }
 }
