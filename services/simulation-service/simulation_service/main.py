@@ -64,7 +64,11 @@ def _metadata(sim_cls: type[SimulationBase]) -> SimMetadata:
                 history=[HistoryPointSchema(date=h.date, value=h.value) for h in p.history],
                 sources=[
                     SourceSchema(
-                        title=s.title, url=s.url, excerpt=s.excerpt, as_of=s.as_of
+                        title=s.title,
+                        url=s.url,
+                        excerpt=s.excerpt,
+                        as_of=s.as_of,
+                        kind=s.kind,
                     )
                     for s in p.sources
                 ],

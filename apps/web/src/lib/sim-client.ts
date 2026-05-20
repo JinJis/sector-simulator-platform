@@ -38,6 +38,8 @@ export interface SourceSchema {
   url: string;
   excerpt: string;
   as_of: string;
+  /** paper | vendor_doc | analyst | benchmark | gov_report | dataset | news | filing | "" */
+  kind: string;
 }
 
 export interface HistoryPointSchema {

@@ -36,6 +36,11 @@ class Source:
     url: str = ""
     excerpt: str = ""  # short justification snippet
     as_of: str = ""  # ISO date or quarter, e.g. "2024-Q4"
+    # One of: paper, vendor_doc, analyst, benchmark, gov_report, dataset,
+    # news, filing. Empty = unclassified. Drives kind-badges + ingest grouping
+    # in the Live dashboard so users can see *what kind* of evidence backs
+    # each driver, not just that "a source exists".
+    kind: str = ""
 
 
 @dataclass(frozen=True)

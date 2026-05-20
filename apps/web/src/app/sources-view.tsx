@@ -24,6 +24,7 @@ import {
   formatDriverValue,
   GROUP_ORDER,
   prettyName,
+  sourceKindMeta,
 } from "./shared";
 
 interface Props {
@@ -310,6 +311,7 @@ function ProvenanceCard({
 }
 
 function SourceItem({ source }: { source: SourceSchema }) {
+  const meta = sourceKindMeta(source.kind);
   const host = (() => {
     try {
       return new URL(source.url).host.replace(/^www\./, "");
@@ -326,7 +328,13 @@ function SourceItem({ source }: { source: SourceSchema }) {
           rel="noopener noreferrer"
           className="group flex-1"
         >
-          <div className="flex items-baseline gap-2">
+          <div className="flex flex-wrap items-baseline gap-2">
+            <span
+              className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${meta.pillClass}`}
+              title={meta.description}
+            >
+              {meta.label}
+            </span>
             <span className="text-xs font-semibold text-neutral-100 group-hover:text-cyan-300">
               {source.title}
             </span>

@@ -26,6 +26,7 @@ class SourceSchema(BaseModel):
     url: str = ""
     excerpt: str = ""
     as_of: str = ""
+    kind: str = ""
 
 
 class HistoryPointSchema(BaseModel):
