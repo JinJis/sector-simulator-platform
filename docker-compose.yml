@@ -67,6 +67,14 @@ services:
       # The fake-client codepath is for tests only.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       PROMPTS_DIR: /repo/prompts
+      # Persistence: when set, workflow records survive restarts.
+      # Without it the service falls back to an in-memory dict.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
     networks:
       - internal
 

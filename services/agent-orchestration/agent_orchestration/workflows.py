@@ -1,4 +1,4 @@
-"""Workflow protocol + in-memory runner + first concrete workflow.
+"""Workflow protocol + runner + first concrete workflow.
 
 The protocol mirrors Temporal's shape so the runner can be swapped for
 a Temporal-backed implementation later without touching consumers:
@@ -7,8 +7,11 @@ a Temporal-backed implementation later without touching consumers:
 - The runner assigns an `id`, kicks the coroutine off, and tracks status.
 - Status transitions: pending → running → (succeeded | failed | cancelled).
 
+State persistence goes through a `WorkflowRepository` (see repo.py).
+The default in-memory repo preserves the previous behavior; pass a
+`PostgresWorkflowRepository` to survive process restarts.
+
 What this runner deliberately does NOT do:
-- Persistence (records live in memory; restart loses them).
 - Retries, timeouts, signals — that's all Temporal's job.
 - Concurrency limits — every workflow gets its own task. Phase 3 problem.
 """
@@ -26,6 +29,7 @@ from agent_tools import CostMeter, LLMClient
 from pydantic import BaseModel
 
 from agent_orchestration.prompts import load_prompt
+from agent_orchestration.repo import InMemoryWorkflowRepository, WorkflowRepository
 from agent_orchestration.schemas import (
     Decomposition,
     DecompositionRequest,
@@ -52,17 +56,30 @@ class Workflow(Protocol, Generic[InputT, OutputT]):
 
 
 class WorkflowRunner:
-    """In-memory scheduler. One instance per process.
+    """Scheduler with pluggable persistence.
 
     `start()` returns the assigned id immediately; the workflow body
-    executes in a background task. The HTTP layer polls via `get()`.
+    executes in a background task and writes state changes through the
+    `WorkflowRepository`. The HTTP layer polls via `get()` and `list()`,
+    which read from the repo (so a workflow created in a previous
+    process is still visible).
+
+    The runner still keeps per-workflow `CostMeter`s in memory — they
+    don't outlive the process, which is fine because they're only used
+    for the final cost roll-up at workflow completion. Restart safety
+    for in-flight workflows is handled by `mark_dangling_as_failed()`
+    on startup (see main.py).
     """
 
-    def __init__(self) -> None:
-        self._records: dict[str, WorkflowRecord] = {}
+    def __init__(self, repo: WorkflowRepository | None = None) -> None:
+        self._repo: WorkflowRepository = repo or InMemoryWorkflowRepository()
         self._meters: dict[str, CostMeter] = {}
         self._tasks: dict[str, asyncio.Task[Any]] = {}
         self._lock = asyncio.Lock()
+
+    @property
+    def repo(self) -> WorkflowRepository:
+        return self._repo
 
     # ---- mutation ----
 
@@ -89,8 +106,8 @@ class WorkflowRunner:
             input=request.model_dump(),
         )
         async with self._lock:
-            self._records[wid] = record
             self._meters[wid] = meter
+        await self._repo.create(record)
 
         task = asyncio.create_task(self._execute(wid, run, meter))
         self._tasks[wid] = task
@@ -116,11 +133,14 @@ class WorkflowRunner:
             await self._finish(wid, status=WorkflowStatus.failed, error=str(e))
 
     async def _transition(self, wid: str, status: WorkflowStatus) -> None:
-        async with self._lock:
-            rec = self._records[wid]
-            self._records[wid] = rec.model_copy(
-                update={"status": status, "updated_at": datetime.now(UTC)}
-            )
+        rec = await self._repo.get(wid)
+        if rec is None:
+            log.warning("workflow %s vanished mid-transition", wid)
+            return
+        updated = rec.model_copy(
+            update={"status": status, "updated_at": datetime.now(UTC)}
+        )
+        await self._repo.update(updated)
 
     async def _finish(
         self,
@@ -130,18 +150,22 @@ class WorkflowRunner:
         output: BaseModel | None = None,
         error: str | None = None,
     ) -> None:
-        async with self._lock:
-            rec = self._records[wid]
-            meter = self._meters[wid]
-            self._records[wid] = rec.model_copy(
-                update={
-                    "status": status,
-                    "updated_at": datetime.now(UTC),
-                    "output": output.model_dump() if output is not None else None,
-                    "error": error,
-                    "cost_usd": round(meter.total_usd, 6),
-                }
-            )
+        rec = await self._repo.get(wid)
+        if rec is None:
+            log.warning("workflow %s vanished before finish", wid)
+            return
+        meter = self._meters.get(wid)
+        cost = round(meter.total_usd, 6) if meter else rec.cost_usd
+        updated = rec.model_copy(
+            update={
+                "status": status,
+                "updated_at": datetime.now(UTC),
+                "output": output.model_dump() if output is not None else None,
+                "error": error,
+                "cost_usd": cost,
+            }
+        )
+        await self._repo.update(updated)
 
     async def cancel(self, wid: str) -> WorkflowRecord | None:
         task = self._tasks.get(wid)
@@ -157,16 +181,12 @@ class WorkflowRunner:
     # ---- read ----
 
     async def get(self, wid: str) -> WorkflowRecord | None:
-        async with self._lock:
-            return self._records.get(wid)
+        return await self._repo.get(wid)
 
     async def list(self, *, limit: int = 50, kind: str | None = None) -> list[WorkflowRecord]:
-        async with self._lock:
-            records = list(self._records.values())
-        records.sort(key=lambda r: r.created_at, reverse=True)
-        if kind is not None:
-            records = [r for r in records if r.kind == kind]
-        return records[:limit]
+        # Repo handles ordering + filtering uniformly across in-memory
+        # and Postgres backends.
+        return await self._repo.list(limit=limit, kind=kind)
 
     def cost_meter(self, wid: str) -> CostMeter | None:
         return self._meters.get(wid)

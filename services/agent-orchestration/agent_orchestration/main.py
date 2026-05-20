@@ -10,6 +10,11 @@ Endpoint surface (Phase 2 starter):
 The runner + LLMClient are global singletons configured at startup so
 tests can override them via `app.state.runner` / `app.state.llm` — no
 DI framework needed for the surface area we have today.
+
+Persistence: when `DATABASE_URL` is configured, the runner uses a
+Postgres-backed repo; otherwise it falls back to an in-memory one.
+Both expose the same `WorkflowRepository` protocol so consumers don't
+care which is in play.
 """
 
 from __future__ import annotations
@@ -17,11 +22,17 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import timedelta
 
 from agent_tools import LLMClient
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
+from agent_orchestration.repo import (
+    InMemoryWorkflowRepository,
+    build_repository,
+    utc_now,
+)
 from agent_orchestration.schemas import (
     DecompositionRequest,
     WorkflowRecord,
@@ -32,16 +43,43 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 log = logging.getLogger("agent_orchestration")
 
 
+# Workflows still in `pending` / `running` after this much wall-clock
+# time when the process boots are assumed to have been driven by a
+# previous (now-dead) worker. We mark them failed so the list view
+# doesn't show them as perpetually "running".
+_DANGLING_GRACE = timedelta(minutes=5)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Allow tests / harnesses to pre-set these on app.state before lifespan
     # runs. In normal boot they're built from environment.
     if not hasattr(app.state, "runner"):
-        app.state.runner = WorkflowRunner()
+        database_url = os.environ.get("DATABASE_URL")
+        repo = await build_repository(database_url)
+        if isinstance(repo, InMemoryWorkflowRepository):
+            log.info("agent-orchestration: in-memory repo (no DATABASE_URL)")
+        else:
+            log.info("agent-orchestration: postgres repo via DATABASE_URL")
+            # Sweep workflows the previous process couldn't finish.
+            swept = await repo.mark_dangling_as_failed(
+                statuses=["pending", "running"],
+                stale_before=utc_now() - _DANGLING_GRACE,
+                reason="process crashed or was restarted before completion",
+            )
+            if swept:
+                log.info("agent-orchestration: marked %d dangling workflows as failed", swept)
+        app.state.repo = repo
+        app.state.runner = WorkflowRunner(repo=repo)
     if not hasattr(app.state, "llm"):
         app.state.llm = LLMClient()
     log.info("agent-orchestration ready (workflows: decomposition)")
-    yield
+    try:
+        yield
+    finally:
+        repo = getattr(app.state, "repo", None)
+        if repo is not None:
+            await repo.close()
 
 
 def create_app() -> FastAPI:

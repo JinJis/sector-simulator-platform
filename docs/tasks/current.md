@@ -364,6 +364,56 @@ schema back for review.
   directly + typing the `onError` callback. Sector-service typecheck
   is now clean.
 
+### Persistence (2026-05-20)
+
+Workflow records now survive process restarts.
+
+- **`packages/db`**: new `AgentWorkflow` Prisma model + migration
+  (`20260520200000_agent_workflows`). Two indices: `(kind, created_at)`
+  for the list view and `(status, updated_at)` for the dangling-sweep.
+- **`services/agent-orchestration`**:
+  - New `repo.py` exposes a `WorkflowRepository` protocol with two
+    implementations: `InMemoryWorkflowRepository` (default, dict-backed,
+    used in tests) and `PostgresWorkflowRepository` (asyncpg, raw SQL).
+    Schema duplicated as raw SQL strings on the Python side; the Prisma
+    model is authoritative for migrations.
+  - `WorkflowRunner` refactored to use the repo for all state — every
+    transition writes through. CostMeter instances still live in-memory
+    (cheap; only used for the final cost roll-up).
+  - `main.py` lifespan: `build_repository(DATABASE_URL)` picks the
+    implementation. On boot with Postgres, sweeps `pending` / `running`
+    workflows whose `updated_at` is older than 5 minutes — flips them
+    to `failed: process crashed or was restarted before completion`.
+    No more perpetually-running ghosts after a restart.
+- **Tests**: 8 new repo-layer cases (6 in-memory, 2 Postgres-conditional
+  via `AGENT_ORCH_TEST_DATABASE_URL` env). All 24 existing tests still
+  pass — the in-memory repo preserves the pre-refactor behavior.
+- **Compose**: agent-orchestration gains `DATABASE_URL` +
+  `depends_on: {postgres: healthy, db-migrate: completed_successfully}`.
+  Dev setups without DB still work via the in-memory fallback.
+
+### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
+
+Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14
+(Equities & Market Factors) with milestones in §9 → Phase 2.5:
+
+- **IA redesign**: current single-page-with-tabs is shallow. Move to a
+  3-level hierarchy (top-nav → sector hub → child pages). Add
+  breadcrumbs, sub-nav, global cmd+K search, deep-linkable
+  scenarios / reports / compare URLs. Implementation is 7 ordered
+  slices, each independent.
+- **Equities & Market Factors** (new domain): per-sector key player
+  curation (`SectorEquity`), daily quotes (`EquityQuote`), fundamentals
+  (`EquityFinancial`), and market factors (`MarketFactor` +
+  `MarketFactorObservation`). New `data-pipeline-service` with
+  yfinance / AlphaVantage / FRED / EDGAR / DART adapters.
+  `EquityExposureModel` SDK addition projects scenario drivers to
+  company-level revenue. Backtest harness compares predictions to
+  reported financials weekly. 7 milestones, ~7–9 weeks total.
+
+Both are now on the Phase 2.5 ladder. Implementation starts with the
+first IA slice (breadcrumb + sub-nav component).
+
 ### Out of scope for now
 
 - Monte Carlo / probabilistic drivers (`SimulationBase.monte_carlo` still

@@ -43,6 +43,33 @@ model Sector {
   @@map("sectors")
 }
 
+model AgentWorkflow {
+  // Mirrors agent-orchestration's WorkflowRecord. Written by the
+  // Python service via direct asyncpg (no Prisma client on the Python
+  // side — see services/agent-orchestration/agent_orchestration/repo.py).
+  // The schema is duplicated there as raw SQL; this Prisma block is
+  // the authoritative source for migrations.
+
+  id           String   @id // wf_<hex16>
+  kind         String
+  // pending | running | succeeded | failed | cancelled
+  status       String
+  // Original input the workflow was started with.
+  input        Json
+  // Pydantic-validated agent output, populated on success.
+  output       Json?
+  // Stack-trace-ish error text on failure; null otherwise.
+  error        String?
+  // Roll-up cost in USD across every LLM call this workflow made.
+  cost_usd     Float    @default(0)
+  created_at   DateTime @default(now()) @map("created_at")
+  updated_at   DateTime @updatedAt        @map("updated_at")
+
+  @@index([kind, created_at])
+  @@index([status, updated_at])
+  @@map("agent_workflows")
+}
+
 model Scenario {
   id                String   @id @default(cuid())
   sector_slug       String   @map("sector_slug")

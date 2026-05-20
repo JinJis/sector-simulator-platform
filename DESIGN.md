@@ -24,7 +24,8 @@
 11. [리스크 및 대응](#11-리스크-및-대응)
 12. [성공 지표](#12-성공-지표-metrics)
 13. [Open Questions](#13-open-questions)
-14. [Appendices](#appendices)
+14. [Equities & Market Factors (new domain)](#14-equities--market-factors-new-domain)
+15. [Appendices](#appendices)
 ---
  
 ## 1. 비전 (Vision)
@@ -521,6 +522,104 @@ LLM 비용이 가장 큰 cost driver. 다음 전략:
  
 - **MVP**: 데스크톱 우선 (전문 사용자), 모바일은 read-only
 - **Phase 3+**: 모바일에서 리포트 read + Driver 슬라이더 일부 지원
+
+### 8.5 정보 구조 (IA) — Phase 2.5 재설계
+
+**문제 (2026-05-20 시점)**. Phase 1/2를 통해 기능 면적은 크게 늘었으나
+사용자 앱은 여전히 단일 페이지에 탭으로 모든 것이 쌓여 있다 (`/?sector=...`
++ 4-tab workspace). 다음 문제가 누적됨:
+
+- 컨텍스트 손실: 슬라이더를 만지다가 시나리오 비교를 열면 다시 돌아오기 어렵다.
+- 발견성 부족: 시나리오, 리포트, 그래프, 출처가 모두 같은 깊이에 있어 우선순위가 안 보임.
+- 브레드크럼/뒤로가기 없음. 페이지가 한두 개라 URL이 의미를 안 가짐.
+- 글로벌 검색 부재. cmd+K가 8.1 원칙 6에 명시되어 있지만 구현되지 않음.
+- 신규 도메인(섹터별 종목, 시장 팩터 — §14 참조)이 들어올 자리가 없음.
+
+**원칙**. (8.1을 그대로 따르되 IA-specific 원칙 추가)
+
+1. **URL is the state.** 같은 URL은 같은 화면을 만든다. 슬라이더 값 + 활성
+   탭 + 비교 대상 — 전부 URL에 인코딩한다. 새로고침/공유가 자연스럽게 동작.
+2. **Three levels of depth.** Top-nav → category → detail. 모든 의미 있는
+   객체(섹터, 시나리오, 리포트, agent run)가 자기 detail 페이지를 가짐.
+3. **Breadcrumbs everywhere.** detail 페이지는 ≥1 단계의 상위 컨텍스트를
+   클릭으로 되돌아갈 수 있는 breadcrumb로 노출.
+4. **Hub pages, not catch-all.** 한 객체의 모든 면을 한 페이지에 쑤셔 넣지
+   않는다. Sector hub는 overview + 자식 탭들(live / manual / graph /
+   sources / equities / scenarios)을 가진 *index*다.
+5. **One thing per page, many pages per session.** 깊이 있는 작업은 여러
+   페이지를 keyboard로 옮겨 다니며 한다. 모달 남발하지 않음.
+
+**제안 사이트맵 (User app, port 3000)**.
+
+```
+/                                    # Discovery — top-N sectors + global search
+/sectors                             # 전체 섹터 그리드 (현재 / 페이지)
+/sectors/[slug]                      # Sector hub — overview + child links
+/sectors/[slug]/live                 # Live KPI 대시보드 (현재 Live 탭)
+/sectors/[slug]/manual               # Manual workspace (슬라이더 + 차트)
+/sectors/[slug]/graph                # React Flow 인과 그래프 (현재 Graph 탭)
+/sectors/[slug]/sources              # Provenance (현재 Sources 탭)
+/sectors/[slug]/equities             # NEW — key players, 가격, 펀더멘털 (§14)
+/sectors/[slug]/scenarios            # 이 섹터의 시나리오 리스트
+/sectors/[slug]/scenarios/[id]       # 시나리오 detail (현재는 ?scenario= 파라미터)
+/sectors/[slug]/reports              # 이 섹터에서 만든 리포트 인덱스
+/scenarios                           # 전체 시나리오 인덱스 (cross-sector)
+/scenarios/[id]                      # 단일 시나리오 detail (deep link)
+/compare/[scenarioA]/[scenarioB]     # A/B 비교 (현재 /compare?a=&b=, 더 깔끔)
+/reports                             # 리포트 인덱스
+/reports/[id]                        # 단일 리포트
+/search?q=...                        # 글로벌 search 결과 (semantic, pgvector)
+/cmd                                 # cmd+K 오버레이용 (실제 페이지는 없고 트리거)
+```
+
+**제안 사이트맵 (Admin app, port 3100)**.
+
+```
+/                                    # Admin home — 등록된 섹터 그리드
+/sectors                             # 같은 그리드, /와 alias
+/sectors/[slug]                      # 섹터 상세 (현재 동일)
+/sectors/[slug]/drivers              # NEW — driver 편집 (수동 보정용)
+/sectors/[slug]/provenance           # NEW — source 검수/추가
+/sectors/[slug]/equities             # NEW — key player 큐레이션
+/sectors/proposed                    # agent가 제안한 미승인 섹터 (Phase 2 후반)
+/scenarios                           # 모든 사용자의 시나리오 인덱스
+/agent-runs                          # (기존)
+/agent-runs/new                      # (기존)
+/agent-runs/[id]                     # (기존)
+/ingest                              # NEW — data-pipeline 운영 (스케줄, 헬스)
+/observability                       # NEW — LangSmith / Helicone 임베드
+/settings                            # NEW — env vars 확인, 권한 (Phase 3)
+```
+
+**공통 UI 패턴**.
+
+- **Top bar (sticky)**: 좌측 로고, 중앙 글로벌 검색 (cmd+K), 우측 사용자 메뉴.
+- **Sub-nav (sector-scoped)**: sector hub 안에 들어가면 sector-level 탭이
+  sub-nav로 들어옴 (overview / live / manual / graph / sources / equities /
+  scenarios / reports). 현재 4-탭 strip은 이걸로 대체.
+- **Breadcrumbs**: 모든 detail 페이지 상단. `Sectors > Memory Semi > Scenarios > AI super-cycle`
+- **Empty states**: 데이터 없을 때 "왜 없는지" + "어떻게 채우는지" 안내. 현재 admin의 stub 버튼처럼 노출.
+- **Page-level cost meter**: agent-run / report-generation처럼 비용을 유발하는 페이지는 우측 상단에 "이 페이지가 소비한 $".
+
+**구현 단계 (Phase 2.5)**. 한 번에 다 갈아엎지 않고 점진적으로:
+
+1. **Breadcrumb + sub-nav 컴포넌트**를 `packages/ui` (또는 inline at first)
+   에 만든다.
+2. **Sector hub 분리**: `/sectors/[slug]` → overview + 4개 자식 라우트
+   (`live`, `manual`, `graph`, `sources`). 현재 탭 컴포넌트는 자식 라우트로
+   리프트.
+3. **Scenarios index**: `/scenarios` + `/scenarios/[id]`. ScenarioBar는
+   이 인덱스로 deep-link.
+4. **Compare URL 정규화**: `/compare/[a]/[b]` (현재 query param 유지하되
+   리디렉트).
+5. **Global search**: cmd+K 오버레이 + 결과 페이지. 일단 fuzzy 클라이언트
+   서치부터, pgvector는 Phase 3.
+6. **Reports index**: `/reports` + `/reports/[id]` — 현재 모달 형태의
+   리포트 패널을 페이지로 승격.
+7. **Equities tab**: §14 새 도메인에서 다시 다룸.
+
+각 단계가 독립적인 슬라이스. 우선순위는 1 → 2 → 5(검색) → 3 → 4 → 6 → 7.
+
 ---
  
 ## 9. 로드맵 (Phased Delivery)
@@ -560,6 +659,30 @@ LLM 비용이 가장 큰 cost driver. 다음 전략:
 - [ ] Deployment 자동화 (코드 → 컨테이너 → 서비스 등록)
 - [ ] Backtesting 자동화
 - [ ] **Beta launch**: 50명 + 첫 유료 사용자
+### Phase 2.5 — Depth & Equities Coverage (Week 23-28)
+
+**목표**: Phase 2의 agent foundation 위에 (1) IA 깊이 + (2) 섹터별 종목/시장
+팩터 도메인을 얹어 "분석가가 한 페이지에서 모든 걸 보는" 도구에서 "여러
+페이지에 걸쳐 깊이 탐색하는" 도구로 전환. Phase 3 (자가 개선)로 가기 전의
+사용성 정비 단계.
+
+- [ ] **IA 재구성** (8.5 참고). 점진적으로 7단계 — breadcrumb/sub-nav →
+      sector hub 분리 → scenarios index → compare URL 정규화 → cmd+K
+      글로벌 검색 → reports index → equities tab.
+- [ ] **Equities domain** (§14): SectorEquity / EquityQuote /
+      EquityFinancial / MarketFactor 스키마, `services/equities-pipeline`
+      서비스 (또는 기존 `data-pipeline-service`로 통합), Yahoo Finance /
+      AlphaVantage 어댑터, 어드민에서 키 플레이어 큐레이션 UI, 사용자
+      앱의 `/sectors/[slug]/equities` 탭.
+- [ ] **Driver ↔ Company 연결**: 각 회사의 매출/EBITDA를 섹터 드라이버
+      함수로 표현 (`revenue_usd ≈ f(market_size, share, mix, price)`).
+      시나리오를 회사 단위 P&L로 투영하는 기본 모델.
+- [ ] **Backtest v0**: 과거 시나리오 예측 vs 실제 주가/실적 갭. 매주
+      cron으로 발사, 결과를 sector hub overview에 작은 카드로 노출.
+- [ ] **Sector hub overview 페이지**: 한 화면에 "지금 이 섹터가 어디로
+      가고 있는가"가 보이도록. 라이브 KPI 3개 + 키 플레이어 최근 가격
+      변동 + 최근 시나리오 3개 + recent reports.
+
 ### Phase 3 — Self-Improving Platform (Week 25-40)
  
 **목표**: 모델 품질 자동 개선, 유료 사용자 100+
@@ -688,6 +811,273 @@ LLM 비용이 가장 큰 cost driver. 다음 전략:
 4. **데이터 비용**: Polygon/Bloomberg 등 상업 데이터 라이선스 예산?
 5. **첫 5개 섹터 선정**: 어떤 섹터가 가장 demo-able하고 thesis-worthy한가?
 6. **호스팅 위치**: 한국 사용자 비중과 데이터 sovereignty 고려해 region 결정 필요.
+---
+ 
+## 14. Equities & Market Factors (new domain)
+
+> Phase 2.5 신규 도메인. 섹터(시뮬레이션 단위)와 글로벌 상장 종목(투자
+> 의사결정 단위) 사이에 다리를 놓는다. 사용자 요청 (2026-05-20):
+>
+> > 섹터별 전세계 주식시장에 상장되어 있는 키 플레이어 종목들을 따로 또 다
+> > 긁어보아서 그 가격과 실적, 마켓에서 영향을 줄 수 있는 여러 팩터들을
+> > 나열하고 이를 분석하는 구조
+
+### 14.1 Why this is a separate domain
+
+기존 `SimulationBase`는 sector의 **외부 추상화** (드라이버, 산출물,
+인과 그래프)를 담는다. 종목/시장 팩터는 그 시뮬레이션을 **금융 시장
+관찰값**과 연결하는 별도의 축:
+
+- 시뮬레이션 출력은 "메모리 사이클이 다음 3년 어떻게 갈 것인가"
+- 종목 데이터는 "SK Hynix가 거기서 얼마를 벌고, 그 주가가 어떻게
+  반응했는가"
+
+두 축을 분리해 두면 (a) 종목 데이터 ingestion 실패가 시뮬레이션을
+망가뜨리지 않고, (b) 시뮬레이션 모델이 바뀌어도 과거 종목/실적
+관찰값이 안전하게 backtest 기준으로 남는다.
+
+### 14.2 Domain model
+
+```prisma
+// packages/db/prisma/schema.prisma 에 추가 예정
+
+model SectorEquity {
+  id            String   @id @default(cuid())
+  sector_slug   String   @map("sector_slug")
+  sector        Sector   @relation(fields: [sector_slug], references: [slug])
+  ticker        String                                       // "005930" / "MU" / "BE"
+  exchange      String                                       // "KRX" / "NASDAQ" / "NYSE" / "TSE" / "HKEX" / "LSE" / ...
+  iso_country   String                                       // "KR" / "US" / ...
+  company_name  String
+  // 섹터 매출 비중 추정 (자가 매출 중 이 섹터에 노출된 비율).
+  // 큐레이션 시작점 — agent가 나중에 자동 추정 가능.
+  sector_exposure_pct  Float?   @map("sector_exposure_pct")
+  // 섹터 내 가중치 (포트폴리오 표시 / 합산용)
+  weight_pct    Float?   @map("weight_pct")
+  rationale     String?            // "HBM 시장의 50%+ 점유" 같은 한 줄 메모
+  is_active     Boolean  @default(true) @map("is_active")
+  created_at    DateTime @default(now()) @map("created_at")
+  updated_at    DateTime @updatedAt        @map("updated_at")
+
+  quotes        EquityQuote[]
+  financials    EquityFinancial[]
+
+  @@unique([sector_slug, ticker, exchange])
+  @@index([sector_slug])
+  @@map("sector_equities")
+}
+
+model EquityQuote {
+  id              String   @id @default(cuid())
+  sector_equity_id String  @map("sector_equity_id")
+  sector_equity    SectorEquity @relation(fields: [sector_equity_id], references: [id], onDelete: Cascade)
+  as_of           DateTime
+  close_price     Float    @map("close_price")
+  currency        String                                         // "KRW" / "USD" — 원본 거래소 통화
+  close_price_usd Float?   @map("close_price_usd")               // 정규화 (FX 적용)
+  volume          Float?
+  market_cap_usd  Float?   @map("market_cap_usd")
+  pe_ratio        Float?   @map("pe_ratio")
+  ev_ebitda       Float?   @map("ev_ebitda")
+  source          String                                         // "yahoo" / "alphavantage" / "manual"
+  ingested_at     DateTime @default(now()) @map("ingested_at")
+
+  @@index([sector_equity_id, as_of])
+  @@map("equity_quotes")
+}
+
+model EquityFinancial {
+  id               String   @id @default(cuid())
+  sector_equity_id String   @map("sector_equity_id")
+  sector_equity    SectorEquity @relation(fields: [sector_equity_id], references: [id], onDelete: Cascade)
+  fiscal_period    String   @map("fiscal_period")   // "FY2024" / "Q3-2025"
+  period_end       DateTime @map("period_end")
+  revenue_usd      Float?   @map("revenue_usd")
+  ebitda_usd       Float?   @map("ebitda_usd")
+  ebit_usd         Float?   @map("ebit_usd")
+  net_income_usd   Float?   @map("net_income_usd")
+  capex_usd        Float?   @map("capex_usd")
+  free_cash_flow_usd Float? @map("free_cash_flow_usd")
+  segment_revenue_usd Json? @map("segment_revenue_usd")  // {"HBM": 12e9, "DDR5": 30e9}
+  source           String                                  // "edgar" / "dart" / "investor_pdf" / "manual"
+  ingested_at      DateTime @default(now()) @map("ingested_at")
+
+  @@unique([sector_equity_id, fiscal_period])
+  @@map("equity_financials")
+}
+
+model MarketFactor {
+  id            String   @id @default(cuid())
+  sector_slug   String   @map("sector_slug")
+  sector        Sector   @relation(fields: [sector_slug], references: [slug])
+  name          String                          // "DRAM 16Gb contract price" / "Henry Hub NG price" / "USD/KRW"
+  // driver  : 시뮬레이션 드라이버와 1:1 매핑 (이미 SimulationBase에 있음)
+  // macro   : 거시 변수 (금리, 환율, 유가)
+  // policy  : 규제/정책 이벤트
+  // event   : earnings / M&A / 공급망 사건
+  category      String                          // driver | macro | policy | event
+  unit          String?
+  // 어느 driver_name과 연결되는가 — driver 카테고리에만 채움
+  linked_driver String?  @map("linked_driver")
+  description   String?
+  data_source   String?  @map("data_source")
+  created_at    DateTime @default(now()) @map("created_at")
+  updated_at    DateTime @updatedAt @map("updated_at")
+
+  observations  MarketFactorObservation[]
+
+  @@unique([sector_slug, name])
+  @@index([sector_slug])
+  @@map("market_factors")
+}
+
+model MarketFactorObservation {
+  id                String   @id @default(cuid())
+  market_factor_id  String   @map("market_factor_id")
+  market_factor     MarketFactor @relation(fields: [market_factor_id], references: [id], onDelete: Cascade)
+  as_of             DateTime
+  value             Float
+  source            String
+  ingested_at       DateTime @default(now()) @map("ingested_at")
+
+  @@index([market_factor_id, as_of])
+  @@map("market_factor_observations")
+}
+```
+
+### 14.3 Ingestion layer
+
+새 서비스 `services/data-pipeline-service` (Python, FastAPI + APScheduler):
+
+| Source | Coverage | Cadence | Notes |
+|---|---|---|---|
+| Yahoo Finance (yfinance) | 전세계 주요 거래소 시세 | 일 1회 EOD | 무료, rate limit 완만 |
+| Alpha Vantage | US 시세 + 펀더멘털 | 일 1회 | 무료 키, 5 req/min |
+| SEC EDGAR | US 10-K/10-Q/8-K | 발생 시 | XBRL 파싱 |
+| DART (전자공시) | KR 공시 | 발생 시 | OpenDartReader |
+| EDINET | JP 공시 | 발생 시 | |
+| FRED | 거시 (금리, 환율, 인플레이션) | 일 1회 | 무료, 정확 |
+| TradingEconomics | 상품 가격 (NG, oil, metals) | 일 1회 | 일부 paid tier |
+| Sector-specific | DRAMeXchange, IEA, ICAO 등 | 주 1회 | 도메인별 어댑터 |
+
+각 어댑터는 `DataSource` 추상화 (CLAUDE.md에 이미 명시됨)를 구현:
+
+```python
+class DataSource(Protocol):
+    name: str
+    freshness_sla: timedelta            # 이보다 오래되면 stale 표시
+    async def fetch(self, since: datetime) -> list[Observation]: ...
+    async def health_check(self) -> HealthStatus: ...
+```
+
+스케줄러는 cron으로 발사 (`services/data-pipeline-service/schedules.py`).
+실패는 admin observability 페이지로 surface (Phase 2.5 IA의 `/ingest`).
+
+### 14.4 Analysis structure (sector ↔ equity bridge)
+
+핵심 통찰: **각 회사는 "exposure profile"을 갖는다** — 회사의 매출/마진이
+어떤 드라이버에 얼마나 노출되는가.
+
+```python
+# packages/sdk-python/platform_sdk/equity.py (제안)
+
+@dataclass(frozen=True)
+class DriverExposure:
+    driver_name: str        # SimulationBase의 드라이버
+    sensitivity: float      # ∂revenue / ∂driver 의 정규화된 elasticity
+    rationale: str          # "HBM 시장에서 SK Hynix는 ~50% 점유"
+
+@dataclass(frozen=True)
+class EquityExposureModel:
+    """A simple linear projection from sector drivers to one company's P&L.
+
+    revenue_usd(t) = base_revenue_usd
+                   + Σ_d  exposures[d].sensitivity × (driver(d, t) − driver_baseline(d))
+    """
+    sector_equity_id: str
+    base_revenue_usd: float
+    base_period: str            # "FY2024"
+    exposures: tuple[DriverExposure, ...]
+    notes: str = ""
+```
+
+이 모델은 (a) 큐레이션 시작점은 수동 (admin이 채움), (b) 농업 후반
+slice에서는 Driver Inference Agent가 회사 IR/공시 발췌를 보고 자동
+제안하도록 확장.
+
+**Scenario projection**. 사용자가 `Decomposition` 시나리오를 만들면
+플랫폼이 자동으로 각 sector-equity의 `revenue_usd` 궤적을 계산:
+
+```
+For each scenario:
+  For each SectorEquity in sector:
+    For each driver in scenario.driver_overrides:
+      apply exposures → company revenue trajectory
+  Render: 회사별 매출 fan chart + 시나리오별 EBITDA range
+```
+
+**Backtest harness**. 매주 cron이 다음을 실행:
+
+1. 6/12/24개월 전에 만들어진 시나리오들을 재실행
+2. 그 시점 시나리오의 회사별 revenue 예측 vs 그 회사가 실제로 보고한
+   revenue
+3. Error metric (MAPE, directional accuracy) 저장
+4. 섹터별로 "예측 정확도 trend" 카드 노출
+
+backtesting 결과는 `validation-service`가 담당 (CLAUDE.md에 이미
+계획되어 있음).
+
+### 14.5 UX surface
+
+**Admin (port 3100)**:
+
+- `/sectors/[slug]/equities` — 키 플레이어 큐레이션 표:
+  ticker / exchange / company / sector_exposure_pct / weight / rationale.
+  Add / Remove / Edit. 검색은 "Add company" 모달에서 yfinance 자동
+  완성으로.
+- `/ingest` — data-pipeline 상태 + 마지막 fetch 시각 + 실패 알림.
+- `/sectors/[slug]/factors` — MarketFactor 큐레이션 (driver 매핑 포함).
+
+**User app (port 3000)**:
+
+- `/sectors/[slug]/equities` — 섹터 종목 패널:
+  - **상단**: 회사 카드 그리드. 각 카드에 ticker, 회사명, 현재가 (전일
+    대비), 시총, sector_exposure_pct.
+  - **중단**: "이 시나리오에서 각 회사 매출이 어떻게 움직이는가" —
+    사용자가 현재 보고 있는 시나리오(또는 시나리오 선택)를 회사별 매출
+    fan chart로.
+  - **하단**: 최근 실적 (마지막 4개 분기 revenue/EBITDA 트렌드),
+    각 회사 클릭 시 외부 상세 페이지 (예: 야후 파이낸스)로 link-out.
+- `/sectors/[slug]/factors` — Market Factor 라이브 차트. driver와
+  연결된 팩터는 시뮬레이션 드라이버 슬라이더 옆에 작은 sparkline으로도
+  surface.
+
+### 14.6 Phase 2.5 implementation milestones
+
+1. **Schema + migration**: SectorEquity / EquityQuote / EquityFinancial /
+   MarketFactor / MarketFactorObservation 추가. seed에 3개 등록 섹터의
+   시작 종목 5–10개 씩 수동 큐레이션. (~ 1주)
+2. **data-pipeline-service shell** + yfinance 어댑터 + FRED 거시
+   어댑터. 매일 EOD 적재. (~ 1주)
+3. **Admin equities curation UI** (`/sectors/[slug]/equities`). (~ 1주)
+4. **User app equities tab** — 회사 카드 + 현재가 + 시총 표시. (~ 1주)
+5. **EquityExposureModel** SDK 추가 + 수동 큐레이션 UI. (~ 1주)
+6. **Scenario projection**: 시나리오 → 회사별 매출 fan chart. (~ 1주)
+7. **Backtest harness** in validation-service. (~ 1–2주)
+
+전체 ~ 7–9 주. Phase 2.5의 핵심 deliverable.
+
+### 14.7 Open questions
+
+- **Data licensing**: yfinance는 비공식 스크래핑, 상업적 사용 시 risk.
+  유료 API (Polygon, IEX, FactSet) 옵션을 Phase 3 가격 plan에 옵션으로?
+- **글로벌 거래소 정규화**: KRW 매출과 USD 매출을 한 차트에 어떻게? FX
+  스냅을 매일 적재해서 USD 정규화로 가는 게 깔끔.
+- **세그먼트 데이터**: SK Hynix의 HBM 매출만 따로 뽑으려면 IR 자료 파싱
+  필요. 자동 vs 수동 큐레이션 균형이 어디인가.
+- **Sector exposure 추정**: 회사 매출의 몇 %가 한 sector에 노출되는지
+  자동 계산하기 어려움. 초기엔 수동, 나중에 LLM 보조.
+
 ---
  
 ## Appendices
