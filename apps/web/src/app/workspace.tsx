@@ -13,13 +13,14 @@ import {
   type SimMetadata,
 } from "@/lib/sim-client";
 
+import { GraphView } from "./graph-view";
 import { LiveDashboard } from "./live-dashboard";
 import { ManualPanel } from "./manual-panel";
 import { ScenarioBar } from "./scenario-bar";
 import { diffFromDefaults, isSameOverrides } from "./scenario-state";
 import { SourcesView } from "./sources-view";
 
-type TabId = "live" | "manual" | "sources";
+type TabId = "live" | "manual" | "graph" | "sources";
 
 interface TabSpec {
   id: TabId;
@@ -30,6 +31,7 @@ interface TabSpec {
 const TABS: TabSpec[] = [
   { id: "live", label: "Live", caption: "실시간 자동 데이터" },
   { id: "manual", label: "Manual", caption: "슬라이더로 직접 조정" },
+  { id: "graph", label: "Graph", caption: "드라이버 → 산출 인과 그래프" },
   { id: "sources", label: "Sources", caption: "과거 → 현재 + 출처" },
 ];
 
@@ -239,6 +241,7 @@ export function Workspace({ meta, sensitivity, initialLive, initialScenario }: P
           defaults={defaults}
         />
       )}
+      {tab === "graph" && <GraphView meta={meta} driverValues={driverValues} />}
       {tab === "sources" && <SourcesView meta={meta} />}
     </div>
   );

@@ -23,7 +23,17 @@ Conventions
 
 from __future__ import annotations
 
-from platform_sdk import Driver, HistoryPoint, Output, Provenance, SimulationBase, Source
+from platform_sdk import (
+    Driver,
+    GraphEdge,
+    GraphNode,
+    HistoryPoint,
+    Output,
+    Provenance,
+    SimGraph,
+    SimulationBase,
+    Source,
+)
 
 
 def _hist(points: list[tuple[str, float]]) -> tuple[HistoryPoint, ...]:
@@ -409,6 +419,98 @@ class SOFCSim(SimulationBase):
             note="자산 수명. 스택은 lifetime 내 여러 번 교체됨.",
         ),
     }
+
+    # Causal graph: drivers fan into sizing → degradation-adjusted yearly
+    # fuel + carbon + O&M + stack swaps → LCOE / NPV / break-even.
+    graph = SimGraph(
+        nodes=(
+            # Drivers
+            GraphNode("system_capex_usd_per_kw", "Capex $/kW", "driver", "System", "$/kW"),
+            GraphNode("system_efficiency_pct_lhv", "Efficiency", "driver", "System", "%LHV"),
+            GraphNode("system_size_mw", "Size", "driver", "System", "MW"),
+            GraphNode("capacity_factor_pct", "Capacity factor", "driver", "System", "%"),
+            GraphNode("stack_lifetime_years", "Stack lifetime", "driver", "Stack", "yr"),
+            GraphNode("stack_replacement_cost_usd_per_kw", "Stack replace $/kW", "driver", "Stack", "$/kW"),
+            GraphNode("degradation_pct_per_year", "Degradation", "driver", "Stack", "%/yr"),
+            GraphNode("natural_gas_price_usd_per_mmbtu", "NG price", "driver", "Fuel", "$/MMBtu"),
+            GraphNode("fuel_carbon_intensity_kg_co2_per_mmbtu", "Fuel CO₂", "driver", "Fuel", "kg/MMBtu"),
+            GraphNode("annual_om_pct_of_capex", "O&M / capex", "driver", "Operations", "%/yr"),
+            GraphNode("discount_rate_pct", "Discount rate", "driver", "Economics", "%"),
+            GraphNode("carbon_price_usd_per_ton_co2", "Carbon price", "driver", "Economics", "$/t"),
+            GraphNode("grid_lcoe_usd_per_mwh", "Grid LCOE", "driver", "Economics", "$/MWh"),
+            GraphNode("project_lifetime_years", "Project lifetime", "driver", "Economics", "yr"),
+
+            # Intermediates
+            GraphNode("size_kw", "Size (kW)", "intermediate", "Sizing", "kW",
+                      description="MW × 1000"),
+            GraphNode("capex_total", "Total capex", "intermediate", "Capex", "USD"),
+            GraphNode("om_annual", "Annual O&M", "intermediate", "Capex", "USD"),
+            GraphNode("effective_efficiency", "Effective efficiency / yr", "intermediate", "Trajectory", "%LHV"),
+            GraphNode("annual_mwh", "Electricity / yr", "intermediate", "Trajectory", "MWh"),
+            GraphNode("annual_fuel_mmbtu", "Fuel input / yr", "intermediate", "Trajectory", "MMBtu",
+                      description="MWh × 3.412 ÷ efficiency"),
+            GraphNode("annual_fuel_cost", "Fuel cost / yr", "intermediate", "Trajectory", "USD"),
+            GraphNode("annual_emissions", "Emissions / yr", "intermediate", "Trajectory", "t CO₂"),
+            GraphNode("annual_carbon_cost", "Carbon cost / yr", "intermediate", "Trajectory", "USD"),
+            GraphNode("stack_replacement_cost", "Stack swaps / yr", "intermediate", "Trajectory", "USD"),
+            GraphNode("sofc_yearly_cost", "SOFC cost / yr", "intermediate", "Trajectory", "USD"),
+            GraphNode("grid_yearly_cost", "Grid cost / yr", "intermediate", "Trajectory", "USD"),
+
+            # Outputs
+            GraphNode("lcoe_usd_per_mwh", "LCOE", "output", "Outputs", "$/MWh"),
+            GraphNode("system_capex_total_usd", "Capex (Y0)", "output", "Outputs", "USD"),
+            GraphNode("npv_savings_vs_grid_usd", "NPV savings", "output", "Outputs", "USD"),
+            GraphNode("break_even_year", "Break-even year", "output", "Outputs", "yr"),
+        ),
+        edges=(
+            # Sizing
+            GraphEdge("system_size_mw", "size_kw", "× 1000"),
+            GraphEdge("size_kw", "capex_total", "× $/kW"),
+            GraphEdge("system_capex_usd_per_kw", "capex_total", "×"),
+            GraphEdge("capex_total", "om_annual", "× O&M%"),
+            GraphEdge("annual_om_pct_of_capex", "om_annual", "×"),
+
+            # Trajectories
+            GraphEdge("system_efficiency_pct_lhv", "effective_efficiency", "× (1−deg)^t"),
+            GraphEdge("degradation_pct_per_year", "effective_efficiency", "deg"),
+            GraphEdge("size_kw", "annual_mwh", "× CF × 8760h"),
+            GraphEdge("capacity_factor_pct", "annual_mwh", "×"),
+            GraphEdge("annual_mwh", "annual_fuel_mmbtu", "× 3.412 ÷ η"),
+            GraphEdge("effective_efficiency", "annual_fuel_mmbtu", "÷ η"),
+            GraphEdge("annual_fuel_mmbtu", "annual_fuel_cost", "× $/MMBtu"),
+            GraphEdge("natural_gas_price_usd_per_mmbtu", "annual_fuel_cost", "×"),
+            GraphEdge("annual_fuel_mmbtu", "annual_emissions", "× kg/MMBtu ÷ 1000"),
+            GraphEdge("fuel_carbon_intensity_kg_co2_per_mmbtu", "annual_emissions", "×"),
+            GraphEdge("annual_emissions", "annual_carbon_cost", "× $/t"),
+            GraphEdge("carbon_price_usd_per_ton_co2", "annual_carbon_cost", "×"),
+            GraphEdge("size_kw", "stack_replacement_cost", "× $/kW each cycle"),
+            GraphEdge("stack_replacement_cost_usd_per_kw", "stack_replacement_cost", "×"),
+            GraphEdge("stack_lifetime_years", "stack_replacement_cost", "cadence"),
+
+            # Total SOFC cost trajectory
+            GraphEdge("capex_total", "sofc_yearly_cost", "year 0 only"),
+            GraphEdge("annual_fuel_cost", "sofc_yearly_cost", "+"),
+            GraphEdge("annual_carbon_cost", "sofc_yearly_cost", "+"),
+            GraphEdge("om_annual", "sofc_yearly_cost", "+"),
+            GraphEdge("stack_replacement_cost", "sofc_yearly_cost", "+"),
+
+            # Grid baseline
+            GraphEdge("annual_mwh", "grid_yearly_cost", "× LCOE"),
+            GraphEdge("grid_lcoe_usd_per_mwh", "grid_yearly_cost", "×"),
+
+            # Outputs
+            GraphEdge("sofc_yearly_cost", "lcoe_usd_per_mwh", "NPV ÷"),
+            GraphEdge("annual_mwh", "lcoe_usd_per_mwh", "NPV ÷"),
+            GraphEdge("discount_rate_pct", "lcoe_usd_per_mwh", "discount"),
+            GraphEdge("capex_total", "system_capex_total_usd", "="),
+            GraphEdge("sofc_yearly_cost", "npv_savings_vs_grid_usd", "Σ discount"),
+            GraphEdge("grid_yearly_cost", "npv_savings_vs_grid_usd", "Σ discount"),
+            GraphEdge("discount_rate_pct", "npv_savings_vs_grid_usd", "discount"),
+            GraphEdge("project_lifetime_years", "npv_savings_vs_grid_usd", "horizon"),
+            GraphEdge("sofc_yearly_cost", "break_even_year", "cumulative"),
+            GraphEdge("grid_yearly_cost", "break_even_year", "cumulative"),
+        ),
+    )
 
     def simulate(self, **kwargs: float) -> dict[str, Output]:
         v = self.resolve_drivers(kwargs)

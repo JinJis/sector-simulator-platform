@@ -7,6 +7,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 process.env.SIMULATION_SERVICE_URL ??= "http://sim-mock";
+// env() validates the *whole* schema at first call, so DATABASE_URL has to
+// be set or the proxy hits process.exit even though these tests don't
+// touch Prisma. Stubbing here keeps the sim suite runnable without a DB.
+process.env.DATABASE_URL ??= "postgresql://stub:stub@localhost/stub";
 
 const { prisma } = await import("@platform/db");
 const { createCallerFactory } = await import("../src/trpc/init.js");
@@ -141,5 +145,52 @@ describe("sim.sensitivity / sim.live", () => {
     await caller().sim.live({ slug: "sofc" });
     expect(seen[0]).toMatch(/\/sims\/sofc\/sensitivity$/);
     expect(seen[1]).toMatch(/\/sims\/sofc\/live$/);
+  });
+});
+
+describe("sim.graph", () => {
+  it("proxies /graph and returns nodes + edges", async () => {
+    mockFetch((url) => {
+      expect(url).toMatch(/\/sims\/space-data-center\/graph$/);
+      return jsonResponse({
+        slug: "space-data-center",
+        nodes: [
+          {
+            id: "compute_demand_pflops",
+            label: "Compute demand",
+            kind: "driver",
+            group: "Compute",
+            unit: "PFLOPS",
+            description: "",
+          },
+          {
+            id: "npv_savings_vs_ground_usd",
+            label: "NPV savings",
+            kind: "output",
+            group: "Outputs",
+            unit: "USD",
+            description: "",
+          },
+        ],
+        edges: [
+          {
+            source: "compute_demand_pflops",
+            target: "npv_savings_vs_ground_usd",
+            label: "feeds",
+          },
+        ],
+      });
+    });
+    const g = await caller().sim.graph({ slug: "space-data-center" });
+    expect(g.nodes).toHaveLength(2);
+    expect(g.edges).toHaveLength(1);
+    expect(g.nodes[0]!.kind).toBe("driver");
+  });
+
+  it("maps upstream 404 to tRPC NOT_FOUND", async () => {
+    mockFetch(() => jsonResponse({ detail: "not found" }, 404));
+    await expect(caller().sim.graph({ slug: "ghost" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
   });
 });

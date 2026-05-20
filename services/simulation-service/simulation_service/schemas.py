@@ -70,6 +70,27 @@ class SensitivityResponse(BaseModel):
     by_output: dict[str, list[SensitivityEntry]]
 
 
+class GraphNodeSchema(BaseModel):
+    id: str
+    label: str
+    kind: str  # "driver" | "intermediate" | "output"
+    group: str = ""
+    unit: str = ""
+    description: str = ""
+
+
+class GraphEdgeSchema(BaseModel):
+    source: str
+    target: str
+    label: str = ""
+
+
+class SimGraphResponse(BaseModel):
+    slug: str
+    nodes: list[GraphNodeSchema] = Field(default_factory=list)
+    edges: list[GraphEdgeSchema] = Field(default_factory=list)
+
+
 class LiveResponse(BaseModel):
     """Live snapshot: time-drifted driver values + immediate sim outputs.
 

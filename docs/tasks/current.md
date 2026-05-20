@@ -100,12 +100,53 @@ bundle.
         of the current sector.
       - Stored payload is the diff vs sector defaults (not the full driver
         map), so scenarios survive future sector schema additions.
-- [ ] **A/B comparison**: multi-line overlay of two scenarios on the same
-      chart. Triggers a `compare` URL pattern.
-- [ ] **React Flow causal graph view**: render the dependency graph
-      (drivers → intermediate quantities → outputs). Needs a `graph()`
-      method on `SimulationBase` returning nodes + edges; manually authored
-      per sim for now, agent-generated in a later slice.
+- [x] **A/B comparison** (2026-05-20). New `/compare?sector=&a=&b=` route:
+      - `a` and `b` accept either a scenario id or the literal `defaults`,
+        so any saved scenario can be compared against the sector defaults
+        without having to seed an "empty scenario" row.
+      - Server-side `page.tsx` fetches the sector metadata, both scenarios
+        (if any), and runs `runSim` for each side in parallel. Returns a
+        single coherent error page if either side can't be resolved (e.g.
+        scenario id from a different sector pasted in).
+      - `compare-view.tsx` renders three blocks: a scalar diff grid
+        (A / B / Δ / Δ%), overlay line charts (cyan = A solid, orange = B
+        dashed, paired by the same suffix-stripping rule as the manual
+        panel), and a "Driver differences" table sorted by largest
+        relative delta.
+      - Entry points: a "Compare…" button on `ScenarioBar` opens an inline
+        picker of other scenarios (plus "defaults" when a scenario is
+        loaded). The currently-loaded side becomes A; the picked one
+        becomes B. Within the compare view, the A/B selects let users
+        swap either side without bouncing back to the workspace.
+      - No backend changes needed — uses existing `sim.run`, `scenario.get`,
+        `scenario.list`. Scenario CRUD is unchanged.
+- [x] **React Flow causal graph view** (2026-05-20). Drivers → intermediates
+      → outputs dependency graph, manually authored per sim. Agent-generated
+      version is a Phase 2 later slice.
+      - SDK (`packages/sdk-python/platform_sdk/base.py`): `GraphNode`,
+        `GraphEdge`, `SimGraph` dataclasses + `graph: ClassVar[SimGraph]` slot
+        on `SimulationBase`. Frozen dataclasses, so a sim's graph travels with
+        its class and is statically introspectable.
+      - simulation-service: `GET /sims/{slug}/graph` returns
+        `{slug, nodes, edges}` (Pydantic `SimGraphResponse`). Three test
+        cases verify that every authored graph is internally consistent
+        (edge endpoints reference declared nodes, driver-kind ids match real
+        drivers, output-kind ids match real `simulate()` outputs).
+      - sector-service: `sim.graph` tRPC procedure proxies with the same
+        404→NOT_FOUND mapping used by the other sim.* procedures. 2 new
+        vitest cases. Sim tests also gained a `DATABASE_URL` stub so they
+        run without Postgres (the pre-existing env() validator was crashing
+        the suite on machines without a DB).
+      - Web: new `Graph` tab on the workspace tab strip. Uses `reactflow`
+        with a hand-rolled three-column layout (drivers ← intermediates ←
+        outputs), kind-coloured nodes, edge labels carrying the math step
+        (× duty, ÷ η, Σ discount, …). Driver nodes display the current
+        slider value live so the graph reflects whatever the user is
+        currently exploring on the Manual tab.
+      - Graphs authored for all three sims (space-data-center detailed
+        through capex/opex/trajectories; memory-semi through demand × ASP
+        → revenue → margin → FCF; sofc through sizing → fuel/carbon/stack →
+        LCOE/NPV).
 - [ ] **Report generation (PDF/markdown)**: LLM-stub OK; template scalars +
       chart snapshots + sources used.
 - [ ] **`apps/admin` skeleton**: list registered sectors, kick off ingest

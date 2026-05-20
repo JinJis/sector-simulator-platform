@@ -85,6 +85,27 @@ const LiveResponse = z.object({
   outputs: z.array(Output),
 });
 
+const GraphNode = z.object({
+  id: z.string(),
+  label: z.string(),
+  kind: z.string(),
+  group: z.string(),
+  unit: z.string(),
+  description: z.string(),
+});
+
+const GraphEdge = z.object({
+  source: z.string(),
+  target: z.string(),
+  label: z.string(),
+});
+
+const SimGraphResponse = z.object({
+  slug: z.string(),
+  nodes: z.array(GraphNode),
+  edges: z.array(GraphEdge),
+});
+
 const SlugInput = z.object({ slug: z.string().min(1) });
 
 // ---------- Procedures ----------
@@ -124,5 +145,12 @@ export const simRouter = router({
     .output(LiveResponse)
     .query(({ input }) =>
       simFetch(`/sims/${input.slug}/live`, { context: `sim.live:${input.slug}` }),
+    ),
+
+  graph: publicProcedure
+    .input(SlugInput)
+    .output(SimGraphResponse)
+    .query(({ input }) =>
+      simFetch(`/sims/${input.slug}/graph`, { context: `sim.graph:${input.slug}` }),
     ),
 });

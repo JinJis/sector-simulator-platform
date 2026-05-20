@@ -11,12 +11,15 @@ from platform_sdk import SimulationBase
 from simulation_service.registry import all_sims, get_sim
 from simulation_service.schemas import (
     DriverSchema,
+    GraphEdgeSchema,
+    GraphNodeSchema,
     HistoryPointSchema,
     LiveResponse,
     OutputSchema,
     ProvenanceSchema,
     SensitivityEntry,
     SensitivityResponse,
+    SimGraphResponse,
     SimMetadata,
     SimRunRequest,
     SimRunResponse,
@@ -152,6 +155,40 @@ def sim_sensitivity(slug: str) -> SensitivityResponse:
         entries.sort(key=lambda e: abs(e.swing), reverse=True)
         by_output[out_name] = entries
     return SensitivityResponse(slug=slug, by_output=by_output)
+
+
+@app.get("/sims/{slug}/graph", response_model=SimGraphResponse)
+def sim_graph(slug: str) -> SimGraphResponse:
+    """Causal dependency graph: drivers → intermediates → outputs.
+
+    Authored by hand on each `SimulationBase` subclass for now (Phase 2
+    early slice). Returns empty nodes/edges if the sim hasn't declared a
+    graph yet, so the frontend can render a placeholder rather than 404.
+    """
+    try:
+        sim_cls = get_sim(slug)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=f"sim not found: {slug}") from e
+
+    g = sim_cls.graph
+    return SimGraphResponse(
+        slug=slug,
+        nodes=[
+            GraphNodeSchema(
+                id=n.id,
+                label=n.label,
+                kind=n.kind,
+                group=n.group,
+                unit=n.unit,
+                description=n.description,
+            )
+            for n in g.nodes
+        ],
+        edges=[
+            GraphEdgeSchema(source=e.source, target=e.target, label=e.label)
+            for e in g.edges
+        ],
+    )
 
 
 @app.get("/sims/{slug}/live", response_model=LiveResponse)

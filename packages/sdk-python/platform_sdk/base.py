@@ -58,6 +58,41 @@ class Provenance:
     note: str = ""  # one-line summary shown next to driver
 
 
+# --- Causal graph (drivers → intermediates → outputs) ---
+#
+# Authored by hand per sim in Phase 2. The agent-orchestration slice will
+# generate these as a by-product of code-gen. The shape is intentionally tiny
+# so a generator can emit one without leaving anything important implicit.
+
+
+@dataclass(frozen=True)
+class GraphNode:
+    id: str
+    label: str
+    # One of: "driver", "intermediate", "output". Drives layout column +
+    # node colour on the client; new kinds can be added without backend
+    # changes (the client falls back to a neutral style).
+    kind: str
+    group: str = ""  # echoes Driver.group for drivers; free-form for others
+    unit: str = ""
+    description: str = ""
+
+
+@dataclass(frozen=True)
+class GraphEdge:
+    source: str  # node id
+    target: str  # node id
+    # Short, human-readable description of the relationship. Free-form so
+    # the author can drop "× duty_cycle" or "Σ" or "depreciation curve".
+    label: str = ""
+
+
+@dataclass(frozen=True)
+class SimGraph:
+    nodes: tuple[GraphNode, ...] = field(default_factory=tuple)
+    edges: tuple[GraphEdge, ...] = field(default_factory=tuple)
+
+
 class SimulationBase:
     slug: ClassVar[str] = ""
     name: ClassVar[str] = ""
@@ -69,6 +104,9 @@ class SimulationBase:
     presets: ClassVar[dict[str, dict[str, float]]] = {}
     # Per-driver provenance (history + citations). Missing entries = no provenance.
     provenance: ClassVar[dict[str, Provenance]] = {}
+    # Causal graph: how drivers fan into intermediates and on into outputs.
+    # Authored by hand for now; agent-generated in Phase 2 later slices.
+    graph: ClassVar[SimGraph] = SimGraph()
 
     def simulate(self, **kwargs: float) -> dict[str, Output]:
         raise NotImplementedError

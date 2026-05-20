@@ -20,7 +20,17 @@ Conventions
 
 from __future__ import annotations
 
-from platform_sdk import Driver, HistoryPoint, Output, Provenance, SimulationBase, Source
+from platform_sdk import (
+    Driver,
+    GraphEdge,
+    GraphNode,
+    HistoryPoint,
+    Output,
+    Provenance,
+    SimGraph,
+    SimulationBase,
+    Source,
+)
 
 
 def _hist(points: list[tuple[str, float]]) -> tuple[HistoryPoint, ...]:
@@ -424,6 +434,96 @@ class SpaceDataCenterSim(SimulationBase):
             note="지상 데이터센터의 fully-loaded $/PFLOPS·yr. 전력+감가+ops 포함.",
         ),
     }
+
+    # Causal dependency graph — drivers → sizing → capex/opex →
+    # degradation/cost trajectories → headline outputs. Mirrors the actual
+    # flow in `simulate()`; edges are labelled with the multiplicative or
+    # accumulative role so the UI can read like a back-of-envelope.
+    graph = SimGraph(
+        nodes=(
+            # --- Driver nodes (kind="driver") echo the slider names so the
+            # client can join them with the live driver values. ---
+            GraphNode("launch_cost_usd_per_kg", "Launch $/kg", "driver", "Launch", "$/kg"),
+            GraphNode("payload_overhead_factor", "Payload overhead", "driver", "Launch", "x"),
+            GraphNode("compute_demand_pflops", "Compute demand", "driver", "Compute", "PFLOPS"),
+            GraphNode("chip_pflops_per_kw", "Chip perf/W", "driver", "Compute", "PFLOPS/kW"),
+            GraphNode("chip_capex_usd_per_pflops", "Chip $/PFLOPS", "driver", "Compute", "$/PFLOPS"),
+            GraphNode("chip_radiation_degradation_pct_per_year", "Chip degradation", "driver", "Compute", "%/yr"),
+            GraphNode("panel_efficiency_w_per_kg", "Panel W/kg", "driver", "Power", "W/kg"),
+            GraphNode("panel_degradation_pct_per_year", "Panel degradation", "driver", "Power", "%/yr"),
+            GraphNode("solar_duty_cycle", "Solar duty cycle", "driver", "Power", "ratio"),
+            GraphNode("radiator_kg_per_kw_heat", "Radiator kg/kW", "driver", "Thermal", "kg/kW"),
+            GraphNode("mission_lifetime_years", "Mission lifetime", "driver", "Economics", "yr"),
+            GraphNode("annual_opex_pct_of_capex", "Opex / capex", "driver", "Economics", "%/yr"),
+            GraphNode("discount_rate_pct", "Discount rate", "driver", "Economics", "%"),
+            GraphNode("ground_baseline_cost_per_pflops_year_usd", "Ground $/PFLOPS·yr", "driver", "Economics", "$/PFLOPS·yr"),
+
+            # --- Intermediates (kind="intermediate") ---
+            GraphNode("chip_power_kw", "Chip power", "intermediate", "Sizing", "kW",
+                      description="compute_demand ÷ chip_pflops_per_kw"),
+            GraphNode("panel_mass_kg", "Panel mass", "intermediate", "Sizing", "kg",
+                      description="(chip_power × 1000) ÷ (panel W/kg × duty cycle)"),
+            GraphNode("radiator_mass_kg", "Radiator mass", "intermediate", "Sizing", "kg",
+                      description="chip_power × radiator kg/kW"),
+            GraphNode("dry_mass_kg", "Dry mass", "intermediate", "Sizing", "kg",
+                      description="panel + radiator"),
+            GraphNode("launch_capex", "Launch capex", "intermediate", "Capex", "USD"),
+            GraphNode("hardware_capex", "Hardware capex", "intermediate", "Capex", "USD"),
+            GraphNode("annual_opex", "Annual opex", "intermediate", "Capex", "USD/yr"),
+            GraphNode("effective_pflops", "Effective compute", "intermediate", "Trajectory", "PFLOPS",
+                      description="compute_demand × (1−panel_drop)^t × (1−chip_drop)^t"),
+            GraphNode("space_yearly_cost", "Space yearly cost", "intermediate", "Trajectory", "USD"),
+            GraphNode("ground_yearly_cost", "Ground yearly cost", "intermediate", "Trajectory", "USD",
+                      description="effective_pflops × ground baseline price"),
+
+            # --- Output nodes (kind="output") ---
+            GraphNode("launch_mass_kg", "Launch mass", "output", "Outputs", "kg"),
+            GraphNode("system_capex_usd", "System capex", "output", "Outputs", "USD"),
+            GraphNode("npv_savings_vs_ground_usd", "NPV savings", "output", "Outputs", "USD"),
+            GraphNode("break_even_year", "Break-even year", "output", "Outputs", "yr"),
+        ),
+        edges=(
+            # Sizing
+            GraphEdge("compute_demand_pflops", "chip_power_kw", "÷ perf/W"),
+            GraphEdge("chip_pflops_per_kw", "chip_power_kw", "÷"),
+            GraphEdge("chip_power_kw", "panel_mass_kg", "× 1000 / (W/kg × duty)"),
+            GraphEdge("panel_efficiency_w_per_kg", "panel_mass_kg", "÷"),
+            GraphEdge("solar_duty_cycle", "panel_mass_kg", "÷"),
+            GraphEdge("chip_power_kw", "radiator_mass_kg", "× kg/kW"),
+            GraphEdge("radiator_kg_per_kw_heat", "radiator_mass_kg", "×"),
+            GraphEdge("panel_mass_kg", "dry_mass_kg", "+"),
+            GraphEdge("radiator_mass_kg", "dry_mass_kg", "+"),
+            GraphEdge("dry_mass_kg", "launch_mass_kg", "× overhead"),
+            GraphEdge("payload_overhead_factor", "launch_mass_kg", "×"),
+
+            # Capex
+            GraphEdge("launch_mass_kg", "launch_capex", "× $/kg"),
+            GraphEdge("launch_cost_usd_per_kg", "launch_capex", "×"),
+            GraphEdge("compute_demand_pflops", "hardware_capex", "× $/PFLOPS"),
+            GraphEdge("chip_capex_usd_per_pflops", "hardware_capex", "×"),
+            GraphEdge("launch_capex", "system_capex_usd", "+"),
+            GraphEdge("hardware_capex", "system_capex_usd", "+"),
+            GraphEdge("system_capex_usd", "annual_opex", "× opex%"),
+            GraphEdge("annual_opex_pct_of_capex", "annual_opex", "×"),
+
+            # Trajectories
+            GraphEdge("compute_demand_pflops", "effective_pflops", "decay base"),
+            GraphEdge("panel_degradation_pct_per_year", "effective_pflops", "decay"),
+            GraphEdge("chip_radiation_degradation_pct_per_year", "effective_pflops", "decay"),
+            GraphEdge("system_capex_usd", "space_yearly_cost", "year 0 only"),
+            GraphEdge("annual_opex", "space_yearly_cost", "every year"),
+            GraphEdge("effective_pflops", "ground_yearly_cost", "× $/PFLOPS·yr"),
+            GraphEdge("ground_baseline_cost_per_pflops_year_usd", "ground_yearly_cost", "×"),
+
+            # Outputs
+            GraphEdge("space_yearly_cost", "npv_savings_vs_ground_usd", "Σ discount"),
+            GraphEdge("ground_yearly_cost", "npv_savings_vs_ground_usd", "Σ discount"),
+            GraphEdge("discount_rate_pct", "npv_savings_vs_ground_usd", "discount"),
+            GraphEdge("mission_lifetime_years", "npv_savings_vs_ground_usd", "horizon"),
+            GraphEdge("space_yearly_cost", "break_even_year", "cumulative"),
+            GraphEdge("ground_yearly_cost", "break_even_year", "cumulative"),
+        ),
+    )
 
     def simulate(self, **kwargs: float) -> dict[str, Output]:
         v = self.resolve_drivers(kwargs)

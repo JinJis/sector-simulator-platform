@@ -56,6 +56,9 @@ export type SimMetadata = RouterOutput["sim"]["get"];
 export type SimRunResponse = RouterOutput["sim"]["run"];
 export type SensitivityResponse = RouterOutput["sim"]["sensitivity"];
 export type LiveResponse = RouterOutput["sim"]["live"];
+export type SimGraphResponse = RouterOutput["sim"]["graph"];
+export type GraphNode = SimGraphResponse["nodes"][number];
+export type GraphEdge = SimGraphResponse["edges"][number];
 
 export type DriverSchema = SimMetadata["drivers"][number];
 export type OutputSchema = SimRunResponse["outputs"][number];
@@ -101,6 +104,10 @@ export async function fetchSensitivity(slug: string): Promise<SensitivityRespons
 
 export async function fetchLive(slug: string): Promise<LiveResponse> {
   return rethrow(() => trpc.sim.live.query({ slug }), `fetchLive(${slug})`);
+}
+
+export async function fetchGraph(slug: string): Promise<SimGraphResponse> {
+  return rethrow(() => trpc.sim.graph.query({ slug }), `fetchGraph(${slug})`);
 }
 
 // ---------- Scenario CRUD ----------

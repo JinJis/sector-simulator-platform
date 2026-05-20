@@ -18,7 +18,17 @@ Conventions
 
 from __future__ import annotations
 
-from platform_sdk import Driver, HistoryPoint, Output, Provenance, SimulationBase, Source
+from platform_sdk import (
+    Driver,
+    GraphEdge,
+    GraphNode,
+    HistoryPoint,
+    Output,
+    Provenance,
+    SimGraph,
+    SimulationBase,
+    Source,
+)
 
 
 def _hist(points: list[tuple[str, float]]) -> tuple[HistoryPoint, ...]:
@@ -419,6 +429,109 @@ class MemorySemiSim(SimulationBase):
             note="자본비용 (WACC). 사이클성·자본집약으로 일반 IT보다 +1-2pp.",
         ),
     }
+
+    # Causal graph for the memory-semi sector. Walks demand × ASP → industry
+    # revenue → company revenue → gross margin → FCF.
+    graph = SimGraph(
+        nodes=(
+            # Drivers
+            GraphNode("ai_dram_demand_pb_y0", "AI bits (year 0)", "driver", "Demand", "PB"),
+            GraphNode("ai_dram_demand_cagr_pct", "AI bits CAGR", "driver", "Demand", "%/yr"),
+            GraphNode("commodity_dram_demand_pb_y0", "Commodity bits (year 0)", "driver", "Demand", "PB"),
+            GraphNode("commodity_dram_demand_cagr_pct", "Commodity bits CAGR", "driver", "Demand", "%/yr"),
+            GraphNode("commodity_dram_asp_usd_per_gb", "Commodity ASP", "driver", "Pricing", "$/GB"),
+            GraphNode("commodity_dram_asp_cagr_pct", "ASP CAGR", "driver", "Pricing", "%/yr"),
+            GraphNode("hbm_premium_x", "HBM premium", "driver", "Pricing", "x"),
+            GraphNode("hbm_mix_pct_of_ai_demand", "HBM mix", "driver", "Supply", "%"),
+            GraphNode("company_market_share_pct", "Market share", "driver", "Supply", "%"),
+            GraphNode("dram_cost_usd_per_gb_y0", "Cost / GB (year 0)", "driver", "Cost", "$/GB"),
+            GraphNode("dram_cost_reduction_pct_per_year", "Cost reduction", "driver", "Cost", "%/yr"),
+            GraphNode("capex_intensity_pct", "Capex intensity", "driver", "Cost", "%"),
+            GraphNode("opex_pct_of_revenue", "Opex / revenue", "driver", "Cost", "%"),
+            GraphNode("discount_rate_pct", "Discount rate", "driver", "Cost", "%"),
+
+            # Intermediates
+            GraphNode("ai_pb_trajectory", "AI bits / yr", "intermediate", "Demand", "PB"),
+            GraphNode("co_pb_trajectory", "Commodity bits / yr", "intermediate", "Demand", "PB"),
+            GraphNode("commodity_asp_trajectory", "Commodity ASP / yr", "intermediate", "Pricing", "$/GB"),
+            GraphNode("hbm_asp_trajectory", "HBM ASP / yr", "intermediate", "Pricing", "$/GB",
+                      description="commodity ASP × HBM premium"),
+            GraphNode("cost_per_gb_trajectory", "Cost / GB / yr", "intermediate", "Cost", "$/GB"),
+            GraphNode("industry_hbm_revenue", "Industry HBM revenue", "intermediate", "Industry", "USD"),
+            GraphNode("industry_comm_revenue", "Industry commodity revenue", "intermediate", "Industry", "USD"),
+            GraphNode("industry_revenue_total", "Industry revenue", "intermediate", "Industry", "USD"),
+            GraphNode("company_revenue_intermediate", "Company revenue", "intermediate", "Company", "USD",
+                      description="industry × market share"),
+            GraphNode("company_bits_gb", "Company bits sold", "intermediate", "Company", "GB"),
+            GraphNode("company_cogs", "COGS", "intermediate", "Company", "USD"),
+            GraphNode("gross_profit_intermediate", "Gross profit", "intermediate", "Margins", "USD"),
+            GraphNode("opex_intermediate", "Opex", "intermediate", "Margins", "USD"),
+            GraphNode("ebit_intermediate", "EBIT", "intermediate", "Margins", "USD"),
+            GraphNode("capex_intermediate", "Capex", "intermediate", "Cash", "USD"),
+
+            # Outputs
+            GraphNode("npv_free_cash_flow_usd", "NPV (FCF)", "output", "Outputs", "USD"),
+            GraphNode("peak_revenue_usd", "Peak revenue", "output", "Outputs", "USD"),
+            GraphNode("peak_gross_margin_pct", "Peak gross margin", "output", "Outputs", "%"),
+            GraphNode("free_cash_flow_usd", "FCF / yr", "output", "Outputs", "USD"),
+        ),
+        edges=(
+            # Demand trajectories
+            GraphEdge("ai_dram_demand_pb_y0", "ai_pb_trajectory", "× (1+g)^t"),
+            GraphEdge("ai_dram_demand_cagr_pct", "ai_pb_trajectory", "g"),
+            GraphEdge("commodity_dram_demand_pb_y0", "co_pb_trajectory", "× (1+g)^t"),
+            GraphEdge("commodity_dram_demand_cagr_pct", "co_pb_trajectory", "g"),
+
+            # Pricing trajectories
+            GraphEdge("commodity_dram_asp_usd_per_gb", "commodity_asp_trajectory", "× (1+g)^t"),
+            GraphEdge("commodity_dram_asp_cagr_pct", "commodity_asp_trajectory", "g"),
+            GraphEdge("commodity_asp_trajectory", "hbm_asp_trajectory", "× premium"),
+            GraphEdge("hbm_premium_x", "hbm_asp_trajectory", "×"),
+
+            # Cost
+            GraphEdge("dram_cost_usd_per_gb_y0", "cost_per_gb_trajectory", "× (1−drop)^t"),
+            GraphEdge("dram_cost_reduction_pct_per_year", "cost_per_gb_trajectory", "drop"),
+
+            # Industry revenue split
+            GraphEdge("ai_pb_trajectory", "industry_hbm_revenue", "× mix × HBM ASP"),
+            GraphEdge("hbm_mix_pct_of_ai_demand", "industry_hbm_revenue", "mix"),
+            GraphEdge("hbm_asp_trajectory", "industry_hbm_revenue", "×"),
+            GraphEdge("ai_pb_trajectory", "industry_comm_revenue", "× (1−mix)"),
+            GraphEdge("hbm_mix_pct_of_ai_demand", "industry_comm_revenue", "1−mix"),
+            GraphEdge("co_pb_trajectory", "industry_comm_revenue", "+"),
+            GraphEdge("commodity_asp_trajectory", "industry_comm_revenue", "× ASP"),
+            GraphEdge("industry_hbm_revenue", "industry_revenue_total", "+"),
+            GraphEdge("industry_comm_revenue", "industry_revenue_total", "+"),
+
+            # Company
+            GraphEdge("industry_revenue_total", "company_revenue_intermediate", "× share"),
+            GraphEdge("company_market_share_pct", "company_revenue_intermediate", "×"),
+            GraphEdge("ai_pb_trajectory", "company_bits_gb", "× share"),
+            GraphEdge("co_pb_trajectory", "company_bits_gb", "× share"),
+            GraphEdge("company_market_share_pct", "company_bits_gb", "×"),
+            GraphEdge("company_bits_gb", "company_cogs", "× cost/GB"),
+            GraphEdge("cost_per_gb_trajectory", "company_cogs", "×"),
+
+            # Margins
+            GraphEdge("company_revenue_intermediate", "gross_profit_intermediate", "− COGS"),
+            GraphEdge("company_cogs", "gross_profit_intermediate", "−"),
+            GraphEdge("company_revenue_intermediate", "opex_intermediate", "× opex%"),
+            GraphEdge("opex_pct_of_revenue", "opex_intermediate", "×"),
+            GraphEdge("gross_profit_intermediate", "ebit_intermediate", "− opex"),
+            GraphEdge("opex_intermediate", "ebit_intermediate", "−"),
+            GraphEdge("company_revenue_intermediate", "capex_intermediate", "× intensity"),
+            GraphEdge("capex_intensity_pct", "capex_intermediate", "×"),
+
+            # FCF + outputs
+            GraphEdge("ebit_intermediate", "free_cash_flow_usd", "− capex"),
+            GraphEdge("capex_intermediate", "free_cash_flow_usd", "−"),
+            GraphEdge("free_cash_flow_usd", "npv_free_cash_flow_usd", "Σ discount"),
+            GraphEdge("discount_rate_pct", "npv_free_cash_flow_usd", "discount"),
+            GraphEdge("company_revenue_intermediate", "peak_revenue_usd", "max"),
+            GraphEdge("gross_profit_intermediate", "peak_gross_margin_pct", "÷ revenue, max"),
+            GraphEdge("company_revenue_intermediate", "peak_gross_margin_pct", "÷"),
+        ),
+    )
 
     def simulate(self, **kwargs: float) -> dict[str, Output]:
         v = self.resolve_drivers(kwargs)

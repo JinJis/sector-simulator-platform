@@ -97,3 +97,48 @@ def test_unknown_slug_returns_404() -> None:
     assert r.status_code == 404
     r = client.get("/sims/does-not-exist/sensitivity")
     assert r.status_code == 404
+
+
+def test_graph_endpoint_returns_well_formed_graph() -> None:
+    """Every authored graph must be internally consistent: every edge endpoint
+    references a declared node, every driver node id matches a real driver,
+    every output-kind node matches a real output."""
+    for slug in ("space-data-center", "memory-semi", "sofc"):
+        r = client.get(f"/sims/{slug}/graph")
+        assert r.status_code == 200, slug
+        body = r.json()
+        assert body["slug"] == slug
+        node_ids = {n["id"] for n in body["nodes"]}
+        kinds = {n["kind"] for n in body["nodes"]}
+        assert kinds <= {"driver", "intermediate", "output"}, slug
+        for e in body["edges"]:
+            assert e["source"] in node_ids, f"{slug}: edge from unknown {e['source']}"
+            assert e["target"] in node_ids, f"{slug}: edge to unknown {e['target']}"
+
+        # Driver-kind nodes must correspond to real drivers on the sim.
+        meta = client.get(f"/sims/{slug}").json()
+        driver_names = {d["name"] for d in meta["drivers"]}
+        for n in body["nodes"]:
+            if n["kind"] == "driver":
+                assert n["id"] in driver_names, (
+                    f"{slug}: driver node {n['id']} not in sim drivers"
+                )
+
+
+def test_graph_endpoint_404_for_unknown_slug() -> None:
+    r = client.get("/sims/does-not-exist/graph")
+    assert r.status_code == 404
+
+
+def test_graph_outputs_reference_real_simulation_outputs() -> None:
+    """Output-kind nodes must match names produced by simulate()."""
+    for slug, expected_outputs in [
+        ("space-data-center", {"npv_savings_vs_ground_usd", "system_capex_usd", "break_even_year", "launch_mass_kg"}),
+        ("memory-semi", {"npv_free_cash_flow_usd", "peak_revenue_usd", "peak_gross_margin_pct", "free_cash_flow_usd"}),
+        ("sofc", {"lcoe_usd_per_mwh", "npv_savings_vs_grid_usd", "break_even_year", "system_capex_total_usd"}),
+    ]:
+        body = client.get(f"/sims/{slug}/graph").json()
+        output_ids = {n["id"] for n in body["nodes"] if n["kind"] == "output"}
+        assert expected_outputs <= output_ids, (
+            f"{slug}: missing expected output nodes: {expected_outputs - output_ids}"
+        )
