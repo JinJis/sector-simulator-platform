@@ -1,14 +1,19 @@
-// Public, host-accessible URL — used by the browser and any user-facing display.
-export const SIM_SERVICE_URL =
-  process.env.NEXT_PUBLIC_SIMULATION_SERVICE_URL ?? "http://localhost:8000";
+// Browser-side: same-origin via Next.js rewrites (see next.config.ts). This
+// keeps the simulation-service off the public internet and dodges CORS /
+// host-mismatch issues when apps/web is served from a non-localhost origin
+// (Docker on a remote host, cloud-workstation preview URL, etc.).
+const BROWSER_BASE = "/api/sim";
 
-// Server-side fetches (RSC/route handlers) run inside the web container and
-// can't reach the host-mapped port. Prefer the docker-internal hostname when
-// set; outside Docker the env var is unset and we fall back to the public URL.
-const FETCH_BASE =
-  typeof window === "undefined"
-    ? (process.env.SIMULATION_SERVICE_URL ?? SIM_SERVICE_URL)
-    : SIM_SERVICE_URL;
+// Server-side (RSC / route handlers): run inside the web container, so prefer
+// the docker-internal hostname. Falls back to the public URL when unset
+// (host-mode dev).
+const SERVER_BASE =
+  process.env.SIMULATION_SERVICE_URL ?? "http://localhost:8000";
+
+const FETCH_BASE = typeof window === "undefined" ? SERVER_BASE : BROWSER_BASE;
+
+// Exported for diagnostic UI text only.
+export const SIM_SERVICE_URL = SERVER_BASE;
 
 export interface DriverSchema {
   name: string;
