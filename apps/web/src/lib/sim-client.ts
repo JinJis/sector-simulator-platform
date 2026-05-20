@@ -87,6 +87,12 @@ export interface LiveResponse {
   outputs: OutputSchema[];
 }
 
+export async function fetchSims(): Promise<SimMetadata[]> {
+  const res = await fetch(`${FETCH_BASE}/sims`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`fetchSims failed: ${res.status} ${res.statusText}`);
+  return res.json() as Promise<SimMetadata[]>;
+}
+
 export async function fetchSim(slug: string): Promise<SimMetadata> {
   const res = await fetch(`${FETCH_BASE}/sims/${slug}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`fetchSim failed: ${res.status} ${res.statusText}`);

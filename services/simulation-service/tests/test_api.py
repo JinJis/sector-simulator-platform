@@ -12,11 +12,44 @@ def test_health() -> None:
     assert r.json() == {"status": "ok"}
 
 
-def test_list_includes_space_data_center() -> None:
+def test_list_includes_all_registered_sectors() -> None:
     r = client.get("/sims")
     assert r.status_code == 200
-    slugs = [s["slug"] for s in r.json()]
-    assert "space-data-center" in slugs
+    slugs = {s["slug"] for s in r.json()}
+    assert {"space-data-center", "memory-semi", "sofc"} <= slugs
+
+
+def test_memory_semi_metadata_round_trip() -> None:
+    r = client.get("/sims/memory-semi")
+    assert r.status_code == 200
+    meta = r.json()
+    assert meta["horizon_years"] == 10
+    groups = {d["group"] for d in meta["drivers"]}
+    assert groups == {"Demand", "Pricing", "Supply", "Cost"}
+    # Provenance carries kind labels for every cited source.
+    for prov in meta["provenance"].values():
+        for s in prov["sources"]:
+            assert s["kind"], f"missing kind on source: {s['title']}"
+
+
+def test_sofc_metadata_round_trip() -> None:
+    r = client.get("/sims/sofc")
+    assert r.status_code == 200
+    meta = r.json()
+    assert meta["horizon_years"] == 20
+    groups = {d["group"] for d in meta["drivers"]}
+    assert groups == {"System", "Stack", "Fuel", "Operations", "Economics"}
+
+
+def test_new_sector_run_endpoint_returns_outputs() -> None:
+    for slug, override_driver, output_check in [
+        ("memory-semi", "ai_dram_demand_cagr_pct", "npv_free_cash_flow_usd"),
+        ("sofc", "natural_gas_price_usd_per_mmbtu", "lcoe_usd_per_mwh"),
+    ]:
+        r = client.post(f"/sims/{slug}/run", json={"drivers": {override_driver: 1.0}})
+        assert r.status_code == 200, slug
+        names = {o["name"] for o in r.json()["outputs"]}
+        assert output_check in names, slug
 
 
 def test_metadata_exposes_groups_and_presets() -> None:
