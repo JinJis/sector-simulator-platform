@@ -23,6 +23,16 @@ services:
       - "8000:8000"
     restart: unless-stopped
 
+  sector-service:
+    build:
+      target: prod
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: info
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+
   web:
     build:
       target: prod

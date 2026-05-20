@@ -29,6 +29,24 @@ services:
     networks:
       - internal
 
+  sector-service:
+    image: tssp/sector-service:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: infra/docker/sector-service.Dockerfile
+    environment:
+      # Container-internal addressing — simulation-service is in the same
+      # bridge network, postgres ditto.
+      SIMULATION_SERVICE_URL: http://simulation-service:8000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
+    depends_on:
+      simulation-service:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+
   web:
     image: tssp/web:${IMAGE_TAG:-latest}
     build:
@@ -36,6 +54,7 @@ services:
       dockerfile: infra/docker/web.Dockerfile
     depends_on:
       - simulation-service
+      - sector-service
     networks:
       - internal
 

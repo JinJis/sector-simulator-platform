@@ -32,6 +32,23 @@ services:
       - "8000:8000"
     restart: "no"
 
+  sector-service:
+    build:
+      target: dev
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: debug
+    volumes:
+      - ./services/sector-service:/repo/services/sector-service
+      - ./packages/db:/repo/packages/db
+      # node_modules in named volumes so host (likely macOS) doesn't shadow
+      # linux-musl binaries built during install.
+      - sector_service_node_modules:/repo/services/sector-service/node_modules
+      - db_node_modules:/repo/packages/db/node_modules
+    ports:
+      - "8001:8001"
+    restart: "no"
+
   web:
     build:
       target: dev
@@ -63,3 +80,5 @@ volumes:
   web_node_modules:
   web_next_cache:
   postgres_data:
+  sector_service_node_modules:
+  db_node_modules:

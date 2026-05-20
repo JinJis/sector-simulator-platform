@@ -54,8 +54,28 @@ bundle.
       compose with port exposure in `local.yml`. Root scripts:
       `pnpm db:{up,down,migrate,seed,studio,generate}`. `tenant_id`
       intentionally absent — added when auth lands.
-- [ ] **`services/sector-service`** (Fastify + tRPC): proxy + auth boundary
-      over simulation-service. Adds auditable per-request logging.
+- [x] **`services/sector-service`** (Fastify + tRPC) (2026-05-20).
+      Backend layer that:
+      - proxies the simulation-service via `sim.{list,get,run,sensitivity,live}`
+        tRPC procedures (zod-validated, BAD_REQUEST/NOT_FOUND maps applied
+        on upstream errors);
+      - exposes `scenario.{list,get,create,update,delete}` CRUD over
+        `@platform/db`;
+      - logs every tRPC call as a structured audit line via Pino
+        (procedure path + type + duration + ok flag + request_id);
+      - listens on `:8001`, env-validated via zod (boot fails loud on
+        missing `SIMULATION_SERVICE_URL` / `DATABASE_URL`).
+      Tests: 17 vitest (11 scenario integration vs real Postgres + 6 sim
+      proxy with mocked fetch). Docker image builds via
+      `infra/docker/sector-service.Dockerfile` (dev = `tsx watch`,
+      prod = `tsx`); compose entries added to base + local + dev.
+      Auth context (currentUser, tenantId) deliberately omitted —
+      `createContext` is the seam where the auth slice will plug in.
+- [ ] **Web app: tRPC client migration**: swap `apps/web/src/lib/sim-client.ts`
+      from direct REST against simulation-service to typed tRPC against
+      sector-service. Add `@platform/sector-service` workspace dep (type-only).
+      Wire `/api/sim` rewrite to point at `sector-service:8001` (replacing the
+      current simulation-service rewrite). No behavioral change for users.
 - [ ] **Scenario CRUD UI**: save / load / share / fork from any tab.
 - [ ] **A/B comparison**: multi-line overlay of two scenarios on the same
       chart. Triggers a `compare` URL pattern.

@@ -1,0 +1,52 @@
+# syntax=docker/dockerfile:1.7
+# Multi-stage Dockerfile for services/sector-service (Fastify + tRPC).
+#   target=dev   → bind-mount source, tsx watch
+#   target=prod  → tsx start (no compile step; tsx handles ESM TS at runtime)
+#
+# Build context MUST be the repository root so workspace files
+# (pnpm-workspace.yaml, root package.json, packages/db) are visible.
+
+ARG NODE_VERSION=20.18-alpine
+
+# ---------- base: pnpm via corepack ----------
+FROM node:${NODE_VERSION} AS base
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+WORKDIR /repo
+
+# ---------- deps: workspace install scoped to sector-service ----------
+FROM base AS deps
+COPY package.json pnpm-workspace.yaml ./
+COPY packages/db/package.json ./packages/db/package.json
+COPY services/sector-service/package.json ./services/sector-service/package.json
+COPY pnpm-lock.yaml* ./
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    if [ -f pnpm-lock.yaml ]; then \
+      pnpm install --frozen-lockfile --filter @platform/sector-service...; \
+    else \
+      pnpm install --filter @platform/sector-service...; \
+    fi
+# Prisma schema lives in packages/db; the postinstall hook needs to find it
+# to emit the client. Re-run generate against the mounted schema.
+COPY packages/db ./packages/db
+RUN pnpm --filter @platform/db generate
+
+# ---------- dev: tsx watch (hot reload) ----------
+FROM deps AS dev
+ENV NODE_ENV=development
+# Source is bind-mounted at runtime; COPY is just so the image is usable
+# without a mount.
+COPY services/sector-service ./services/sector-service
+WORKDIR /repo/services/sector-service
+EXPOSE 8001
+CMD ["pnpm", "dev"]
+
+# ---------- prod: tsx (no compile — ESM-TS at runtime via tsx) ----------
+FROM deps AS prod
+ENV NODE_ENV=production
+COPY services/sector-service ./services/sector-service
+WORKDIR /repo/services/sector-service
+USER node
+EXPOSE 8001
+CMD ["pnpm", "start"]
