@@ -289,7 +289,40 @@ bundle.
           membership, tier routing, body sanity, and every front-matter
           error path. Future workflows wiring these prompts is its own
           slice.
-  - [ ] **`tests/agent-evals`** harness + cases per agent.
+  - [x] **`tests/agent-evals`** (2026-05-20). Two-tier harness at
+        `tests/agent_evals/` (underscore — directory imports cleanly
+        as a Python package; conceptual name in CLAUDE.md keeps the
+        hyphen).
+        - **Tier 1 — prompt sanity** (`test_prompt_sanity.py`).
+          Parameterized over every prompt in the catalog. Verifies the
+          body mentions its declared `outputs` schema, has the
+          `## Principles` + `## Anti-patterns` sections, contains no
+          interpolation markers (`{{ }}` / `%(` / `${`), and loads
+          deterministically. Plus cross-prompt invariants: the six
+          pipeline agents are all present in the catalog, and no two
+          agents share a role string. Pure markdown introspection;
+          no API.
+        - **Tier 2 — workflow behavior** (`test_decomposition.py`,
+          one file per workflow as more wire up). Runs the actual
+          `DecompositionWorkflow` against two realistic sector
+          descriptions (battery recycling, grid-scale Li storage).
+          Eight baseline invariants per case: snake_case driver
+          names, `default ∈ [min, max]`, non-empty groups,
+          ≥ 1 scalar output, driver-count and output-count in
+          reasonable ranges, horizon ∈ [1, 50], kebab-case slug.
+          Each case carries a `CostBudget`; the harness fails if
+          the workflow exceeds it.
+        - **Modes**: offline by default (canned `Decomposition`
+          replayed via a per-case `FakeAnthropic`).
+          `ANTHROPIC_EVAL_LIVE=1` flips to real Opus 4.7 — opt-in so
+          CI doesn't burn API budget. Same Python assertions in
+          both modes.
+        - 34 evals total (32 Tier 1 + 2 Tier 2). One real find from
+          authoring: the original Tier 1 volatile-data check tripped
+          on `code-review.md` quoting `datetime.now()` as an
+          example of an unsafe pattern to *look for* in generated
+          code. Narrowed the check to interpolation markers only —
+          function-name citations in prompt bodies are legitimate.
   - [ ] **LangSmith / Helicone tracing** wired through `LLMClient`.
 
 ### Out of scope for now
