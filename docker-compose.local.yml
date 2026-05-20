@@ -32,6 +32,14 @@ services:
       - "8000:8000"
     restart: "no"
 
+  # Bind-mount packages/db so host edits to schema.prisma / migrations are
+  # picked up without rebuilding the image. node_modules stays on a named
+  # volume so the in-image linux-musl install isn't shadowed.
+  db-migrate:
+    volumes:
+      - ./packages/db:/repo/packages/db
+      - db_migrate_db_node_modules:/repo/packages/db/node_modules
+
   sector-service:
     build:
       target: dev
@@ -93,3 +101,4 @@ volumes:
   postgres_data:
   sector_service_node_modules:
   db_node_modules:
+  db_migrate_db_node_modules:

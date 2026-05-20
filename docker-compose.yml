@@ -29,6 +29,33 @@ services:
     networks:
       - internal
 
+  # One-shot: apply Prisma migrations + seed the in-code sectors so the
+  # `scenarios.sector_slug` FK resolves. Reuses the sector-service image
+  # (it already has @platform/db installed + the prisma CLI on its PATH).
+  # Idempotent — `migrate deploy` is a no-op when up to date, and the seed
+  # script upserts.
+  db-migrate:
+    # Separate tag from sector-service so it can pin to the dev stage even
+    # when sector-service itself is built as prod (see docker-compose.dev.yml).
+    image: tssp/db-migrate:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: infra/docker/sector-service.Dockerfile
+      target: dev
+    command:
+      - sh
+      - -c
+      - "pnpm --filter @platform/db migrate:deploy && pnpm --filter @platform/db seed"
+    working_dir: /repo
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - internal
+
   sector-service:
     image: tssp/sector-service:${IMAGE_TAG:-latest}
     build:
@@ -44,6 +71,8 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
     networks:
       - internal
 
