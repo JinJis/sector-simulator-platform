@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import type { Scenario } from "@/lib/sim-client";
@@ -49,7 +50,9 @@ export function ScenarioBar({
   onRename,
   onDelete,
 }: Props) {
+  const router = useRouter();
   const [shareToast, setShareToast] = useState<string | null>(null);
+  const [comparePickerOpen, setComparePickerOpen] = useState(false);
 
   function handlePickerChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const id = e.target.value;
@@ -99,6 +102,24 @@ export function ScenarioBar({
     }
     setTimeout(() => setShareToast(null), 2500);
   }
+
+  function goCompare(otherId: string) {
+    // `a` is the side currently loaded in the workspace (defaults if none).
+    // `b` is the picked counterpart. Page resolves both server-side.
+    const a = active?.id ?? "defaults";
+    const params = new URLSearchParams({
+      sector: sectorSlug,
+      a,
+      b: otherId,
+    });
+    setComparePickerOpen(false);
+    router.push(`/compare?${params.toString()}`);
+  }
+
+  // "Compare" is meaningful only when there's at least one other scenario
+  // (or the active one + defaults). With nothing saved at all, hide it.
+  const compareCandidates = scenarios.filter((s) => s.id !== active?.id);
+  const canCompare = compareCandidates.length > 0 || (active && true);
 
   const showSaveNew = dirty || overrideCount > 0;
 
@@ -178,6 +199,15 @@ export function ScenarioBar({
               Share
             </BarButton>
           )}
+          {canCompare && (
+            <BarButton
+              onClick={() => setComparePickerOpen((v) => !v)}
+              tone="muted"
+              title="Compare against another scenario (A/B overlay)"
+            >
+              Compare…
+            </BarButton>
+          )}
           {active && (
             <BarButton
               onClick={handleDelete}
@@ -189,6 +219,49 @@ export function ScenarioBar({
           )}
         </div>
       </div>
+
+      {comparePickerOpen && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded border border-neutral-800 bg-neutral-950/60 p-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+            Compare {active ? `"${active.name}"` : "defaults"} with
+          </span>
+          {!active && (
+            <span className="text-[11px] text-neutral-500">
+              (load a scenario first to compare from it)
+            </span>
+          )}
+          {active && (
+            <button
+              onClick={() => goCompare("defaults")}
+              className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-[11px] text-neutral-200 hover:bg-neutral-800"
+            >
+              defaults
+            </button>
+          )}
+          {compareCandidates.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => goCompare(s.id)}
+              className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-[11px] text-neutral-200 hover:bg-neutral-800"
+              title={s.notes ?? undefined}
+            >
+              {s.name}
+            </button>
+          ))}
+          {compareCandidates.length === 0 && active && (
+            <span className="text-[11px] text-neutral-500">
+              no other saved scenarios in this sector
+            </span>
+          )}
+          <button
+            onClick={() => setComparePickerOpen(false)}
+            className="ml-auto text-[11px] text-neutral-500 hover:text-neutral-300"
+            aria-label="Close compare picker"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {shareToast && (
         <p className="mt-2 text-[11px] text-cyan-300">{shareToast}</p>
