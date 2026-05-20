@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { type Dispatch, type SetStateAction, useEffect, useMemo, useState, useTransition } from "react";
 import {
   Bar,
   BarChart,
@@ -42,15 +42,24 @@ import {
 interface Props {
   meta: SimMetadata;
   sensitivity: SensitivityResponse | null;
+  /** Driver state is owned by Workspace so ScenarioBar can read/write it. */
+  values: Record<string, number>;
+  /** Accepts both `next` and `(prev) => next` so existing slider handlers
+   *  using the functional form keep working. */
+  onChangeValues: Dispatch<SetStateAction<Record<string, number>>>;
+  /** Pre-computed defaults map — passed in to avoid recomputing on each tab swap. */
+  defaults: Record<string, number>;
 }
 
-export function ManualPanel({ meta, sensitivity }: Props) {
-  const initial = useMemo(
-    () => Object.fromEntries(meta.drivers.map((d) => [d.name, d.default])),
-    [meta.drivers],
-  );
-
-  const [values, setValues] = useState<Record<string, number>>(initial);
+export function ManualPanel({
+  meta,
+  sensitivity,
+  values,
+  onChangeValues,
+  defaults,
+}: Props) {
+  const initial = defaults;
+  const setValues = onChangeValues;
   const [outputs, setOutputs] = useState<OutputSchema[]>([]);
   const [activePreset, setActivePreset] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

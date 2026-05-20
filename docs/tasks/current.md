@@ -71,12 +71,35 @@ bundle.
       prod = `tsx`); compose entries added to base + local + dev.
       Auth context (currentUser, tenantId) deliberately omitted —
       `createContext` is the seam where the auth slice will plug in.
-- [ ] **Web app: tRPC client migration**: swap `apps/web/src/lib/sim-client.ts`
-      from direct REST against simulation-service to typed tRPC against
-      sector-service. Add `@platform/sector-service` workspace dep (type-only).
-      Wire `/api/sim` rewrite to point at `sector-service:8001` (replacing the
-      current simulation-service rewrite). No behavioral change for users.
-- [ ] **Scenario CRUD UI**: save / load / share / fork from any tab.
+- [x] **Web app: tRPC client migration** (2026-05-20). `sim-client.ts`
+      rewritten on `createTRPCClient<AppRouter>` from `@platform/sector-service`;
+      same `fetchSims` / `fetchSim` / `runSim` / `fetchSensitivity` /
+      `fetchLive` surface so call sites are unchanged. Response types are now
+      inferred via `inferRouterOutputs<AppRouter>` instead of duplicated.
+      Next rewrite of `/api/sim/:path*` retargeted at `sector-service:8001`;
+      docker-compose web service env swapped to `SECTOR_SERVICE_URL`; web
+      Dockerfile deps stage copies sector-service + packages/db source so TS
+      can walk the AppRouter type graph (runtime never executes any of it).
+- [x] **Scenario CRUD UI** (2026-05-20). New `ScenarioBar` strip rendered
+      above the tab switcher, visible on every tab:
+      - Driver values lifted from `ManualPanel` to `Workspace` so the bar can
+        read them at save time and write them at load time. `ManualPanel`
+        becomes controlled (values + setter passed as props).
+      - Picker dropdown of saved scenarios (`scenario.list` filtered to the
+        current sector). Selecting one applies its `driver_overrides` over
+        defaults and auto-switches to Manual.
+      - Save-as / Update / Rename / Fork / Delete / Share buttons with a
+        dirty indicator computed against the loaded scenario (not against
+        defaults). Save-as uses `window.prompt`; replace with a proper
+        dialog when shadcn comes in.
+      - Share copies a self-contained `?sector=&scenario=` URL to clipboard
+        (falls back to inline display if the Clipboard API is denied).
+      - `?scenario=<id>` deeplink resolved server-side in `page.tsx` and
+        passed to `Workspace` as `initialScenario`; the scenario's
+        `sector_slug` wins over `?sector=` so paste-and-go works regardless
+        of the current sector.
+      - Stored payload is the diff vs sector defaults (not the full driver
+        map), so scenarios survive future sector schema additions.
 - [ ] **A/B comparison**: multi-line overlay of two scenarios on the same
       chart. Triggers a `compare` URL pattern.
 - [ ] **React Flow causal graph view**: render the dependency graph

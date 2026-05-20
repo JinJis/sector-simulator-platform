@@ -1,10 +1,12 @@
 import {
   fetchLive,
+  fetchScenario,
   fetchSensitivity,
   fetchSim,
   fetchSims,
   SECTOR_SERVICE_URL,
   type LiveResponse,
+  type Scenario,
   type SensitivityResponse,
   type SimMetadata,
 } from "@/lib/sim-client";
@@ -17,6 +19,7 @@ const FALLBACK_SLUG = "space-data-center";
 
 interface SearchParams {
   sector?: string;
+  scenario?: string;
 }
 
 export default async function Home({
@@ -24,7 +27,7 @@ export default async function Home({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const { sector } = await searchParams;
+  const { sector, scenario: scenarioId } = await searchParams;
 
   let sims: SimMetadata[];
   try {
@@ -50,11 +53,29 @@ export default async function Home({
   const userFacing = sims.filter((s) => s.slug !== "placeholder");
   const visibleSims = userFacing.length > 0 ? userFacing : sims;
 
-  // Resolve the active sector: query param if valid, else first registered.
+  // If a scenario id was provided, fetch it up-front. The scenario also
+  // pins the sector — share links should "just work" even if the user is
+  // sitting on a different sector when they paste them — so it overrides
+  // the ?sector= param when the two disagree.
+  let initialScenario: Scenario | null = null;
+  if (scenarioId) {
+    try {
+      const s = await fetchScenario(scenarioId);
+      if (visibleSims.find((v) => v.slug === s.sector_slug)) {
+        initialScenario = s;
+      }
+    } catch {
+      // Missing / invalid scenario id — fall through and render defaults.
+    }
+  }
+
+  // Resolve the active sector: scenario wins, else query param, else first
+  // registered.
   const resolved =
-    sector && visibleSims.find((s) => s.slug === sector)
+    initialScenario?.sector_slug ??
+    (sector && visibleSims.find((s) => s.slug === sector)
       ? sector
-      : (visibleSims[0]?.slug ?? FALLBACK_SLUG);
+      : (visibleSims[0]?.slug ?? FALLBACK_SLUG));
 
   let meta: SimMetadata;
   let sensitivity: SensitivityResponse | null = null;
@@ -104,6 +125,7 @@ export default async function Home({
         meta={meta}
         sensitivity={sensitivity}
         initialLive={initialLive}
+        initialScenario={initialScenario}
       />
     </main>
   );

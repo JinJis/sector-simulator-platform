@@ -64,6 +64,12 @@ export type SourceSchema = ProvenanceSchema["sources"][number];
 export type HistoryPointSchema = ProvenanceSchema["history"][number];
 export type SensitivityEntry = SensitivityResponse["by_output"][string][number];
 
+// Heads up: the `created_at` / `updated_at` fields on Scenario are typed as
+// Date here (inferred from the server's zod schema) but arrive as ISO
+// strings over the wire — tRPC doesn't ship a transformer in this project.
+// Don't call Date methods on them client-side; treat as opaque.
+export type Scenario = RouterOutput["scenario"]["get"];
+
 // ---------- Functional surface (unchanged shape) ----------
 //
 // We wrap rather than re-export `trpc.sim.*.query/mutate` directly so the
@@ -95,6 +101,46 @@ export async function fetchSensitivity(slug: string): Promise<SensitivityRespons
 
 export async function fetchLive(slug: string): Promise<LiveResponse> {
   return rethrow(() => trpc.sim.live.query({ slug }), `fetchLive(${slug})`);
+}
+
+// ---------- Scenario CRUD ----------
+
+export async function fetchScenarios(sectorSlug?: string): Promise<Scenario[]> {
+  return rethrow(
+    () =>
+      trpc.scenario.list.query({
+        sector_slug: sectorSlug,
+        limit: 50,
+      }),
+    `fetchScenarios(${sectorSlug ?? "*"})`,
+  );
+}
+
+export async function fetchScenario(id: string): Promise<Scenario> {
+  return rethrow(() => trpc.scenario.get.query({ id }), `fetchScenario(${id})`);
+}
+
+export async function createScenario(input: {
+  sector_slug: string;
+  name: string;
+  notes?: string;
+  driver_overrides: Record<string, number>;
+  author_label?: string;
+}): Promise<Scenario> {
+  return rethrow(() => trpc.scenario.create.mutate(input), "createScenario");
+}
+
+export async function updateScenario(input: {
+  id: string;
+  name?: string;
+  notes?: string | null;
+  driver_overrides?: Record<string, number>;
+}): Promise<Scenario> {
+  return rethrow(() => trpc.scenario.update.mutate(input), `updateScenario(${input.id})`);
+}
+
+export async function deleteScenario(id: string): Promise<{ id: string }> {
+  return rethrow(() => trpc.scenario.delete.mutate({ id }), `deleteScenario(${id})`);
 }
 
 // ---------- Error normalization ----------
