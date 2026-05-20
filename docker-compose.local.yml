@@ -29,6 +29,10 @@ services:
       NODE_ENV: development
       # Browser-side fetch — uses the host port mapped from simulation-service.
       NEXT_PUBLIC_SIMULATION_SERVICE_URL: http://localhost:8000
+      # Server-side fetch (RSC / route handlers) — uses the compose-internal
+      # hostname. Inside the web container, `localhost` is the container
+      # itself, not the host, so the public URL above is unreachable from Node.
+      SIMULATION_SERVICE_URL: http://simulation-service:8000
       # Make file watching work reliably on Docker Desktop bind mounts.
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
