@@ -3,17 +3,19 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from platform_sdk import SimulationBase
 from simulation_service.registry import all_sims, get_sim
 from simulation_service.schemas import (
     DriverSchema,
     OutputSchema,
+    SensitivityEntry,
+    SensitivityResponse,
     SimMetadata,
     SimRunRequest,
     SimRunResponse,
 )
-from platform_sdk import SimulationBase
 
-app = FastAPI(title="simulation-service", version="0.1.0")
+app = FastAPI(title="simulation-service", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,9 +39,11 @@ def _metadata(sim_cls: type[SimulationBase]) -> SimMetadata:
                 max=d.range[1],
                 unit=d.unit,
                 description=d.description,
+                group=d.group,
             )
             for name, d in sim_cls.drivers.items()
         ],
+        presets=dict(sim_cls.presets),
     )
 
 
@@ -88,3 +92,19 @@ def run_sim(slug: str, req: SimRunRequest) -> SimRunResponse:
             for name, out in outputs.items()
         ],
     )
+
+
+@app.get("/sims/{slug}/sensitivity", response_model=SensitivityResponse)
+def sim_sensitivity(slug: str) -> SensitivityResponse:
+    try:
+        sim_cls = get_sim(slug)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=f"sim not found: {slug}") from e
+
+    raw = sim_cls().sensitivity()
+    by_output: dict[str, list[SensitivityEntry]] = {}
+    for out_name, drivers in raw.items():
+        entries = [SensitivityEntry(driver=d, swing=s) for d, s in drivers.items()]
+        entries.sort(key=lambda e: abs(e.swing), reverse=True)
+        by_output[out_name] = entries
+    return SensitivityResponse(slug=slug, by_output=by_output)

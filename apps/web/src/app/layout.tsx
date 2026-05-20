@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
   title: "Tech Sector Simulator",
-  description: "Phase 0 — slider × chart demo",
+  description: "Phase 1 — Space Data Center feasibility (slider × chart × sensitivity)",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

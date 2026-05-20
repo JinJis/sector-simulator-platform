@@ -17,6 +17,7 @@ export interface DriverSchema {
   max: number;
   unit: string;
   description: string;
+  group: string;
 }
 
 export interface OutputSchema {
@@ -33,12 +34,23 @@ export interface SimMetadata {
   description: string;
   horizon_years: number;
   drivers: DriverSchema[];
+  presets: Record<string, Record<string, number>>;
 }
 
 export interface SimRunResponse {
   slug: string;
   drivers: Record<string, number>;
   outputs: OutputSchema[];
+}
+
+export interface SensitivityEntry {
+  driver: string;
+  swing: number;
+}
+
+export interface SensitivityResponse {
+  slug: string;
+  by_output: Record<string, SensitivityEntry[]>;
 }
 
 export async function fetchSim(slug: string): Promise<SimMetadata> {
@@ -59,4 +71,13 @@ export async function runSim(
   });
   if (!res.ok) throw new Error(`runSim failed: ${res.status} ${res.statusText}`);
   return res.json() as Promise<SimRunResponse>;
+}
+
+export async function fetchSensitivity(slug: string): Promise<SensitivityResponse> {
+  const res = await fetch(`${FETCH_BASE}/sims/${slug}/sensitivity`, {
+    cache: "no-store",
+  });
+  if (!res.ok)
+    throw new Error(`fetchSensitivity failed: ${res.status} ${res.statusText}`);
+  return res.json() as Promise<SensitivityResponse>;
 }

@@ -10,6 +10,7 @@ class DriverSchema(BaseModel):
     max: float
     unit: str = ""
     description: str = ""
+    group: str = ""
 
 
 class OutputSchema(BaseModel):
@@ -26,6 +27,7 @@ class SimMetadata(BaseModel):
     description: str
     horizon_years: int
     drivers: list[DriverSchema]
+    presets: dict[str, dict[str, float]] = Field(default_factory=dict)
 
 
 class SimRunRequest(BaseModel):
@@ -36,3 +38,14 @@ class SimRunResponse(BaseModel):
     slug: str
     drivers: dict[str, float]
     outputs: list[OutputSchema]
+
+
+class SensitivityEntry(BaseModel):
+    driver: str
+    swing: float
+
+
+class SensitivityResponse(BaseModel):
+    slug: str
+    # output name → driver entries sorted by |swing| desc.
+    by_output: dict[str, list[SensitivityEntry]]
