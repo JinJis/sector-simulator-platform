@@ -175,9 +175,25 @@ bundle.
         kind-tagged citation summary at the bottom that links back to
         the existing `SOURCE_KINDS` colour scheme so the report's
         citations match the rest of the workspace visually.
-- [ ] **`apps/admin` skeleton**: list registered sectors, kick off ingest
-      runs, approve agent-proposed sectors. No agent UI yet — just the
-      shell.
+- [x] **`apps/admin` skeleton** (2026-05-20). New Next.js 15 app on port
+      3100. Talks to sector-service through the same `/api/sim/*` rewrite
+      pattern as `apps/web`, with its own typed tRPC client (kept
+      in-app — the admin surface will diverge from the user client as
+      ingest / approval procedures land).
+      - `/` — registered sectors grid. Each card shows horizon, driver
+        count + group count, preset count, source count, and scenario
+        count, plus a deep-link into the user app for that sector.
+      - `/sectors/[slug]` — driver tables grouped by Driver.group,
+        presets with their override diff, scenarios list (deep-linked to
+        the user app), and a kind-collapsed sources roll-up.
+      - `/scenarios` — flat scenarios index grouped by sector so an
+        admin can see what users have saved across the platform.
+      - Top nav links to the user app on :3000.
+      - Action buttons (Run ingest, Re-run agent, Review proposal,
+        Propose new sector, Approve queue) are present but `disabled`
+        with a `title` tooltip explaining they land in the agent
+        orchestration slice. Keeps the shell honest about what's
+        wired vs not.
 - [ ] **Agent orchestration foundation** (this is the big one — do not
       start until everything above is in):
   - [ ] `packages/agent-tools` MCP tool definitions (research, decompose,
