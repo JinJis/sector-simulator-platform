@@ -194,18 +194,47 @@ bundle.
         with a `title` tooltip explaining they land in the agent
         orchestration slice. Keeps the shell honest about what's
         wired vs not.
-- [ ] **Agent orchestration foundation** (this is the big one — do not
-      start until everything above is in):
-  - [ ] `packages/agent-tools` MCP tool definitions (research, decompose,
-        infer-driver, propose-edge, generate-sim-code, review-sim-code).
-  - [ ] `services/agent-orchestration` (Temporal workflow shell).
-  - [ ] `prompts/` directory with versioned system prompts per agent.
-  - [ ] Model routing via `packages/agent-tools/llm-client` (Haiku for
-        routing/extraction; Sonnet for code-gen/review; Opus reserved for
-        decomposition/edge-inference).
-  - [ ] Sandbox (Modal) integration for executing generated sim code.
-  - [ ] `tests/agent-evals` cases for each agent.
-  - [ ] LangSmith (or Helicone) tracing + per-tenant cost meter.
+- [~] **Agent orchestration foundation** (split into independent sub-slices —
+      the foundational LLM client landed first; the rest follow as
+      separate slices, each gated on the previous):
+  - [x] **`packages/agent-tools` LLM client + first prompt** (2026-05-20).
+        New uv workspace member `packages/agent-tools` with three modules:
+        - `llm_client.py` — `LLMClient` wraps `anthropic.Anthropic` with
+          model routing by tier ("haiku" / "sonnet" / "opus" → the canonical
+          IDs `claude-haiku-4-5` / `claude-sonnet-4-6` / `claude-opus-4-7`).
+          Prompt caching is on by default — the last system block carries
+          `cache_control: ephemeral`. Adaptive thinking is off by default
+          and opt-in via `adaptive_thinking=True` (per the Opus 4.7
+          guidance — overthinking is the failure mode, not under-thinking).
+          `effort` defaults per tier ("medium" for haiku/sonnet, "high"
+          for opus). Structured output goes through `messages.parse()`
+          when a Pydantic `response_model` is passed.
+        - `cost.py` — `model_price()` / `price_call()` / `CostMeter`.
+          Encodes the public per-1M-token rates and the 0.1× cache-read /
+          1.25× cache-write multipliers. Meter is thread-safe and emits a
+          JSON-serializable `summary()` for /audit lines.
+        - `tools/__init__.py` — `ToolDef` dataclass + `tool_defs()` registry.
+          Ships one starter `lookup_sector` tool that the orchestrator will
+          wire to the existing sim-service tRPC procedures in a later slice.
+        18 pytest cases cover routing, cache_control placement, effort
+        defaults, thinking opt-in, cost math, and the parse() path. All
+        offline — Anthropic client is faked in tests.
+  - [x] **`prompts/` directory + first agent prompt** (2026-05-20).
+        `prompts/README.md` documents the convention (one file per
+        agent role, structured front-matter + free-form body, kept
+        cache-stable). `prompts/decomposition.md` is the first
+        agent system prompt — assigned to the opus tier per the model-
+        routing rules, with explicit principles + anti-patterns for the
+        agent that will turn sector descriptions into Driver / Output
+        schemas.
+  - [ ] **`services/agent-orchestration` shell**: FastAPI service +
+        in-memory workflow runner (Temporal interface only). Modal
+        integration deferred.
+  - [ ] **Sandbox (Modal) integration** for executing generated sim code.
+  - [ ] **More agent prompts**: research / driver-inference / edge-inference /
+        code-gen / code-review (each their own slice — author + eval).
+  - [ ] **`tests/agent-evals`** harness + cases per agent.
+  - [ ] **LangSmith / Helicone tracing** wired through `LLMClient`.
 
 ### Out of scope for now
 

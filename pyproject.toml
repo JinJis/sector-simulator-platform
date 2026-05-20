@@ -1,8 +1,9 @@
 [tool.uv.workspace]
-members = ["packages/sdk-python", "services/simulation-service"]
+members = ["packages/sdk-python", "packages/agent-tools", "services/simulation-service"]
 
 [tool.uv.sources]
 platform-sdk = { workspace = true }
+agent-tools = { workspace = true }
 
 [tool.ruff]
 line-length = 100
