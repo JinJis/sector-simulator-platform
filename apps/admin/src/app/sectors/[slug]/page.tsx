@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Breadcrumbs } from "@platform/ui";
 import { notFound } from "next/navigation";
 
 import {
@@ -38,11 +38,13 @@ export default async function SectorDetail({
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
-      <nav className="mb-3 text-[11px] text-neutral-500">
-        <Link href="/" className="hover:text-neutral-300">
-          ← Sectors
-        </Link>
-      </nav>
+      <Breadcrumbs
+        className="mb-3"
+        items={[
+          { label: "Sectors", href: "/" },
+          { label: sim.name },
+        ]}
+      />
 
       <header className="mb-6 flex flex-wrap items-baseline gap-3">
         <h1 className="text-xl font-semibold text-neutral-50">{sim.name}</h1>

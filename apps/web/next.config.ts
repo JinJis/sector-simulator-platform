@@ -17,6 +17,9 @@ const SECTOR_SERVICE_INTERNAL =
 const config: NextConfig = {
   reactStrictMode: true,
   allowedDevOrigins: ["*.proxy.googlers.com"],
+  // @platform/ui exports raw .tsx source — Next has to transpile it
+  // because the workspace package doesn't ship pre-built JS.
+  transpilePackages: ["@platform/ui"],
   async rewrites() {
     return [
       { source: "/api/sim/:path*", destination: `${SECTOR_SERVICE_INTERNAL}/:path*` },

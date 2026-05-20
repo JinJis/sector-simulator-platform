@@ -92,11 +92,13 @@ services:
       CHOKIDAR_USEPOLLING: "true"
     volumes:
       - ./apps/web:/repo/apps/web
-      # The web app type-imports @platform/sector-service / @platform/db.
-      # Bind-mount their source too so changes to the tRPC router type
-      # surface live in `next dev` without rebuilding the image.
+      # The web app type-imports @platform/sector-service / @platform/db
+      # and runtime-imports @platform/ui. Bind-mount their sources so
+      # changes to the tRPC router type / shared components surface live
+      # in `next dev` without rebuilding the image.
       - ./services/sector-service:/repo/services/sector-service
       - ./packages/db:/repo/packages/db
+      - ./packages/ui:/repo/packages/ui
       # tsconfig.base.json is extended by apps/web/tsconfig.json — mount
       # read-only so host edits are picked up without leaking writes.
       - ./tsconfig.base.json:/repo/tsconfig.base.json:ro
@@ -107,6 +109,7 @@ services:
       - web_next_cache:/repo/apps/web/.next
       - web_sector_service_node_modules:/repo/services/sector-service/node_modules
       - web_db_node_modules:/repo/packages/db/node_modules
+      - web_ui_node_modules:/repo/packages/ui/node_modules
     ports:
       - "3000:3000"
     restart: "no"
@@ -116,6 +119,7 @@ volumes:
   web_next_cache:
   web_sector_service_node_modules:
   web_db_node_modules:
+  web_ui_node_modules:
   postgres_data:
   sector_service_node_modules:
   db_node_modules:

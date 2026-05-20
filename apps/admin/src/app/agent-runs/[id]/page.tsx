@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Breadcrumbs } from "@platform/ui";
 import { notFound } from "next/navigation";
 
 import { getAgentWorkflow, type AgentWorkflow } from "@/lib/sim-client";
@@ -24,9 +24,13 @@ export default async function AgentRunDetail({
     }
     return (
       <main className="mx-auto max-w-5xl px-6 py-8">
-        <Link href="/agent-runs" className="text-[11px] text-neutral-500 hover:text-neutral-300">
-          ← Agent runs
-        </Link>
+        <Breadcrumbs
+          className="mb-3"
+          items={[
+            { label: "Agent runs", href: "/agent-runs" },
+            { label: shortId(id) },
+          ]}
+        />
         <p className="mt-4 text-sm text-red-400">
           Failed to load workflow {id}.
         </p>
@@ -39,12 +43,19 @@ export default async function AgentRunDetail({
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-8">
-      <nav className="mb-3 text-[11px] text-neutral-500">
-        <Link href="/agent-runs" className="hover:text-neutral-300">
-          ← Agent runs
-        </Link>
-      </nav>
+      <Breadcrumbs
+        className="mb-3"
+        items={[
+          { label: "Agent runs", href: "/agent-runs" },
+          { label: shortId(id) },
+        ]}
+      />
       <RunWatcher id={id} initial={initial} />
     </main>
   );
+}
+
+/** wf_abc123def456 → wf_abc123…. Keeps breadcrumbs compact for long IDs. */
+function shortId(id: string): string {
+  return id.length > 12 ? `${id.slice(0, 11)}…` : id;
 }

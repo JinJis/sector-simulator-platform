@@ -392,6 +392,35 @@ Workflow records now survive process restarts.
   `depends_on: {postgres: healthy, db-migrate: completed_successfully}`.
   Dev setups without DB still work via the in-memory fallback.
 
+### Phase 2.5 IA slice 1 — Breadcrumbs + SubNav (2026-05-20)
+
+First step of the §8.5 IA redesign. Just the shared components +
+applying breadcrumbs to existing nested routes. The bigger sector-hub
+split is slice 2.
+
+- **New workspace package `@platform/ui`**: source-only (no build step;
+  consumers compile via `transpilePackages` in next.config). The
+  convention CLAUDE.md mandates ("shared components go in
+  packages/ui first") now has an actual home. Exports map covers
+  `@platform/ui` (everything), `@platform/ui/breadcrumbs`, and
+  `@platform/ui/sub-nav`.
+- **`Breadcrumbs`** (RSC-safe): trail of `<Link>`s ending in plain
+  text for the current page. Replaces the ad-hoc `← back` patterns
+  scattered across detail pages.
+- **`SubNav`** (`use client`): horizontal pill row that auto-
+  highlights the active item via `usePathname()` — longest-prefix
+  match so nested routes still resolve correctly. Built but not yet
+  applied; slice 2 will use it to drive the sector hub's child tabs.
+- **Wired**: admin breadcrumbs on `/sectors/[slug]`,
+  `/agent-runs/new`, `/agent-runs/[id]` (including the error
+  branch); web breadcrumbs on `/compare`. Removed orphaned `Link`
+  imports as a side-effect.
+- **Tailwind + Docker plumbing**: both app tailwind configs now
+  include `packages/ui/src/**/*` in their `content` glob (otherwise
+  the shared components' classes get tree-shaken out of the
+  generated CSS). The web Dockerfile + `docker-compose.local.yml`
+  copy/bind-mount `packages/ui` so docker dev works.
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

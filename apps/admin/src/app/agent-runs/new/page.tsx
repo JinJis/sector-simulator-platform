@@ -1,15 +1,17 @@
-import Link from "next/link";
+import { Breadcrumbs } from "@platform/ui";
 
 import { NewDecompositionForm } from "./form";
 
 export default function NewAgentRunPage() {
   return (
     <main className="mx-auto max-w-3xl px-6 py-8">
-      <nav className="mb-3 text-[11px] text-neutral-500">
-        <Link href="/agent-runs" className="hover:text-neutral-300">
-          ← Agent runs
-        </Link>
-      </nav>
+      <Breadcrumbs
+        className="mb-3"
+        items={[
+          { label: "Agent runs", href: "/agent-runs" },
+          { label: "New decomposition" },
+        ]}
+      />
       <h1 className="text-xl font-semibold text-neutral-50">
         Propose new sector
       </h1>

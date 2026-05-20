@@ -1,3 +1,4 @@
+import { Breadcrumbs } from "@platform/ui";
 import Link from "next/link";
 
 import {
@@ -82,13 +83,15 @@ export default async function ComparePage({
 
   return (
     <main className="mx-auto min-h-screen max-w-7xl px-6 pb-16 pt-6">
+      <Breadcrumbs
+        className="mb-3"
+        items={[
+          { label: "Workspace", href: `/?sector=${encodeURIComponent(sector)}` },
+          { label: meta.name, href: `/?sector=${encodeURIComponent(sector)}` },
+          { label: "Compare" },
+        ]}
+      />
       <div className="mb-6 flex flex-wrap items-baseline gap-3">
-        <Link
-          href={`/?sector=${encodeURIComponent(sector)}`}
-          className="rounded border border-neutral-800 px-2 py-1 text-[11px] text-neutral-300 hover:bg-neutral-900"
-        >
-          ← workspace
-        </Link>
         <h1 className="text-xl font-semibold tracking-tight text-neutral-50">
           {meta.name}
         </h1>

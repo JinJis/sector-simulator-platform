@@ -18,13 +18,15 @@ WORKDIR /repo
 # ---------- deps: install workspace dependencies ----------
 FROM base AS deps
 # Manifests for the web app + its workspace deps. `@platform/web` consumes
-# `@platform/sector-service` for the `AppRouter` type, and sector-service
-# in turn depends on `@platform/db` — so pnpm needs to see all three
-# manifests to resolve the workspace graph.
+# `@platform/sector-service` for the `AppRouter` type, sector-service in
+# turn depends on `@platform/db`, and shared components live in
+# `@platform/ui` — so pnpm needs to see all four manifests to resolve
+# the workspace graph.
 COPY package.json pnpm-workspace.yaml ./
 COPY apps/web/package.json ./apps/web/package.json
 COPY services/sector-service/package.json ./services/sector-service/package.json
 COPY packages/db/package.json ./packages/db/package.json
+COPY packages/ui/package.json ./packages/ui/package.json
 # Lockfile may not exist yet during Phase 0 — fall back to a non-frozen install.
 COPY pnpm-lock.yaml* ./
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
@@ -40,6 +42,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 # `next build`.
 COPY services/sector-service ./services/sector-service
 COPY packages/db ./packages/db
+COPY packages/ui ./packages/ui
 RUN pnpm --filter @platform/db generate
 
 # ---------- dev: hot-reload target (local mode) ----------
