@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from platform_sdk import SimulationBase
 
 from simulation_service.registry import all_sims, get_sim
+from simulation_service.report import build_report
 from simulation_service.schemas import (
     DriverSchema,
     GraphEdgeSchema,
@@ -17,6 +18,8 @@ from simulation_service.schemas import (
     LiveResponse,
     OutputSchema,
     ProvenanceSchema,
+    ReportRequest,
+    ReportResponse,
     SensitivityEntry,
     SensitivityResponse,
     SimGraphResponse,
@@ -155,6 +158,25 @@ def sim_sensitivity(slug: str) -> SensitivityResponse:
         entries.sort(key=lambda e: abs(e.swing), reverse=True)
         by_output[out_name] = entries
     return SensitivityResponse(slug=slug, by_output=by_output)
+
+
+@app.post("/sims/{slug}/report", response_model=ReportResponse)
+def sim_report(slug: str, req: ReportRequest) -> ReportResponse:
+    """Templated markdown report. No LLM in this slice — the layout and
+    wording is deterministic so caching is trivial and the UI can iterate
+    on shape before we spend tokens. Phase 2 will swap the body builder
+    for an LLM call (with the templated version as fallback)."""
+    try:
+        sim_cls = get_sim(slug)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=f"sim not found: {slug}") from e
+
+    try:
+        resolved = sim_cls.resolve_drivers(req.drivers)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    return build_report(sim_cls=sim_cls, req=req, resolved_drivers=resolved)
 
 
 @app.get("/sims/{slug}/graph", response_model=SimGraphResponse)

@@ -147,8 +147,34 @@ bundle.
         through capex/opex/trajectories; memory-semi through demand × ASP
         → revenue → margin → FCF; sofc through sizing → fuel/carbon/stack →
         LCOE/NPV).
-- [ ] **Report generation (PDF/markdown)**: LLM-stub OK; template scalars +
-      chart snapshots + sources used.
+- [x] **Report generation (markdown)** (2026-05-20). Markdown only; PDF is a
+      later slice once we adopt a renderer. No LLM yet — the template is
+      deterministic so caching is trivial and the UI can iterate on shape.
+      Phase 2 later slice swaps the body for an LLM call (with the
+      templated version as fallback).
+      - simulation-service: `POST /sims/{slug}/report` accepts driver
+        overrides + optional `scenario_name` / `scenario_notes`, runs sim
+        + sensitivity once, returns
+        `{slug, generated_at, markdown, sources[]}`. The markdown has:
+        title, overview, optional notes blockquote, headline scalars
+        table, trajectory summary (start → end + range), driver overrides
+        table with Δ%, top-5 sensitivity per scalar output, and a sources
+        section grouped by kind with back-references to the drivers each
+        source backs. Builder lives in
+        `simulation_service/report.py`; 8 pytest cases cover defaults,
+        overrides, source dedupe, sensitivity block, scenario notes, and
+        the 3-sector smoke (each registered sim builds without errors).
+      - sector-service: `sim.report` tRPC mutation proxies through with
+        the same 400/404 mappings used by `sim.run`. 2 new vitest cases.
+      - Web: `Report` button on `ScenarioBar` opens a right-side slide-over
+        (`ReportPanel`) that re-generates on every driver tweak. Renders
+        the markdown via a small in-file renderer (~140 LOC, no
+        dependency) covering ATX headings, pipe tables with alignment,
+        blockquotes, ordered/unordered lists, bold/italic, inline code,
+        and links. Copy-to-clipboard + download-as-`.md` actions, plus a
+        kind-tagged citation summary at the bottom that links back to
+        the existing `SOURCE_KINDS` colour scheme so the report's
+        citations match the rest of the workspace visually.
 - [ ] **`apps/admin` skeleton**: list registered sectors, kick off ingest
       runs, approve agent-proposed sectors. No agent UI yet — just the
       shell.

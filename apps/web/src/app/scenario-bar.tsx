@@ -20,6 +20,7 @@ interface Props {
   onUpdate: () => Promise<void>;
   onRename: (name: string) => Promise<void>;
   onDelete: () => Promise<void>;
+  onOpenReport: () => void;
 }
 
 /**
@@ -49,6 +50,7 @@ export function ScenarioBar({
   onUpdate,
   onRename,
   onDelete,
+  onOpenReport,
 }: Props) {
   const router = useRouter();
   const [shareToast, setShareToast] = useState<string | null>(null);
@@ -208,6 +210,13 @@ export function ScenarioBar({
               Compare…
             </BarButton>
           )}
+          <BarButton
+            onClick={onOpenReport}
+            tone="muted"
+            title="Generate a markdown report of the current scenario"
+          >
+            Report
+          </BarButton>
           {active && (
             <BarButton
               onClick={handleDelete}

@@ -148,6 +148,49 @@ describe("sim.sensitivity / sim.live", () => {
   });
 });
 
+describe("sim.report", () => {
+  it("forwards drivers + scenario meta as POST body", async () => {
+    let captured: { url: string; init?: RequestInit } | undefined;
+    mockFetch((url, init) => {
+      captured = { url, init };
+      return jsonResponse({
+        slug: "space-data-center",
+        generated_at: "2026-05-20T00:00:00Z",
+        markdown: "# Space Data Center — Aggressive launch\n\n…",
+        sources: [
+          { title: "T", url: "U", as_of: "A", kind: "vendor_doc", drivers: ["d1"] },
+        ],
+      });
+    });
+    const result = await caller().sim.report({
+      slug: "space-data-center",
+      drivers: { launch_cost_usd_per_kg: 300 },
+      scenario_name: "Aggressive launch",
+    });
+    expect(captured?.url).toMatch(/\/sims\/space-data-center\/report$/);
+    expect(captured?.init?.method).toBe("POST");
+    const body = JSON.parse(String(captured?.init?.body));
+    expect(body.drivers).toEqual({ launch_cost_usd_per_kg: 300 });
+    expect(body.scenario_name).toBe("Aggressive launch");
+    expect(body.scenario_notes).toBeNull();
+    expect(result.markdown).toMatch(/^# Space Data Center/);
+    expect(result.sources).toHaveLength(1);
+    expect(result.sources[0]!.drivers).toEqual(["d1"]);
+  });
+
+  it("maps upstream 400 to BAD_REQUEST", async () => {
+    mockFetch(() =>
+      jsonResponse({ detail: "Unknown drivers: ['bogus_lever']" }, 400),
+    );
+    await expect(
+      caller().sim.report({
+        slug: "space-data-center",
+        drivers: { bogus_lever: 1 },
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+});
+
 describe("sim.graph", () => {
   it("proxies /graph and returns nodes + edges", async () => {
     mockFetch((url) => {

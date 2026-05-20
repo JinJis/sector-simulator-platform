@@ -91,6 +91,41 @@ class SimGraphResponse(BaseModel):
     edges: list[GraphEdgeSchema] = Field(default_factory=list)
 
 
+class ReportRequest(BaseModel):
+    """Generate a textual report for a given driver setting.
+
+    `drivers` is the (possibly partial) override map applied over sector
+    defaults. `scenario_name` / `scenario_notes` are optional metadata used
+    in the report title + body; pass them through when the report is being
+    generated from a saved Scenario row so the markdown can quote it.
+    """
+
+    drivers: dict[str, float] = Field(default_factory=dict)
+    scenario_name: str | None = None
+    scenario_notes: str | None = None
+    generated_at: str | None = None  # ISO timestamp; server fills if omitted
+
+
+class ReportSource(BaseModel):
+    title: str
+    url: str = ""
+    as_of: str = ""
+    kind: str = ""
+    # Drivers whose provenance cites this source — lets the UI surface "this
+    # source backs the X, Y inputs" without re-walking provenance.
+    drivers: list[str] = Field(default_factory=list)
+
+
+class ReportResponse(BaseModel):
+    slug: str
+    generated_at: str
+    markdown: str
+    # Deduped citations, in display order. Mirrors the markdown body but
+    # exposed structurally so the client can render a sidebar / download a
+    # .csv / etc. without re-parsing the body.
+    sources: list[ReportSource] = Field(default_factory=list)
+
+
 class LiveResponse(BaseModel):
     """Live snapshot: time-drifted driver values + immediate sim outputs.
 

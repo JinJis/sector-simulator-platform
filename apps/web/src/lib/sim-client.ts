@@ -59,6 +59,8 @@ export type LiveResponse = RouterOutput["sim"]["live"];
 export type SimGraphResponse = RouterOutput["sim"]["graph"];
 export type GraphNode = SimGraphResponse["nodes"][number];
 export type GraphEdge = SimGraphResponse["edges"][number];
+export type ReportResponse = RouterOutput["sim"]["report"];
+export type ReportSource = ReportResponse["sources"][number];
 
 export type DriverSchema = SimMetadata["drivers"][number];
 export type OutputSchema = SimRunResponse["outputs"][number];
@@ -108,6 +110,18 @@ export async function fetchLive(slug: string): Promise<LiveResponse> {
 
 export async function fetchGraph(slug: string): Promise<SimGraphResponse> {
   return rethrow(() => trpc.sim.graph.query({ slug }), `fetchGraph(${slug})`);
+}
+
+export async function generateReport(input: {
+  slug: string;
+  drivers: Record<string, number>;
+  scenario_name?: string | null;
+  scenario_notes?: string | null;
+}): Promise<ReportResponse> {
+  return rethrow(
+    () => trpc.sim.report.mutate(input),
+    `generateReport(${input.slug})`,
+  );
 }
 
 // ---------- Scenario CRUD ----------

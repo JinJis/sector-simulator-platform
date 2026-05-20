@@ -106,6 +106,21 @@ const SimGraphResponse = z.object({
   edges: z.array(GraphEdge),
 });
 
+const ReportSource = z.object({
+  title: z.string(),
+  url: z.string(),
+  as_of: z.string(),
+  kind: z.string(),
+  drivers: z.array(z.string()),
+});
+
+const ReportResponse = z.object({
+  slug: z.string(),
+  generated_at: z.string(),
+  markdown: z.string(),
+  sources: z.array(ReportSource),
+});
+
 const SlugInput = z.object({ slug: z.string().min(1) });
 
 // ---------- Procedures ----------
@@ -152,5 +167,26 @@ export const simRouter = router({
     .output(SimGraphResponse)
     .query(({ input }) =>
       simFetch(`/sims/${input.slug}/graph`, { context: `sim.graph:${input.slug}` }),
+    ),
+
+  report: publicProcedure
+    .input(
+      SlugInput.extend({
+        drivers: z.record(z.number()).default({}),
+        scenario_name: z.string().nullable().optional(),
+        scenario_notes: z.string().nullable().optional(),
+      }),
+    )
+    .output(ReportResponse)
+    .mutation(({ input }) =>
+      simFetch(`/sims/${input.slug}/report`, {
+        method: "POST",
+        body: {
+          drivers: input.drivers,
+          scenario_name: input.scenario_name ?? null,
+          scenario_notes: input.scenario_notes ?? null,
+        },
+        context: `sim.report:${input.slug}`,
+      }),
     ),
 });

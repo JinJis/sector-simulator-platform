@@ -16,6 +16,7 @@ import {
 import { GraphView } from "./graph-view";
 import { LiveDashboard } from "./live-dashboard";
 import { ManualPanel } from "./manual-panel";
+import { ReportPanel } from "./report-panel";
 import { ScenarioBar } from "./scenario-bar";
 import { diffFromDefaults, isSameOverrides } from "./scenario-state";
 import { SourcesView } from "./sources-view";
@@ -65,6 +66,7 @@ export function Workspace({ meta, sensitivity, initialLive, initialScenario }: P
   const [scenarioError, setScenarioError] = useState<string | null>(null);
 
   const [tab, setTab] = useState<TabId>("live");
+  const [reportOpen, setReportOpen] = useState(false);
 
   // Pull the full saved-scenario list for this sector after mount. The
   // server-loaded `initialScenario` (if any) is already in there as a
@@ -201,6 +203,15 @@ export function Workspace({ meta, sensitivity, initialLive, initialScenario }: P
         onUpdate={handleUpdate}
         onRename={handleRename}
         onDelete={handleDelete}
+        onOpenReport={() => setReportOpen(true)}
+      />
+      <ReportPanel
+        slug={meta.slug}
+        drivers={driverValues}
+        scenarioName={activeScenario?.name ?? null}
+        scenarioNotes={activeScenario?.notes ?? null}
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
       />
 
       <div className="mb-5 flex flex-wrap items-stretch gap-1 rounded-lg border border-neutral-800 bg-neutral-900/40 p-1">
