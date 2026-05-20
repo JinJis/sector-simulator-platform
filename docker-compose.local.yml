@@ -32,6 +32,24 @@ services:
       - "8000:8000"
     restart: "no"
 
+  agent-orchestration:
+    build:
+      target: dev
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /repo/services/agent-orchestration:/repo/packages/agent-tools:/repo/packages/sdk-python
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ./services/agent-orchestration:/repo/services/agent-orchestration
+      - ./packages/agent-tools:/repo/packages/agent-tools
+      - ./packages/sdk-python:/repo/packages/sdk-python
+      # Bind-mount the prompts dir so edits to a system prompt are picked
+      # up live (the loader's lru_cache is cleared on uvicorn --reload).
+      - ./prompts:/repo/prompts:ro
+    ports:
+      - "8002:8002"
+    restart: "no"
+
   # Bind-mount packages/db so host edits to schema.prisma / migrations are
   # picked up without rebuilding the image. node_modules stays on a named
   # volume so the in-image linux-musl install isn't shadowed.

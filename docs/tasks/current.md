@@ -227,9 +227,37 @@ bundle.
         routing rules, with explicit principles + anti-patterns for the
         agent that will turn sector descriptions into Driver / Output
         schemas.
-  - [ ] **`services/agent-orchestration` shell**: FastAPI service +
-        in-memory workflow runner (Temporal interface only). Modal
-        integration deferred.
+  - [x] **`services/agent-orchestration` shell** (2026-05-20). FastAPI
+        service on port 8002 with an in-memory workflow runner shaped to
+        the Temporal interface — the swap to Temporal is a runner
+        replacement, not an API change.
+        - `Workflow` protocol (async `run(request, *, cost_meter)`),
+          `WorkflowRunner` schedules tasks via `asyncio.create_task` and
+          tracks `WorkflowStatus` (pending → running → succeeded /
+          failed / cancelled). Cost rolls up per workflow via
+          `agent-tools.CostMeter`.
+        - First concrete workflow: `DecompositionWorkflow` — loads
+          `prompts/decomposition.md`, calls Claude Opus 4.7 with
+          adaptive thinking + structured output (`Decomposition`
+          Pydantic schema mirroring `SimulationBase`), validates the
+          result. The synchronous SDK call is wrapped in
+          `asyncio.to_thread` so the event loop stays free.
+        - `prompts.py` loader walks up from the module to find the
+          repo `prompts/` directory; `PROMPTS_DIR` env var overrides.
+          `lru_cache` per process; `clear_prompt_cache()` for tests.
+        - HTTP surface: `POST /workflows/decompose` (202 with record),
+          `GET /workflows/{id}`, `GET /workflows?kind=&limit=`,
+          `POST /workflows/{id}/cancel`, `GET /health`. Runner + LLM
+          client are `app.state` singletons so tests inject fakes.
+        - 12 pytest cases (5 workflow-runner + 7 HTTP), all offline —
+          a `FakeAnthropic` exposes `messages.create` /
+          `messages.parse` and returns a canned `Decomposition` value.
+        - Docker: `infra/docker/agent-orchestration.Dockerfile`
+          (dev + prod stages, `PROMPTS_DIR=/repo/prompts`). Compose
+          entries in base + local with port 8002 exposed and
+          `ANTHROPIC_API_KEY` plumbed through.
+        - Modal sandbox / persistence / multi-tenant scoping
+          intentionally deferred — they're separate later slices.
   - [ ] **Sandbox (Modal) integration** for executing generated sim code.
   - [ ] **More agent prompts**: research / driver-inference / edge-inference /
         code-gen / code-review (each their own slice — author + eval).

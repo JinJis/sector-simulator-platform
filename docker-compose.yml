@@ -56,6 +56,20 @@ services:
     networks:
       - internal
 
+  agent-orchestration:
+    image: tssp/agent-orchestration:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: infra/docker/agent-orchestration.Dockerfile
+    environment:
+      # ANTHROPIC_API_KEY is opt-in — without it, only /health works (any
+      # call that constructs a real LLMClient at request time will fail).
+      # The fake-client codepath is for tests only.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      PROMPTS_DIR: /repo/prompts
+    networks:
+      - internal
+
   sector-service:
     image: tssp/sector-service:${IMAGE_TAG:-latest}
     build:

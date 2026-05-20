@@ -1,5 +1,10 @@
 [tool.uv.workspace]
-members = ["packages/sdk-python", "packages/agent-tools", "services/simulation-service"]
+members = [
+  "packages/sdk-python",
+  "packages/agent-tools",
+  "services/simulation-service",
+  "services/agent-orchestration",
+]
 
 [tool.uv.sources]
 platform-sdk = { workspace = true }
