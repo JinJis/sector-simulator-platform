@@ -13,12 +13,37 @@ import { z } from "zod";
 
 import { publicProcedure, router } from "./init.js";
 
+// `driver_overrides` lives in Postgres as JSONB. Most rows hold a clean
+// `Record<string, number>` shape, but legacy or partially-bad rows can
+// surface `null` / `Infinity` / `NaN` because JSON.stringify converts
+// non-finite numbers to `null` on the way in. A strict
+// `z.record(z.number())` output schema then fails server-side output
+// validation and the whole scenario list throws — surfacing on the
+// client as "Unable to transform response from server".
+//
+// Preprocess to silently drop any non-finite value before validating.
+// Callers always treat missing keys as "use the sector default", which
+// is exactly what dropping does — so this is information-preserving.
+const DriverOverridesOut = z.preprocess(
+  (val) => {
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      const out: Record<string, number> = {};
+      for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+        if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
+      }
+      return out;
+    }
+    return {};
+  },
+  z.record(z.number()),
+);
+
 const ScenarioOut = z.object({
   id: z.string(),
   sector_slug: z.string(),
   name: z.string(),
   notes: z.string().nullable(),
-  driver_overrides: z.record(z.number()),
+  driver_overrides: DriverOverridesOut,
   author_label: z.string().nullable(),
   created_at: z.date(),
   updated_at: z.date(),

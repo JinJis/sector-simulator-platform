@@ -25,6 +25,13 @@ export function PageTour() {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
   const lastFocusedRef = useRef<HTMLElement | null>(null);
+  // M25 bugfix: every hook the component will use MUST be called on every
+  // render in the same order. `useFocusTrap` used to live below the
+  // `if (!entry) return null` early return — navigating between a page
+  // with tour content and one without changed the hook count and React
+  // threw "Rendered fewer hooks than expected". Hoist it above the
+  // early return so the count stays constant.
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
 
   // Reset to step 0 every time the modal opens.
   useEffect(() => {
@@ -57,7 +64,6 @@ export function PageTour() {
   const total = entry.steps.length;
   const current = entry.steps[step]!;
   const isLast = step === total - 1;
-  const trapRef = useFocusTrap<HTMLDivElement>(open);
 
   return (
     <>

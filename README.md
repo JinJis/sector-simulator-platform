@@ -347,15 +347,20 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **M24** | Watchlist + stock comparison + page tours + a11y. New `watchlist_items` table + `watchlist.*` tRPC + `<WatchButton>` on every equity row/header + `/watchlist` page (★ 관심 종목 link in user menu). New `/sectors/[slug]/compare-stocks?a=&b=` route with side-by-side cards (price / 30d / 90d / 섹터 노출 / top 3 영향 요인 / 최신 분기 fundamentals) + "한눈에 비교" diff table marking the winner per row. Floating "📍 이 페이지 둘러보기" button on every primary page → 3-5 step plain-Korean modal (10 page-specific tour entries). `useFocusTrap` hook + applied to Onboarding/PageTour modals. Skip-to-content link in SiteHeader. `aria-current` / `aria-live` / `aria-label` polished. |
 | **M25** | Agent flow → user-facing + admin pivot + Premium scaffolding. `User.tier` + `Sector.created_by_user_id` schema. New `/propose` (4-step UX: prompt → working → result → activate) wired to `agent.startProposeSector` + auto `sector.activate` chain. New `/my-sectors` page + user menu links. `<ProposeCta>` on home. Settings adds "현재 플랜" section with Premium upgrade stub. Admin pivots to monitoring dashboard with 4 metric tiles + new `/admin/users` page (search/filter + ★ Promote button). New `admin.listUsers` + `admin.setTier` tRPC. Full agent capabilities inventory at `docs/agent-capabilities.md`. |
 
-### Planned next
+### Planned next — M26 → M31
 
-No backlog items remain on the M14-M25 track. Next direction TBD —
-candidates: payment integration (Stripe / Toss), hard tier gating on
-`/propose`, per-user monthly budget + rate limiting, the 4 dormant
-agent prompts (research / driver-inference / code-gen + code-review),
-sandboxed (Modal / E2B) execution, OAuth providers (Google / GitHub),
-multi-tenant scoping (`tenant_id` on every table + RLS), backtest
-harness (see `### Deferred (Phase 3+)` below).
+Six concrete milestones queued, ordered by dependency. See
+[`docs/tasks/current.md`](docs/tasks/current.md) for per-milestone
+scope / touch points / dependencies / out-of-scope.
+
+| | Scope |
+|---|---|
+| **M26** | Payment integration + hard tier gating — Stripe + Toss Checkout + webhooks. `billing_customers / billing_subscriptions / billing_events` tables. Settings "Premium 업그레이드" stub becomes real. Hard gate on `/propose` for free users (with `AGENT_BETA_FREE=true` env flag during transition). Customer portal link. |
+| **M27** | Per-user agent budget + rate limiting — `BudgetPolicy` per tier (free $0 / premium $20-50 monthly). agent_workflows.user_id FK. Pre-call cost check + per-user concurrent-run cap. Settings "이번 달 사용량" meter. Admin `/users` surfaces MTD usage. Depends on M26. |
+| **M28** | Dormant agent prompts → live workflows — activate the 4 written prompts as workflows: `ResearchWorkflow` (Gemini Deep Search), `DriverInferenceWorkflow` (Sonnet, calibrated defaults+sources), `CodeGenWorkflow` (Sonnet, `SimulationBase` Python), `CodeReviewWorkflow` (Sonnet, severity findings). New `ProposeSectorV2Workflow` chains all 6 stages ($1-2 / run). Code-gen output displayed but not executed until M28b adds Modal/E2B sandbox. Depends on M26 + M27. |
+| **M29** | OAuth providers (Google / GitHub) — `oauth_accounts` table (one user → multiple providers, link-by-email with confirm). `User.password_hash` becomes nullable. New `/api/oauth/[provider]/callback` route handlers. Login + signup pages gain provider buttons. Settings "연결된 계정" section. Independent. |
+| **M30** | Multi-tenant scoping — `workspaces` + `workspace_members` tables. Every user-scoped table gets `workspace_id` FK. Prisma middleware injects automatically; Postgres RLS as 2nd defense line. Workspace switcher in header. Tier moves to workspace. Billing attaches to workspace. Big schema migration; sequencing critical. |
+| **M31** | Backtest harness — new `services/validation-service` (uv member). Weekly cron replays sector × scenario × equity from 90d ago → compares projected vs realized → persists to `backtest_runs`. Equity detail gains "예측 정확도" section. Aggregate calibrates `PROJECTION_SCALE` per sector. Independent of M30. |
 
 See [`docs/agent-capabilities.md`](docs/agent-capabilities.md) for the
 full inventory of agent features (shipped + dormant + roadmap).

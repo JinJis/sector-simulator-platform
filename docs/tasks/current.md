@@ -2902,6 +2902,247 @@ beta, what flips Premium-only at launch) + security policy + roadmap.
 - The 4 dormant prompts (research / driver-inference / code-gen /
   code-review) — wired in a future slice
 
+## Planned next — M26 to M31 (pre-scoped backlog)
+
+Six concrete milestones queued after M25, ordered by dependency
+(payment + budget gating land before the bigger dormant-prompt slice
+that they meter; OAuth / multi-tenant can interleave; backtest is
+independent and can ship last).
+
+### M26 — Payment integration + hard tier gating
+
+**Why**: Premium scaffolding shipped decoratively in M25. Until a
+real payment flow exists, every "★ Premium" badge is a UX promise
+the platform can't keep. Wiring this also flips the agent flow from
+"free in beta" → "Premium-only at GA" without rewriting any UI.
+
+**Scope**:
+
+- Pick Stripe (US/global) + Toss (KR) — both via Checkout / Hosted
+  Payment + webhooks. Schema gets `billing_customers`, `billing_subscriptions`,
+  `billing_events` tables (last one for idempotent webhook replay).
+- `billing.*` tRPC: `createCheckoutSession` (returns redirect URL),
+  `openCustomerPortal`, `subscriptionStatus`.
+- Webhook handler updates `User.tier` automatically — `subscription.created
+  → premium`, `subscription.canceled → free`, `payment_failed → grace
+  period flag` (degraded premium for N days before downgrade).
+- Settings page "Premium 업그레이드" stub becomes a real link to
+  Stripe/Toss Checkout. Settings shows current plan + next billing
+  date + manage-payment link.
+- **Hard gate** on `/propose`: anonymous → /login redirect (already
+  done); free + Premium-required → "Premium 으로 업그레이드해주세요"
+  blocker with upgrade CTA.
+- Beta flag (env var `AGENT_BETA_FREE=true`) keeps the soft gate
+  during transition.
+
+**Touch points**: `packages/db/prisma/schema.prisma` (3 new tables),
+`services/sector-service/src/trpc/billing.ts` (new), Stripe / Toss
+SDK in sector-service, `apps/web/src/app/settings/settings-form.tsx`,
+`apps/web/src/app/propose/propose-flow.tsx` (gate).
+
+**Out of scope**: enterprise invoicing, tax handling beyond what
+Stripe Tax / Toss auto-handles, multi-currency display.
+
+**Dependencies**: none — can ship independently. Strongly recommended
+before public launch.
+
+---
+
+### M27 — Per-user agent budget + rate limiting
+
+**Why**: Without quota, a single user could drain monthly agent cost.
+Premium tiers usually come with a soft cap; needed before public
+launch even if cap is generous.
+
+**Scope**:
+
+- `agent_workflows.user_id` FK (currently runs are anonymous from
+  the orchestration side). agent-orchestration's repo records it.
+- `BudgetPolicy` per tier (env-driven config): free → $0 / month,
+  premium → e.g. $20 / month. Hardcoded grace periods for beta.
+- Pre-call check in `WorkflowRunner.start` — sums `cost_usd` over
+  current calendar month for `user_id`, rejects when over.
+- Per-user concurrent-run cap (free → 0, premium → 2). Reject with
+  429 + plain-Korean message.
+- Settings page gets "이번 달 사용량" meter — `used / budget` bar,
+  resets monthly. "한도 도달" → upgrade CTA / wait-until-reset.
+- Admin `/users` page surfaces month-to-date usage per row.
+
+**Touch points**: `agent_orchestration/workflows.py` (pre-flight cost
+check), `services/sector-service/src/trpc/auth.ts` (me returns
+month_usage), settings-form, /admin/users.
+
+**Out of scope**: per-team / shared budget — needs multi-tenant
+(M30). Per-call hard timeout — already partially exists via
+asyncio.
+
+**Dependencies**: M26 (so cap differs by tier).
+
+---
+
+### M28 — Dormant agent prompts → live workflows
+
+**Why**: 4 prompts (`research`, `driver-inference`, `code-gen`,
+`code-review`) exist on disk but no workflow wires them. Activating
+them turns the platform from "schema-only agent" to "research-backed
+calibrated agent that writes actual Python sim code."
+
+**Scope** (4 sub-workflows + 1 chained super-workflow):
+
+1. **`ResearchWorkflow`** (Gemini Deep Search) — natural-language
+   prompt → `ResearchBrief` (numeric anchors with kind-labeled
+   citations). Output becomes the `reference_data` field for
+   downstream Decomposition.
+2. **`DriverInferenceWorkflow`** (Sonnet 4.6) — `Decomposition` →
+   `DriverInferenceResult` (calibrated defaults / ranges / history /
+   per-driver sources). Replaces the current placeholder `default=0,
+   range=(0,1)` for agent-generated drivers.
+3. **`CodeGenWorkflow`** (Sonnet 4.6) — `Decomposition` + `EdgeInferenceResult`
+   → `CodeGenResult` (a `SimulationBase` subclass as Python source).
+4. **`CodeReviewWorkflow`** (Sonnet 4.6) — `CodeGenResult` →
+   `CodeReviewResult` (severity-tagged findings). Gates promotion.
+5. **`ProposeSectorV2Workflow`** chains: Research → Decomposition →
+   DriverInference → EdgeInference → CodeGen → CodeReview. Roughly
+   6 model calls; cost ≈ $1-2 / run.
+
+Code-gen output **does not execute** outside the M22b sandbox
+(`simpleeval`-only) until M28b lands Modal / E2B execution.
+
+**Touch points**: `services/agent-orchestration/agent_orchestration/`
+(4 new workflows + schemas), `prompts/` (already present), new
+`research-source.py` adapter for Gemini, `services/sector-service/src/trpc/agent.ts`
+(new mutations), `apps/web/src/app/propose/` (UX surfaces 6 stages
+instead of 2).
+
+**Out of scope (becomes M28b)**: sandboxed (Modal / E2B) Python
+execution of the generated `SimulationBase` subclass. M28 stops at
+"persist the code as a file + display to admin for review";
+sandboxed execution + code → live sector activation is the follow-on.
+
+**Dependencies**: M26 (Premium-only — these calls are expensive) +
+M27 (budget gating critical given $1-2 per run).
+
+---
+
+### M29 — OAuth providers (Google / GitHub)
+
+**Why**: Email + password creates friction. Google / GitHub OAuth
+removes signup friction + automatically provides verified emails for
+account recovery / billing.
+
+**Scope**:
+
+- `oauth_accounts` Prisma table: `(user_id, provider, provider_account_id, ...)`,
+  unique on `(provider, provider_account_id)`. Schema allows one
+  user → multiple providers + linking.
+- `User.password_hash` becomes nullable (some OAuth-only users will
+  exist).
+- New `oauth.*` tRPC: `oauth.startGoogle` / `oauth.startGitHub` →
+  returns redirect URL; callback handler at `/api/oauth/[provider]/callback`
+  (Next route handler — needs to be a real route, not tRPC).
+- Login + signup pages get "Google로 계속하기" / "GitHub로 계속하기"
+  buttons.
+- Account linking: if email already exists, link the OAuth account
+  to the existing user (with explicit confirm step to prevent
+  account takeover).
+- Settings page "연결된 계정" section showing all linked providers
+  with disconnect (refuses to remove the last sign-in method).
+
+**Touch points**: `packages/db/prisma/schema.prisma` (1 new table +
+`User.password_hash` → nullable), new `apps/web/src/app/api/oauth/`
+route handlers, new `services/sector-service/src/lib/oauth.ts` (or
+use `@auth/core` — TBD), login + signup forms, settings.
+
+**Out of scope**: Apple, Microsoft, SSO/SAML for enterprise — same
+pattern, schedule when demand emerges.
+
+**Dependencies**: none — independent.
+
+---
+
+### M30 — Multi-tenant scoping (tenant_id + Postgres RLS)
+
+**Why**: Platform currently has no team / org abstraction. A user's
+scenarios + watchlist + my-sectors are all globally scoped to that
+user. For team accounts (paid plan) or any B2B path, we need a
+workspace abstraction that shares state across users.
+
+**Scope** (the big one):
+
+- New `workspaces` table (id, name, slug, owner_user_id, plan,
+  created_at). Every user gets a default personal workspace on
+  signup.
+- `workspace_members` table for invites (workspace_id, user_id,
+  role: owner|admin|member).
+- **Every user-scoped table** gets `workspace_id` FK:
+  `scenarios`, `watchlist_items`, `sectors` (`created_by_user_id`
+  joined by `workspace_id`), `agent_workflows`. Migration backfills
+  by setting `workspace_id = (each user's default workspace)`.
+- Prisma middleware injects `workspace_id` into every read/write
+  automatically based on `ctx.workspaceId`.
+- **Postgres RLS policies** as the second defense line — even if
+  the Prisma middleware misses, RLS rejects cross-tenant reads.
+- Workspace switcher UI in header (avatar dropdown → 워크스페이스
+  하위 메뉴).
+- Tier moves from User → Workspace (`workspaces.tier`). Billing
+  attaches to workspace.
+
+**Touch points**: every Prisma model, every tRPC procedure, header
+nav, settings (workspace management section), billing.
+
+**Out of scope**: cross-workspace sharing of specific sectors,
+guest read-only access, granular row-level permissions per
+member. Those are M30b/c.
+
+**Dependencies**: M26 (billing attaches to workspace). Major
+schema-wide migration — careful sequencing required.
+
+---
+
+### M31 — Backtest harness
+
+**Why**: PROJECTION_SCALE = 0.3 (M5 calibration) is a guess. The
+"왜 이 숫자인가" cards on equity detail say "30일 예상 변동" but
+have never been validated against actual realized returns. A
+backtest pipeline tells us how well the impliedImpact formula
+predicts in practice — and gives a real number to calibrate against.
+
+**Scope**:
+
+- New `backtest_runs` Prisma table: `(id, sector_slug, scenario_id?,
+  driver_values JSONB, start_date, horizon_days, equity_id,
+  predicted_pct, actual_pct, error_pct, score)`. One row per
+  (sector × scenario × equity × start_date).
+- `services/validation-service` (was already on the Phase 2 roadmap
+  but unbuilt): cron-driven weekly job that:
+  1. Picks a recent date (e.g. 90 days ago).
+  2. Replays the sector's basket — given that day's driver values,
+     compute impliedImpact for every equity.
+  3. Compares the implied 30d projection to the actual realized
+     30d return from `equity_quotes`.
+  4. Persists results to `backtest_runs`.
+- New tRPC `backtest.list({ sector_slug, equity_id? })` for surfacing.
+- **Equity detail page**: new "예측 정확도" section — recent
+  backtests for this equity, accuracy histogram, mean absolute
+  error %.
+- **Calibration insight**: aggregate over all backtests to suggest
+  a tuned `PROJECTION_SCALE` per sector.
+
+**Touch points**: `packages/db/prisma/schema.prisma` (1 new table),
+new `services/validation-service` (uv workspace member), new
+`backtest.*` tRPC, equity detail page, optional admin
+`/admin/calibration` page.
+
+**Out of scope**: regime detection (\"backtests look bad during
+COVID-2020\"), causal vs predictive separation, Monte Carlo
+uncertainty bands.
+
+**Dependencies**: requires populated `equity_quotes` (already done
+via M3 quote-history ingest). M30 nice-to-have for per-workspace
+backtests but not strictly required.
+
+---
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14
