@@ -183,7 +183,7 @@ function buildSearchIndex(snapshots: SectorSnapshot[]): SearchItem[] {
         kind: "equity",
         label: `${eq.ticker} · ${eq.company_name}${localName}`,
         hint: `${s.meta.name} · ${eq.exchange} · ${eq.iso_country}`,
-        href: `/sectors/${s.meta.slug}/equities`,
+        href: `/sectors/${s.meta.slug}/equities/${encodeURIComponent(eq.ticker)}`,
       });
     }
     for (const d of s.meta.drivers) {
@@ -347,7 +347,7 @@ function MoversTable({ movers }: { movers: MoverRow[] }) {
               >
                 <td className="px-3 py-2">
                   <Link
-                    href={`/sectors/${m.equity.sector_slug}/equities`}
+                    href={`/sectors/${m.equity.sector_slug}/equities/${encodeURIComponent(m.equity.ticker)}`}
                     className="flex items-center gap-2 text-neutral-100 hover:text-cyan-300"
                   >
                     <span aria-hidden>{flag}</span>

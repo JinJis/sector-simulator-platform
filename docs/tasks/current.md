@@ -1912,30 +1912,78 @@ hub (preserved at the top of the page handler).
 - Search ranking beyond substring (full-text via Postgres tsvector
   when the index grows past O(100s))
 
-### M17 — Investment narrative UI — *the main payoff*
+### M17 — Investment narrative UI (shipped 2026-05-21)
 
-**Why fourth**: this is the platform's reason for existing. Depends on
-M16 to land users gracefully + M15 to set context per-page.
+The platform's reason for existing — every previous slice has been
+plumbing toward this: *섹터는 어떻게 성장하고, 그 흐름이 어떤 종목으로 흘러
+어느 정도 upside를 만드는가, 그 근거는 무엇인가.*
 
-For each sector (e.g. memory-semi):
+**Backend**:
 
-- **Growth thesis** card: 1-paragraph editorial summary + 3 key
-  drivers (with current-vs-default deltas) + 3 key blockers
-- **Sector basket trajectory** chart: where the equal-weighted basket
-  goes if current driver state holds (uses existing M9 sim outputs)
-- **Per-equity grid** with: ticker, current price, projected 30d
-  target (from M5 projection), upside / downside %, top 3
-  contributing drivers with arrows, confidence chip
-- **Narrative drill-down per equity**: clicking a stock opens a
-  dedicated `/sectors/[slug]/equities/[ticker]` page with:
-  - Price chart with projected target line + confidence cone
-  - "Why this number" — natural-language explanation of the impact
-    decomposition (driver × edge weight, ranked)
-  - Financials trends (M10) + balance-sheet ratios (M10d)
-  - Source citations (every claim links back to filings / driver
-    provenance)
-- Optional later: alerts when current state crosses a threshold the
-  user flagged
+- `services/sector-service/src/lib/graph-impact.ts` gains
+  `computeImpactBreakdown(...)` — same math as `computeImpactScores`
+  but returns per-driver `DriverContribution { driver, weight,
+  default_value, current_value, delta_pct, contribution }` for each
+  equity, sorted by `|contribution|` desc. 5 new vitest cases.
+- New `equity.getByTicker({ sector_slug, ticker, exchange? })`
+  procedure — resolves human-readable URLs (`/equities/[ticker]`)
+  to the canonical equity row. Ties broken by `market_cap_usd desc`.
+- New `equity.impactBreakdown({ sector_slug, driver_values })`
+  query — returns the breakdown for every equity in the sector.
+
+**Frontend**:
+
+- New `/sectors/[slug]/narrative` route:
+  - **Growth thesis card** — editorial summary + horizon chip
+  - **Key drivers / Key blockers** two-column grid with delta chips
+    that live-update from sector context driverValues
+  - **Per-equity grid** sorted by `|projectedΔ|` — ticker (★ flagship
+    badge), current price, 30d target, Δ% (with score), top 3
+    contributing drivers with sign-colored contributions
+  - All numbers re-render on slider drag (subscribes to `useSector()`)
+- New `/sectors/[slug]/equities/[ticker]` per-stock detail route:
+  - Header card with 4 stat tiles (Current / 30d target / Implied Δ /
+    Sector exposure + mkt cap)
+  - 720×140 sparkline with dashed 30d projection
+  - **"Why this number"** decomposition table — driver | default |
+    current | Δ% | weight | contribution | symmetric bar — ranked by
+    `|contribution|` desc. Footer shows `raw_sum → score = 100×tanh()
+    → projectedΔ = score × 0.3%` so the formula is visible.
+  - **Financials block** — 4 mini bar charts (Revenue / Gross margin
+    % / EBITDA / Capex), 8 quarters, reuses the same SVG pattern as
+    `EquityFinancialsPanel`
+  - **Filings citations** — DART (KR ticker → 공시 검색 URL) or SEC
+    EDGAR (US ticker → filings landing). Per-driver provenance still
+    routes to the existing Sources tab.
+- New `Narrative` tab inserted after `Overview` in the SubNav.
+- Editorial thesis content for all 3 sectors lives in one file:
+  `apps/web/src/app/sectors/[slug]/narrative/thesis-content.ts`
+  (memory-semi / space-data-center / sofc, each with summary +
+  horizon + 3 drivers + 3 blockers + 4 flagship tickers).
+  `driverRefs` reference real sim driver names; the UI silently
+  drops refs that don't match the current sector.
+- Home page biggest movers + equities table ticker chip now link
+  to `/equities/[ticker]`.
+- `page-intents.ts` gains `narrative` + `equityDetail` entries.
+
+**Verification**:
+
+- TS typecheck across web / admin / sector-service / ui / db — clean
+- sector-service vitest: **50 pass / 26 skipped** (+5 from M16
+  baseline, all on `computeImpactBreakdown`)
+- @platform/db: 35 pass (unchanged)
+- simulation-service / data-pipeline / agent-orchestration: untouched
+- **Cumulative: 269 + 17 skipped** (+5 from M16)
+
+**Out of scope (M18+ / Phase 3+)**:
+
+- LLM-generated thesis copy (today's content is hand-authored;
+  agent slot is reserved in the structure but unwired)
+- True forward-looking confidence cone (single dashed line only)
+- Per-driver alerting / watchlists (need user accounts → Phase 4)
+- Sector basket trajectory chart (basket sparkline already shown on
+  home + equities expand; per-narrative version deferred until
+  editorial requests it)
 
 ### M18 — Lifecycle review + audit history + monitoring — *operational backbone*
 

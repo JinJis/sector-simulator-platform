@@ -10,7 +10,11 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { computeImpactScores, type ImpactEdge } from "../lib/graph-impact.js";
+import {
+  computeImpactBreakdown,
+  computeImpactScores,
+  type ImpactEdge,
+} from "../lib/graph-impact.js";
 import { simFetch } from "../lib/sim-proxy.js";
 import { computeBasketStats } from "../lib/stats.js";
 import { publicProcedure, router } from "./init.js";
@@ -116,6 +120,44 @@ export const equityRouter = router({
       });
       if (!row) {
         throw new TRPCError({ code: "NOT_FOUND", message: `equity ${input.id}` });
+      }
+      return row as z.infer<typeof EquityOut>;
+    }),
+
+  /**
+   * Resolve `(sector_slug, ticker)` → equity row. Powers the
+   * `/sectors/[slug]/equities/[ticker]` narrative drill-down so the
+   * URL can be human-readable instead of carrying the opaque cuid.
+   * `exchange` is optional but breaks ties when a ticker is dual-
+   * listed (e.g. KOSPI + KOSDAQ — rare for now, but cheap to honor).
+   */
+  getByTicker: publicProcedure
+    .input(
+      z.object({
+        sector_slug: z.string().min(1),
+        ticker: z.string().min(1),
+        exchange: z.string().optional(),
+      }),
+    )
+    .output(EquityOut)
+    .query(async ({ ctx, input }) => {
+      const matches = await ctx.prisma.sectorEquity.findMany({
+        where: {
+          sector_slug: input.sector_slug,
+          ticker: { equals: input.ticker, mode: "insensitive" },
+          ...(input.exchange ? { exchange: input.exchange } : {}),
+        },
+        // If multiple, the largest market cap wins — keeps the URL
+        // canonical even when listings are duplicated across exchanges.
+        orderBy: { market_cap_usd: "desc" },
+        take: 1,
+      });
+      const row = matches[0];
+      if (!row) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `equity ${input.ticker} not found in sector ${input.sector_slug}`,
+        });
       }
       return row as z.infer<typeof EquityOut>;
     }),
@@ -318,5 +360,98 @@ export const equityRouter = router({
       }
 
       return { sector_slug: input.sector_slug, scores: scoresById };
+    }),
+
+  /**
+   * Per-equity impact decomposition — same math as `impactScores`, but
+   * the response surfaces every contributing driver's weight, delta %,
+   * and contribution. Powers M17's "왜 이 숫자가 나왔는가" narrative —
+   * the UI sorts by |contribution| and renders the top-N drivers
+   * pushing each equity up or down right now.
+   */
+  impactBreakdown: publicProcedure
+    .input(
+      z.object({
+        sector_slug: z.string().min(1),
+        driver_values: z.record(z.number()),
+      }),
+    )
+    .output(
+      z.object({
+        sector_slug: z.string(),
+        equities: z.array(
+          z.object({
+            equity_id: z.string(),
+            target_key: z.string(),
+            raw_sum: z.number(),
+            score: z.number(),
+            contributions: z.array(
+              z.object({
+                driver: z.string(),
+                weight: z.number(),
+                default_value: z.number(),
+                current_value: z.number(),
+                delta_pct: z.number(),
+                contribution: z.number(),
+              }),
+            ),
+          }),
+        ),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const [meta, edges, equityNodes] = await Promise.all([
+        simFetch<{
+          drivers: { name: string; default: number }[];
+        }>(`/sims/${input.sector_slug}`, { context: `sim:${input.sector_slug}` }),
+        ctx.prisma.graphEdge.findMany({
+          where: { sector_slug: input.sector_slug },
+          select: { source_key: true, target_key: true, weight: true },
+        }),
+        ctx.prisma.graphNode.findMany({
+          where: { sector_slug: input.sector_slug, kind: "equity" },
+          select: { node_key: true, equity_id: true },
+        }),
+      ]);
+
+      const driverDefaults: Record<string, number> = {};
+      for (const d of meta.drivers) {
+        driverDefaults[d.name] = d.default;
+      }
+
+      const nodeKeyToEquityId = new Map<string, string>();
+      for (const n of equityNodes) {
+        if (n.equity_id) nodeKeyToEquityId.set(n.node_key, n.equity_id);
+      }
+      const equityKeys = new Set(nodeKeyToEquityId.keys());
+      const equityEdges: ImpactEdge[] = edges
+        .filter((e) => equityKeys.has(e.target_key))
+        .map((e) => ({
+          source_key: e.source_key,
+          target_key: e.target_key,
+          weight: e.weight,
+        }));
+
+      const breakdowns = computeImpactBreakdown({
+        driverValues: input.driver_values,
+        driverDefaults,
+        edges: equityEdges,
+      });
+
+      const out = breakdowns
+        .map((b) => {
+          const equity_id = nodeKeyToEquityId.get(b.target_key);
+          if (!equity_id) return null;
+          return {
+            equity_id,
+            target_key: b.target_key,
+            raw_sum: b.raw_sum,
+            score: b.score,
+            contributions: b.contributions,
+          };
+        })
+        .filter((b): b is NonNullable<typeof b> => b !== null);
+
+      return { sector_slug: input.sector_slug, equities: out };
     }),
 });

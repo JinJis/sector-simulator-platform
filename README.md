@@ -126,11 +126,13 @@ The platform answers, in one place: *"What's the upside on this stock if the sec
 | `/` | **Investor home** — unified search + trending sectors + biggest movers + recent scenarios + audit feed |
 | `/sectors` | Registered sector grid (3 sectors) |
 | `/sectors/[slug]` | Overview hub — 6-card preview |
+| `/sectors/[slug]/narrative` | **Investment narrative** — growth thesis + key drivers/blockers + per-equity upside/downside grid |
 | `/sectors/[slug]/live` | Live KPI dashboard, 3s polling |
 | `/sectors/[slug]/manual` | Slider editor, drivers → outputs |
 | `/sectors/[slug]/graph` | React Flow causal graph |
 | `/sectors/[slug]/sources` | Provenance (history + source URLs) |
 | `/sectors/[slug]/equities` | **Equities tab** — 49 curated US/KR stocks, 90d sparklines, impliedImpact score |
+| `/sectors/[slug]/equities/[ticker]` | **Per-equity narrative** — 30d target, "why this number" decomposition, financials, filings |
 | `/compare?sector=…&a=…&b=…` | A/B scenario comparison |
 | `/?sector=<slug>` | Legacy redirect → `/sectors/<slug>` |
 
@@ -329,12 +331,12 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **M14** | README expansion — Problem / Solution / Why-now / How (mechanism in 60 seconds) / What it doesn't try to be. Investor narrative now precedes the architecture diagram. |
 | **M15** | Per-page intent panels — collapsible `<PageIntent>` card at the top of every sector subpage + `/sectors` list + `/compare`. One-line pitch + two-column "왜 보는가 / 무엇을 찾는가" bullets. Centralized content in `apps/web/src/app/page-intents.ts`. |
 | **M16** | Home page / investor dashboard — new `/` route fans out per Promise.all (sims / equities ×3 / basket stats ×3 / scenarios / audit). `<HomeSearch>` client-side filters a flattened sector + equity + driver index. Trending sectors cards (basket sparkline + 90d %), Biggest movers table (sorted by |return|), Recent scenarios tiles, What's-changed feed via new `audit.recent` tRPC procedure. Legacy `/?sector=…` redirect preserved. |
+| **M17** | Investment narrative UI — `/sectors/[slug]/narrative` (thesis card + drivers/blockers + per-equity upside grid sorted by |Δ|) and `/sectors/[slug]/equities/[ticker]` (header stats + 90d+30d sparkline + "Why this number" driver × edge weight decomposition + financials + filings). New `equity.impactBreakdown` + `equity.getByTicker` tRPC. Editorial thesis content per sector in one file. |
 
-### Planned next (M17 → M19)
+### Planned next (M18 → M19)
 
 | | Scope |
 |---|---|
-| **M17** | Investment narrative UI — sector growth thesis + per-equity upside/downside grid + per-stock detail pages with "why this number" decomposition (driver × edge weight, ranked) + source citations. The main payoff. |
 | **M18** | Lifecycle review + audit history + monitoring — periodic deprecation/add review surface for drivers / equities / sims. **Always user-approved, never auto.** Audit log viewer + freshness/alarm panel for data feeds. |
 | **M19** | Graph UI quality polish — dagre auto-layout (no edge overlaps), visual differentiation by (color × thickness × dash × arrowhead) keyed to kind / weight / origin / sign. Equity nodes get a ticker pill + sparkline thumbnail. |
 

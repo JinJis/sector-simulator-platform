@@ -140,6 +140,7 @@ function SubNavRow() {
       className="mb-5"
       items={[
         { label: "Overview", href: base, caption: "요약" },
+        { label: "Narrative", href: `${base}/narrative`, caption: "투자 가설 + 종목별 upside" },
         { label: "Live", href: `${base}/live`, caption: "실시간 자동 데이터" },
         { label: "Manual", href: `${base}/manual`, caption: "슬라이더로 직접 조정" },
         { label: "Graph", href: `${base}/graph`, caption: "드라이버 → 산출 인과 그래프" },

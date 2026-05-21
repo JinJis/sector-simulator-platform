@@ -69,3 +69,84 @@ export function computeImpactScores(input: ImpactInput): Record<string, number> 
   }
   return out;
 }
+
+export interface DriverContribution {
+  /** Driver node_key (also the driver's name in `meta.drivers`). */
+  driver: string;
+  /** Edge weight (sign × magnitude). */
+  weight: number;
+  /** Driver's default value. */
+  default_value: number;
+  /** Driver's current (slider) value. */
+  current_value: number;
+  /**
+   * (current - default) / |default|. Sign-meaningful; positive when
+   * driver has moved up, negative when down.
+   */
+  delta_pct: number;
+  /**
+   * `weight × delta_pct` — the un-squashed contribution this driver
+   * makes to the equity's pre-tanh sum. Sort by |this| to rank.
+   */
+  contribution: number;
+}
+
+export interface ImpactBreakdown {
+  /** Equity target_key (e.g. `equity_NVDA_NASDAQ`). */
+  target_key: string;
+  /** Σ contribution before tanh squashing. */
+  raw_sum: number;
+  /** Same as `computeImpactScores` would return — `100 × tanh(raw_sum)`. */
+  score: number;
+  /** Per-driver contributions, sorted by |contribution| desc. */
+  contributions: DriverContribution[];
+}
+
+/**
+ * Detailed version of `computeImpactScores` that exposes the per-driver
+ * contribution to each equity's score, so the UI can render the
+ * "왜 이 숫자가 나왔는가" decomposition (top-N drivers ranked by
+ * absolute contribution).
+ *
+ * Returns one entry per equity that has any inbound edge in the input.
+ */
+export function computeImpactBreakdown(input: ImpactInput): ImpactBreakdown[] {
+  const { driverValues, driverDefaults, edges } = input;
+
+  const byTarget: Record<string, ImpactEdge[]> = {};
+  for (const e of edges) {
+    (byTarget[e.target_key] ??= []).push(e);
+  }
+
+  const out: ImpactBreakdown[] = [];
+  for (const target of Object.keys(byTarget)) {
+    let sum = 0;
+    const contributions: DriverContribution[] = [];
+    for (const edge of byTarget[target]!) {
+      const cur = driverValues[edge.source_key];
+      const def = driverDefaults[edge.source_key];
+      if (cur === undefined || def === undefined) continue;
+      const denom = Math.abs(def);
+      if (denom < 1e-12) continue;
+      const raw = (cur - def) / denom;
+      const c = edge.weight * raw;
+      sum += c;
+      contributions.push({
+        driver: edge.source_key,
+        weight: edge.weight,
+        default_value: def,
+        current_value: cur,
+        delta_pct: raw,
+        contribution: c,
+      });
+    }
+    contributions.sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
+    out.push({
+      target_key: target,
+      raw_sum: sum,
+      score: 100 * Math.tanh(sum),
+      contributions,
+    });
+  }
+  return out;
+}

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { computeImpactScores, type ImpactEdge } from "../src/lib/graph-impact.js";
+import {
+  computeImpactBreakdown,
+  computeImpactScores,
+  type ImpactEdge,
+} from "../src/lib/graph-impact.js";
 
 describe("computeImpactScores", () => {
   it("returns 0 when every driver is at its default", () => {
@@ -120,5 +124,87 @@ describe("computeImpactScores", () => {
     expect(scores.eq_a).toBeGreaterThan(0);
     expect(scores.eq_b).toBeLessThan(0);
     expect(Math.sign(scores.eq_a!)).not.toBe(Math.sign(scores.eq_b!));
+  });
+});
+
+describe("computeImpactBreakdown", () => {
+  it("returns score that matches computeImpactScores for the same input", () => {
+    const edges: ImpactEdge[] = [
+      { source_key: "growth", target_key: "eq", weight: 2.0 },
+      { source_key: "cost", target_key: "eq", weight: -1.0 },
+    ];
+    const input = {
+      driverValues: { growth: 60, cost: 22 },
+      driverDefaults: { growth: 50, cost: 20 },
+      edges,
+    };
+    const scores = computeImpactScores(input);
+    const [breakdown] = computeImpactBreakdown(input);
+    expect(breakdown).toBeDefined();
+    expect(breakdown!.score).toBeCloseTo(scores.eq!, 8);
+  });
+
+  it("ranks contributions by absolute magnitude descending", () => {
+    const edges: ImpactEdge[] = [
+      { source_key: "small", target_key: "eq", weight: 0.5 },
+      { source_key: "big", target_key: "eq", weight: 2.0 },
+      { source_key: "medium", target_key: "eq", weight: 1.0 },
+    ];
+    const [breakdown] = computeImpactBreakdown({
+      driverValues: { small: 11, big: 60, medium: 25 },
+      driverDefaults: { small: 10, big: 50, medium: 20 },
+      edges,
+    });
+    expect(breakdown).toBeDefined();
+    const drivers = breakdown!.contributions.map((c) => c.driver);
+    // |0.4| big > |0.25| medium > |0.05| small
+    expect(drivers).toEqual(["big", "medium", "small"]);
+  });
+
+  it("preserves sign on individual contributions", () => {
+    const edges: ImpactEdge[] = [
+      { source_key: "tailwind", target_key: "eq", weight: 1.5 },
+      { source_key: "headwind", target_key: "eq", weight: -1.5 },
+    ];
+    const [breakdown] = computeImpactBreakdown({
+      driverValues: { tailwind: 60, headwind: 60 },
+      driverDefaults: { tailwind: 50, headwind: 50 },
+      edges,
+    });
+    expect(breakdown).toBeDefined();
+    const tw = breakdown!.contributions.find((c) => c.driver === "tailwind")!;
+    const hw = breakdown!.contributions.find((c) => c.driver === "headwind")!;
+    expect(tw.contribution).toBeGreaterThan(0);
+    expect(hw.contribution).toBeLessThan(0);
+    // Same |Δ| → same |contribution|, opposite signs.
+    expect(Math.abs(tw.contribution)).toBeCloseTo(Math.abs(hw.contribution), 8);
+  });
+
+  it("skips drivers with zero default (undefined Δ% baseline)", () => {
+    const edges: ImpactEdge[] = [
+      { source_key: "zero_default", target_key: "eq", weight: 1.0 },
+      { source_key: "real", target_key: "eq", weight: 1.0 },
+    ];
+    const [breakdown] = computeImpactBreakdown({
+      driverValues: { zero_default: 5, real: 60 },
+      driverDefaults: { zero_default: 0, real: 50 },
+      edges,
+    });
+    expect(breakdown).toBeDefined();
+    expect(breakdown!.contributions.map((c) => c.driver)).toEqual(["real"]);
+  });
+
+  it("returns one breakdown entry per equity referenced in edges", () => {
+    const edges: ImpactEdge[] = [
+      { source_key: "x", target_key: "eq_a", weight: 1.0 },
+      { source_key: "x", target_key: "eq_b", weight: -1.0 },
+    ];
+    const result = computeImpactBreakdown({
+      driverValues: { x: 60 },
+      driverDefaults: { x: 50 },
+      edges,
+    });
+    expect(result).toHaveLength(2);
+    expect(result.map((b) => b.target_key).sort()).toEqual(["eq_a", "eq_b"]);
   });
 });

@@ -360,6 +360,39 @@ export async function fetchRecentAuditLogs(input: {
 }
 
 export type EquityImpactScores = RouterOutput["equity"]["impactScores"];
+export type EquityImpactBreakdown = RouterOutput["equity"]["impactBreakdown"];
+export type EquityImpactBreakdownRow = EquityImpactBreakdown["equities"][number];
+export type DriverContribution = EquityImpactBreakdownRow["contributions"][number];
+
+export async function fetchEquityByTicker(input: {
+  sectorSlug: string;
+  ticker: string;
+  exchange?: string;
+}): Promise<Equity> {
+  return rethrow(
+    () =>
+      trpc.equity.getByTicker.query({
+        sector_slug: input.sectorSlug,
+        ticker: input.ticker,
+        exchange: input.exchange,
+      }),
+    `fetchEquityByTicker(${input.sectorSlug}/${input.ticker})`,
+  );
+}
+
+export async function fetchEquityImpactBreakdown(
+  sectorSlug: string,
+  driverValues: Record<string, number>,
+): Promise<EquityImpactBreakdown> {
+  return rethrow(
+    () =>
+      trpc.equity.impactBreakdown.query({
+        sector_slug: sectorSlug,
+        driver_values: driverValues,
+      }),
+    `fetchEquityImpactBreakdown(${sectorSlug})`,
+  );
+}
 
 /**
  * Server-computed impliedImpact via graph traversal (M9). Returns

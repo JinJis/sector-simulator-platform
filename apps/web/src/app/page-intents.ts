@@ -92,6 +92,39 @@ export const SECTOR_PAGE_INTENTS: Record<string, PageIntent> = {
     ],
   },
 
+  narrative: {
+    page: "Narrative",
+    pitch:
+      "이 섹터가 어떻게 성장할 것인지, 그 흐름이 어떤 종목으로 흘러가 어느 정도의 upside / downside를 만드는지를 한 화면에서 설명합니다.",
+    why: [
+      "투자 thesis: 어떤 드라이버가 이 섹터를 끌어올리고, 어떤 blocker가 발목을 잡는가.",
+      "현재 슬라이더 상태에서 각 종목이 30일 뒤 어디로 갈지 (target price + upside %).",
+      "각 종목에 대해 \"왜 이 숫자인가\" — 기여도 큰 상위 드라이버 3-5개로 분해.",
+    ],
+    lookFor: [
+      "Growth thesis 카드 — 1-단락 요약 + key drivers + key blockers.",
+      "Per-equity 그리드의 upside / downside % 컬럼 — 절댓값 큰 것부터.",
+      "행 클릭 → 종목별 상세 페이지(`/equities/[ticker]`)로 이동해 \"왜\"를 본다.",
+      "Manual 탭에서 슬라이더를 움직이면 모든 upside 숫자가 실시간 갱신.",
+    ],
+  },
+
+  equityDetail: {
+    page: "Equity detail",
+    pitch:
+      "이 종목 하나에 대해, 현재 드라이버 상태가 함의하는 가격 target과 그 근거를 driver 단위로 분해해 보여줍니다.",
+    why: [
+      "왜 이 종목이 지금 수혜 / 피해 종목인지 driver × edge weight 분해로 검증.",
+      "30일 projected target과 현재 가격의 gap (upside / downside).",
+      "분기 fundamentals (Revenue / Margin / EBITDA / Capex)와 BS 비율로 펀더멘털 컨텍스트 확인.",
+    ],
+    lookFor: [
+      "Header의 30d target / upside chip — 현재 대비 얼마나 떨어져 있는가.",
+      "\"Why this number\" 테이블 — contribution 절댓값 큰 드라이버 순.",
+      "Financials 차트 — 8분기 추세가 thesis와 정합적인가.",
+    ],
+  },
+
   equities: {
     page: "Equities",
     pitch:

@@ -1,6 +1,7 @@
 "use client";
 
 import { Sparkline } from "@platform/ui";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -439,15 +440,20 @@ function Row({
         }`}
       >
         <td className="px-3 py-2.5 align-top">
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs">{flag}</span>
-            <span className="font-mono text-sm font-semibold text-neutral-100">
-              {equity.ticker}
-            </span>
-          </div>
-          <div className="mt-0.5 text-[10px] uppercase tracking-wider text-neutral-600">
-            {equity.exchange}
-          </div>
+          <Link
+            href={`/sectors/${equity.sector_slug}/equities/${encodeURIComponent(equity.ticker)}`}
+            className="group inline-flex flex-col"
+          >
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs">{flag}</span>
+              <span className="font-mono text-sm font-semibold text-neutral-100 group-hover:text-cyan-300">
+                {equity.ticker}
+              </span>
+            </div>
+            <div className="mt-0.5 text-[10px] uppercase tracking-wider text-neutral-600">
+              {equity.exchange}
+            </div>
+          </Link>
         </td>
         <td className="px-3 py-2.5 align-top">
           <div className="text-sm text-neutral-100">{equity.company_name}</div>
