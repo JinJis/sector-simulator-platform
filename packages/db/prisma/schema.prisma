@@ -40,6 +40,8 @@ model Sector {
 
   scenarios      Scenario[]
   equities       SectorEquity[]
+  graph_nodes    GraphNode[]
+  graph_edges    GraphEdge[]
 
   @@map("sectors")
 }
@@ -95,6 +97,7 @@ model SectorEquity {
   updated_at          DateTime @updatedAt        @map("updated_at")
 
   quotes              EquityQuote[]
+  graph_nodes         GraphNode[]
 
   @@unique([sector_slug, ticker, exchange])
   @@index([sector_slug])
@@ -157,6 +160,101 @@ model AgentWorkflow {
   @@index([kind, created_at])
   @@index([status, updated_at])
   @@map("agent_workflows")
+}
+
+model GraphNode {
+  // Phase 2 epic, milestone 7: the causal graph leaves Python source and
+  // becomes editable DB state. `node_key` is the stable identifier used
+  // by the Python sim (e.g. "ai_dram_demand_pb_y0"); the cuid `id` is
+  // an opaque PK for the editor UI.
+  //
+  // `kind` ∈ {driver, intermediate, output, equity}. When kind="equity",
+  // `equity_id` points at the SectorEquity row this node visualizes;
+  // null otherwise.
+
+  id           String   @id @default(cuid())
+  sector_slug  String   @map("sector_slug")
+  sector       Sector   @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+
+  node_key     String   @map("node_key")
+  kind         String
+  label        String
+  group        String   @default("")
+  unit         String?
+  description  String?
+
+  // Position overrides — null = use the kind-based default column layout.
+  position_x   Float?   @map("position_x")
+  position_y   Float?   @map("position_y")
+
+  // FK to SectorEquity for kind="equity" nodes; SET NULL on equity
+  // deletion so the graph topology survives (the orphan node can be
+  // pruned by an admin action).
+  equity_id    String?  @map("equity_id")
+  equity       SectorEquity? @relation(fields: [equity_id], references: [id], onDelete: SetNull)
+
+  created_at   DateTime @default(now()) @map("created_at")
+  updated_at   DateTime @updatedAt        @map("updated_at")
+
+  @@unique([sector_slug, node_key])
+  @@index([sector_slug])
+  @@index([equity_id])
+  @@map("graph_nodes")
+}
+
+model GraphEdge {
+  // Phase 2 epic, milestone 7: edges carry a runtime `weight` multiplier
+  // (default 1.0) which milestone 9 plumbs into the Python sim at named
+  // choke points. Sign is encoded in the weight itself (negative weight
+  // = inverse relationship), so we don't need a separate sign column.
+  //
+  // `magnitude` is presentation-only ("low" / "med" / "high") — it
+  // controls edge styling in the UI and does NOT enter the math.
+
+  id           String   @id @default(cuid())
+  sector_slug  String   @map("sector_slug")
+  sector       Sector   @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+
+  source_key   String   @map("source_key")
+  target_key   String   @map("target_key")
+  label        String?
+
+  weight       Float    @default(1.0)
+  magnitude    String   @default("med")
+
+  // Set by the seed/bootstrap path so we can distinguish edges that came
+  // from the Python graph from edits or agent-generated ones later.
+  origin       String   @default("seed") // seed | edit | agent
+  author_label String?  @map("author_label")
+
+  created_at   DateTime @default(now()) @map("created_at")
+  updated_at   DateTime @updatedAt        @map("updated_at")
+
+  @@unique([sector_slug, source_key, target_key])
+  @@index([sector_slug])
+  @@index([sector_slug, target_key])
+  @@map("graph_edges")
+}
+
+model AuditLog {
+  // Append-only record of mutations. CLAUDE.md mandates an audit log for
+  // every admin action; we extend that to user-visible mutations as
+  // well (scenario edits, graph edits) so we can attribute changes once
+  // auth lands.
+
+  id           String   @id @default(cuid())
+  action       String   // e.g. "graph.upsertEdge", "scenario.update"
+  sector_slug  String?  @map("sector_slug")
+  // Full mutation payload (input + the row's `before` snapshot when
+  // applicable). Bounded by `body_max_bytes` upstream — we don't enforce
+  // here so trustless callers can't blow up the log.
+  payload      Json
+  author_label String?  @map("author_label")
+  created_at   DateTime @default(now()) @map("created_at")
+
+  @@index([action, created_at])
+  @@index([sector_slug, created_at])
+  @@map("audit_logs")
 }
 
 model Scenario {

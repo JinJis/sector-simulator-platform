@@ -59,6 +59,14 @@ export type LiveResponse = RouterOutput["sim"]["live"];
 export type SimGraphResponse = RouterOutput["sim"]["graph"];
 export type GraphNode = SimGraphResponse["nodes"][number];
 export type GraphEdge = SimGraphResponse["edges"][number];
+
+// DB-backed graph (Milestone 7+). Replaces the upstream sim.graph proxy
+// for read paths once seeded. Field names differ from the Python-side
+// `id` / `source` / `target` legacy shape — see normalizeGraph() below
+// for the bridge that GraphView consumes.
+export type DbGraph = RouterOutput["graph"]["get"];
+export type DbGraphNode = DbGraph["nodes"][number];
+export type DbGraphEdge = DbGraph["edges"][number];
 export type ReportResponse = RouterOutput["sim"]["report"];
 export type ReportSource = ReportResponse["sources"][number];
 
@@ -116,6 +124,84 @@ export async function fetchLive(slug: string): Promise<LiveResponse> {
 
 export async function fetchGraph(slug: string): Promise<SimGraphResponse> {
   return rethrow(() => trpc.sim.graph.query({ slug }), `fetchGraph(${slug})`);
+}
+
+/**
+ * Fetch the DB-backed causal graph for a sector. This is the
+ * authoritative source after Milestone 7 — `fetchGraph` (sim.graph)
+ * remains as a fallback while old call-sites migrate.
+ */
+export async function fetchDbGraph(sectorSlug: string): Promise<DbGraph> {
+  return rethrow(
+    () => trpc.graph.get.query({ sector_slug: sectorSlug }),
+    `fetchDbGraph(${sectorSlug})`,
+  );
+}
+
+/**
+ * Normalize the DB graph shape into the legacy `SimGraphResponse`
+ * shape that `GraphView` already speaks. This keeps the renderer
+ * untouched at the M7 boundary; M8 will give it more first-class DB
+ * fields (weight slider, magnitude styling, equity nodes).
+ */
+export function normalizeDbGraph(g: DbGraph): SimGraphResponse {
+  return {
+    slug: g.sector_slug,
+    nodes: g.nodes.map((n) => ({
+      id: n.node_key,
+      label: n.label,
+      kind: n.kind,
+      group: n.group,
+      unit: n.unit ?? "",
+      description: n.description ?? "",
+    })),
+    edges: g.edges.map((e) => ({
+      source: e.source_key,
+      target: e.target_key,
+      label: e.label ?? "",
+    })),
+  };
+}
+
+export async function upsertGraphEdge(input: {
+  sector_slug: string;
+  source_key: string;
+  target_key: string;
+  weight?: number;
+  magnitude?: "low" | "med" | "high";
+  label?: string | null;
+  author_label?: string;
+}): Promise<DbGraphEdge> {
+  return rethrow(
+    () => trpc.graph.upsertEdge.mutate(input),
+    `upsertGraphEdge(${input.source_key}→${input.target_key})`,
+  );
+}
+
+export async function deleteGraphEdge(input: {
+  sector_slug: string;
+  source_key: string;
+  target_key: string;
+  author_label?: string;
+}): Promise<{ sector_slug: string; source_key: string; target_key: string }> {
+  return rethrow(
+    () => trpc.graph.deleteEdge.mutate(input),
+    `deleteGraphEdge(${input.source_key}→${input.target_key})`,
+  );
+}
+
+export async function resetGraphToDefaults(
+  sectorSlug: string,
+  authorLabel?: string,
+): Promise<{ sector_slug: string; nodes_deleted: number; edges_deleted: number }> {
+  return rethrow(
+    () =>
+      trpc.graph.resetToDefaults.mutate({
+        sector_slug: sectorSlug,
+        author_label: authorLabel,
+      }),
+    `resetGraphToDefaults(${sectorSlug})`,
+  );
 }
 
 export async function generateReport(input: {

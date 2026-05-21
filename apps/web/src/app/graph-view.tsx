@@ -16,9 +16,11 @@ import {
 import "reactflow/dist/style.css";
 
 import {
+  fetchDbGraph,
   fetchGraph,
   type GraphEdge,
   type GraphNode,
+  normalizeDbGraph,
   type SimGraphResponse,
   type SimMetadata,
 } from "@/lib/sim-client";
@@ -48,9 +50,18 @@ export function GraphView({ meta, driverValues }: Props) {
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    void fetchGraph(meta.slug)
-      .then((g) => {
-        if (!cancelled) setGraph(g);
+    // Prefer the DB-backed graph (M7+). If the seed hasn't run yet
+    // (empty table → 0 nodes), fall back to the upstream Python
+    // `SimGraph` literal so the page still renders in dev.
+    void fetchDbGraph(meta.slug)
+      .then(async (db) => {
+        if (cancelled) return;
+        if (db.nodes.length > 0) {
+          setGraph(normalizeDbGraph(db));
+          return;
+        }
+        const upstream = await fetchGraph(meta.slug);
+        if (!cancelled) setGraph(upstream);
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(e instanceof Error ? e.message : "graph fetch failed");

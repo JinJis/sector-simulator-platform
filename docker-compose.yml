@@ -56,6 +56,33 @@ services:
     networks:
       - internal
 
+  # One-shot: bootstrap graph_nodes + graph_edges from each sim's
+  # Python `SimGraph` literal. Requires simulation-service to be
+  # reachable (no healthcheck — we just retry inside the script).
+  # Idempotent: upserts; safe to re-run.
+  graph-bootstrap:
+    image: tssp/db-migrate:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: infra/docker/sector-service.Dockerfile
+      target: dev
+    command:
+      - sh
+      - -c
+      - "echo '[graph-bootstrap] waiting 5s for simulation-service…' && sleep 5 && pnpm --filter @platform/db seed:graph"
+    working_dir: /repo
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
+      SIMULATION_SERVICE_URL: http://simulation-service:8000
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      simulation-service:
+        condition: service_started
+    restart: "no"
+    networks:
+      - internal
+
   agent-orchestration:
     image: tssp/agent-orchestration:${IMAGE_TAG:-latest}
     build:
@@ -121,6 +148,8 @@ services:
       postgres:
         condition: service_healthy
       db-migrate:
+        condition: service_completed_successfully
+      graph-bootstrap:
         condition: service_completed_successfully
     networks:
       - internal

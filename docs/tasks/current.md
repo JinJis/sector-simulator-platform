@@ -991,6 +991,94 @@ will be replaced once yfinance ingest runs in CI.
 - Sim consumes edge weights (M9)
 - EquityFinancial domain (M10)
 
+#### Equities Milestone 7 — Graph topology in DB + tRPC mutations (2026-05-21)
+
+The causal graph leaves Python source and becomes editable DB state.
+Python `SimGraph` literals stay as the *bootstrap source*; after the
+seed runs, `graph_nodes` and `graph_edges` are authoritative.
+
+**Schema** (`packages/db/prisma/schema.prisma` +
+`migrations/20260522000000_graph_topology/migration.sql`):
+
+- `graph_nodes(id, sector_slug, node_key, kind, label, group, unit,
+  description, position_x, position_y, equity_id, ...)` with
+  `@@unique([sector_slug, node_key])`. `kind` ∈ {driver,
+  intermediate, output, equity}. `equity_id` is an optional FK to
+  `sector_equities` (SET NULL on equity delete) for M8 nodes.
+- `graph_edges(id, sector_slug, source_key, target_key, label,
+  weight, magnitude, origin, author_label, ...)` with
+  `@@unique([sector_slug, source_key, target_key])`. `weight`
+  defaults to `1.0` — a no-op multiplier today; Milestone 9
+  threads it into the Python sim at choke points. `origin` ∈
+  {seed, edit, agent} so we can later distinguish what came from
+  the Python literal vs. user edits vs. future agent generation.
+- `audit_logs(id, action, sector_slug, payload, author_label,
+  created_at)` — append-only record of every mutation. CLAUDE.md
+  mandates audit for admin actions; we extend it to graph + future
+  scenario edits so once auth lands we can backfill attribution.
+
+**Bootstrap** (`packages/db/prisma/seed-graph.ts`): hits
+simulation-service `GET /sims/{slug}/graph` for every registered
+sector and upserts the rows. Idempotent — re-runs preserve any
+`weight` / `magnitude` edits (only `label` is refreshed). Compose
+adds a new `graph-bootstrap` one-shot service that depends on
+`db-migrate` completion + `simulation-service` start, sleeps 5s,
+then runs `pnpm db:seed:graph`. `sector-service` now waits on
+`graph-bootstrap` to complete before starting.
+
+**tRPC** (new `services/sector-service/src/trpc/graph.ts`):
+
+| Procedure | Type | Use |
+|---|---|---|
+| `graph.get({ sector_slug })` | query | Returns full topology (nodes + edges) |
+| `graph.upsertNode({ ... })` | mutation | Create / update via `(sector_slug, node_key)` |
+| `graph.deleteNode({ ... })` | mutation | Guarded — refuses if attached edges exist |
+| `graph.upsertEdge({ ..., weight, magnitude, ... })` | mutation | Endpoint existence checked first |
+| `graph.deleteEdge({ ... })` | mutation | NOT_FOUND on missing |
+| `graph.resetToDefaults({ ... })` | mutation | Wipes sector graph (caller re-runs `seed:graph`) |
+
+Every mutation writes an `audit_logs` row with the full input as
+`payload`.
+
+**Web client** (`apps/web/src/lib/sim-client.ts`):
+
+- `DbGraph` / `DbGraphNode` / `DbGraphEdge` types inferred from the
+  router output.
+- `fetchDbGraph(sector_slug)`, `normalizeDbGraph(db)`,
+  `upsertGraphEdge(...)`, `deleteGraphEdge(...)`,
+  `resetGraphToDefaults(slug)` helpers.
+- `normalizeDbGraph(db)` is the bridge: it reshapes the DB graph
+  (`node_key` / `source_key` / `target_key` field names) into the
+  legacy `SimGraphResponse` shape that `GraphView` already speaks,
+  so the renderer is untouched at the M7 boundary.
+
+**`GraphView`** (`apps/web/src/app/graph-view.tsx`) now prefers the
+DB graph and falls back to the upstream Python graph if the DB
+returns zero nodes — keeps `/sectors/[slug]/graph` working in dev
+between schema apply and `seed:graph` running.
+
+**Tests** (`services/sector-service/tests/graph.test.ts`): 15
+integration cases covering upsert / unique / NOT_FOUND / equity FK
+guard / endpoint guard / weight clamp / reset round-trip / audit
+log row count. DB-required; auto-skips when Postgres is unreachable
+(same pattern as `scenario.test.ts`).
+
+**Verification:**
+
+- TS typecheck across web / admin / sector-service / ui / db ✅
+- `@platform/db` vitest (mock-quotes): 17/17 pass (no regression)
+- `sector-service` vitest: 36 pass / 26 skipped (15 new graph cases
+  skipped under no-DB env; same execution baseline as before M7).
+- **Cumulative: 170 + 17 skipped → 170 active, +15 ready-to-run on
+  DB-enabled CI.**
+
+**Out of scope (lands in M8+):**
+
+- Equity nodes as graph kind (M8)
+- Edge editor side panel UI with weight slider (M8 + M9)
+- Python sim actually consuming `weight` at runtime (M9)
+- Removing the `sim.graph` upstream proxy (cleanup post-M9)
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14
