@@ -487,6 +487,82 @@ suites (sim + agent, 19 tests) still green; the DB-required
 `scenario.test.ts` integration suite is skipped/red regardless of this
 slice (needs local Postgres — pre-existing environment constraint).
 
+### Equities Milestone 1 — schema + 49 curated US/KR listings + table UI (2026-05-21)
+
+First slice of the §14 Equities & Market Factors domain. Read-only for
+now — editorial curation in `seed-equities.ts`; the data-pipeline ingest
+job that refreshes quotes daily is Milestone 2.
+
+**Schema** (`packages/db/prisma/schema.prisma`, migration
+`20260521000000_sector_equities`):
+
+- `SectorEquity`: FK to `sectors.slug` (cascade delete). Columns:
+  ticker, exchange, iso_country, company_name, company_name_local
+  (Korean name), sector_exposure_pct (0–100), rationale, snapshot
+  pricing (currency, last_close_local + last_close_usd FX-normalized,
+  last_close_date, market_cap_usd), `driver_links` JSONB (structured
+  editorial linkage — see below), display_order. Unique on
+  `(sector_slug, ticker, exchange)`; indexed on `sector_slug` and
+  `iso_country`.
+
+`driver_links` shape: array of
+`{ driver: string, sign: "+"|"-", magnitude: "low"|"med"|"high", note?: string }`.
+Drives the implied-impact computation in the UI without committing to
+an econometric model — purely editorial directionality.
+
+**Seed** (`packages/db/prisma/seed-equities.ts`, runnable via
+`pnpm db:seed:equities`): 49 listings curated by hand, 10+ per sector,
+mix of US (NYSE/NASDAQ) + KR (KOSPI/KOSDAQ):
+
+| sector | count | notable |
+|---|---|---|
+| memory-semi | 17 | 005930 Samsung, 000660 SK hynix, 042700 Hanmi Semi, MU, NVDA, AMAT, LRCX, TSM ADR |
+| space-data-center | 15 | RKLB, ASTS, IRDM, NVDA, EQIX (reverse exposure), 012450 Hanwha Aero, 099320 Satrec |
+| sofc | 17 | BE Bloom, PLUG, FCEL, CMI, LIN, 336260 Doosan Fuel Cell, 034020 Doosan Enerbility |
+
+Snapshot prices end-of-day 2026-04-30, FX 1,380 KRW/USD. Each row
+carries 2–5 hand-picked `driver_links` referencing the exact driver
+names from the sector's Python sim.
+
+**tRPC** (`services/sector-service/src/trpc/equity.ts`):
+`equity.listForSector({ sector_slug, iso_country? })` and
+`equity.get({ id })`. Read-only; writes happen via the seed script
+today and the pipeline service later.
+
+**UI** (`apps/web/src/app/sectors/[slug]/equities/`):
+
+- `EquitiesTable` (client) — investment-grade layout:
+  - Top metric strip (4 tiles): equity count + US/KR split, aggregate
+    market cap, active driver count (drivers diverged from defaults),
+    top-impact ticker.
+  - Filter row: country chips (All / 🇺🇸 US / 🇰🇷 KR) + sort dropdown
+    (Editorial / Market cap ↓ / Sector exposure ↓ / Implied impact ↓ /
+    Ticker A–Z).
+  - Sortable table with columns: ticker + flag + exchange, company
+    name + Korean name, last close (local + USD parenthetical for KR),
+    market cap, sector exposure bar, top-3 driver chips
+    (sign-color-coded, magnitude dots ●–●●●), implied-impact score
+    (tanh-squashed [-100,+100]), expand toggle.
+  - Expand row shows full editorial rationale + every `driver_link`
+    with `default → current → Δ% → contrib` decomposition. Driver
+    contribution color = green / red matching direction.
+- Implied-impact formula: for each link, contribution =
+  `(current − default) / |default| × sign × magnitude_weight × 100`
+  where `low=0.5, med=1.0, high=2.0`. Sum and squash with
+  `100 × tanh(raw/100)` so a single huge slider doesn't pin everything
+  at saturation.
+- SubNav: new "Equities" tab added to SectorShell.
+- Overview hub: new Equities card (replaces nothing — bumped grid to
+  `lg:grid-cols-3`) showing count + US/KR split + first 4 tickers.
+
+**Out of scope (Milestone 2+ has):**
+
+- Live ingest (yfinance / AlphaVantage / DART / EDGAR)
+- Time-series quote history + sparklines
+- Segment-level financials (revenue_usd / ebitda_usd / capex_usd)
+- MarketFactor + MarketFactorObservation tables (macro / policy / event)
+- EquityExposureModel SDK + per-equity revenue projection from driver state
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
+
+import { fetchEquities, type Equity } from "@/lib/sim-client";
 
 import { useSector } from "./sector-context";
 
@@ -15,6 +18,29 @@ import { useSector } from "./sector-context";
 export default function SectorOverviewPage() {
   const { meta, scenarios, sensitivity } = useSector();
   const base = `/sectors/${meta.slug}`;
+
+  const [equities, setEquities] = useState<Equity[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setEquities(null);
+    void fetchEquities(meta.slug)
+      .then((r) => {
+        if (!cancelled) setEquities(r);
+      })
+      .catch(() => {
+        if (!cancelled) setEquities([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [meta.slug]);
+  const equityCounts = equities
+    ? {
+        total: equities.length,
+        us: equities.filter((e) => e.iso_country === "US").length,
+        kr: equities.filter((e) => e.iso_country === "KR").length,
+      }
+    : null;
   // Sensitivity is reported per-output; for the overview tile just surface
   // the top-3 drivers for the first output so the user gets a feel without
   // having to pick one. Manual tab lets them dig further.
@@ -25,7 +51,7 @@ export default function SectorOverviewPage() {
     : [];
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       <Card
         title="Live"
         href={`${base}/live`}
@@ -88,6 +114,41 @@ export default function SectorOverviewPage() {
                 </span>
               </li>
             ))}
+          </ul>
+        )}
+      </Card>
+
+      <Card
+        title="Equities"
+        caption={
+          equityCounts
+            ? `${equityCounts.total} · ${equityCounts.us} US · ${equityCounts.kr} KR`
+            : "키 플레이어 종목"
+        }
+        href={`${base}/equities`}
+      >
+        {equities === null ? (
+          <p className="text-xs text-neutral-500">불러오는 중…</p>
+        ) : equities.length === 0 ? (
+          <p className="text-xs text-neutral-500">
+            아직 등록된 종목이 없습니다. <code>pnpm db:seed:equities</code> 실행 필요.
+          </p>
+        ) : (
+          <ul className="space-y-1 text-xs text-neutral-300">
+            {equities.slice(0, 4).map((e) => (
+              <li key={e.id} className="flex items-baseline gap-2">
+                <span className="text-[10px]">
+                  {e.iso_country === "US" ? "🇺🇸" : "🇰🇷"}
+                </span>
+                <span className="font-mono text-neutral-200">{e.ticker}</span>
+                <span className="truncate text-neutral-500">{e.company_name}</span>
+              </li>
+            ))}
+            {equities.length > 4 && (
+              <li className="text-[10px] text-neutral-600">
+                + {equities.length - 4} more
+              </li>
+            )}
           </ul>
         )}
       </Card>

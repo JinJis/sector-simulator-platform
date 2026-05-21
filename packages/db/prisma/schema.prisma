@@ -39,8 +39,65 @@ model Sector {
   updated_at     DateTime @updatedAt        @map("updated_at")
 
   scenarios      Scenario[]
+  equities       SectorEquity[]
 
   @@map("sectors")
+}
+
+model SectorEquity {
+  // Equities Milestone 1: per-sector listed-company basket. Each row is a
+  // ticker on a specific exchange that the editorial team considers a key
+  // player for the sector. Used by the user app's Equities tab to show
+  // how live driver state implies an impact on each company.
+  //
+  // Pricing is denormalized snapshot only (no time-series yet — that
+  // lands with the data-pipeline-service milestone). All USD-converted
+  // values use the snapshot date's FX so dashboards can show comparable
+  // market caps across KR/US.
+
+  id                  String   @id @default(cuid())
+  sector_slug         String   @map("sector_slug")
+  sector              Sector   @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+
+  ticker              String
+  exchange            String   // NASDAQ / NYSE / KOSPI / KOSDAQ
+  iso_country         String   @map("iso_country") // ISO 3166-1 alpha-2 — "US", "KR"
+  company_name        String   @map("company_name")
+  // Korean / native-script name for KR equities; null for pure-English names.
+  company_name_local  String?  @map("company_name_local")
+
+  // 0–100. Fraction of the company's revenue / earnings exposed to this
+  // sector. A KOSPI conglomerate with 8% of revenue from memory might
+  // still belong on memory-semi if it's a key swing stock there.
+  sector_exposure_pct Float    @map("sector_exposure_pct")
+  // Free-form rationale for inclusion (why this stock matters for this sector).
+  rationale           String?
+
+  // --- Snapshot quote (denormalized; refreshed by milestone-2 ingest) ---
+  currency            String?  // "USD" or "KRW"
+  last_close_local    Float?   @map("last_close_local")
+  last_close_usd      Float?   @map("last_close_usd")
+  last_close_date     DateTime? @map("last_close_date")
+  market_cap_usd      Float?   @map("market_cap_usd")
+
+  // --- Driver linkage (structured rationale) ---
+  // JSON array of { driver: string, sign: "+"|"-", magnitude: "low"|"med"|"high", note?: string }.
+  // The user-app Equities view reads this to project an impact direction
+  // when the current driver state diverges from defaults. The MarketFactor
+  // model (Milestone 2) replaces this with a normalized table.
+  driver_links        Json     @default("[]") @map("driver_links")
+
+  // Display ordering within the sector basket — defaults to 0, ties resolved
+  // by market_cap_usd desc.
+  display_order       Int      @default(0) @map("display_order")
+
+  created_at          DateTime @default(now()) @map("created_at")
+  updated_at          DateTime @updatedAt        @map("updated_at")
+
+  @@unique([sector_slug, ticker, exchange])
+  @@index([sector_slug])
+  @@index([iso_country])
+  @@map("sector_equities")
 }
 
 model AgentWorkflow {

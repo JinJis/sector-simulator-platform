@@ -75,6 +75,9 @@ export type SensitivityEntry = SensitivityResponse["by_output"][string][number];
 // Don't call Date methods on them client-side; treat as opaque.
 export type Scenario = RouterOutput["scenario"]["get"];
 
+export type Equity = RouterOutput["equity"]["get"];
+export type EquityDriverLink = Equity["driver_links"][number];
+
 // ---------- Functional surface (unchanged shape) ----------
 //
 // We wrap rather than re-export `trpc.sim.*.query/mutate` directly so the
@@ -162,6 +165,22 @@ export async function updateScenario(input: {
 
 export async function deleteScenario(id: string): Promise<{ id: string }> {
   return rethrow(() => trpc.scenario.delete.mutate({ id }), `deleteScenario(${id})`);
+}
+
+// ---------- Equity (read-only) ----------
+
+export async function fetchEquities(
+  sectorSlug: string,
+  isoCountry?: "US" | "KR",
+): Promise<Equity[]> {
+  return rethrow(
+    () =>
+      trpc.equity.listForSector.query({
+        sector_slug: sectorSlug,
+        iso_country: isoCountry,
+      }),
+    `fetchEquities(${sectorSlug})`,
+  );
 }
 
 // ---------- Error normalization ----------
