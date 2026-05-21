@@ -134,12 +134,43 @@ services:
       - "3000:3000"
     restart: "no"
 
+  admin:
+    # Same bind-mount + hot-reload pattern as `web`. Port 3100 to keep
+    # both Next.js dev servers up simultaneously without clashing.
+    build:
+      target: dev
+    environment:
+      NODE_ENV: development
+      SECTOR_SERVICE_URL: http://sector-service:8001
+      AGENT_ORCHESTRATION_URL: http://agent-orchestration:8002
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./apps/admin:/repo/apps/admin
+      - ./services/sector-service:/repo/services/sector-service
+      - ./packages/db:/repo/packages/db
+      - ./packages/ui:/repo/packages/ui
+      - ./tsconfig.base.json:/repo/tsconfig.base.json:ro
+      - admin_node_modules:/repo/apps/admin/node_modules
+      - admin_next_cache:/repo/apps/admin/.next
+      - admin_sector_service_node_modules:/repo/services/sector-service/node_modules
+      - admin_db_node_modules:/repo/packages/db/node_modules
+      - admin_ui_node_modules:/repo/packages/ui/node_modules
+    ports:
+      - "3100:3100"
+    restart: "no"
+
 volumes:
   web_node_modules:
   web_next_cache:
   web_sector_service_node_modules:
   web_db_node_modules:
   web_ui_node_modules:
+  admin_node_modules:
+  admin_next_cache:
+  admin_sector_service_node_modules:
+  admin_db_node_modules:
+  admin_ui_node_modules:
   postgres_data:
   sector_service_node_modules:
   db_node_modules:

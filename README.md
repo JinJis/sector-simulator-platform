@@ -1,254 +1,321 @@
 # Tech Sector Simulator Platform
 
-> AI-agent-driven analysis platform that turns industries into simulatable causal graphs and validates the future against real-time data.
+> AI-agent-driven analysis platform — turn industries into simulatable causal graphs, drive them with live market data, and validate scenarios against real-world equity baskets.
 
-This README is a code-level tour. For product vision/personas/business model, see [DESIGN.md](./DESIGN.md). For day-to-day operating context (conventions, gotchas, common tasks), see [CLAUDE.md](./CLAUDE.md).
-
----
-
-## 1. Current state — Phase 0 vertical slice
-
-The repo is in **Phase 0**: a hand-written, deterministic simulation runs end-to-end. A user opens the web app, drags sliders, and a chart re-renders against a FastAPI backend. There is no database, no auth, no agent layer yet — those come in Phases 1–3.
-
-What is wired up right now:
-
-| Layer | Component | Status |
-|---|---|---|
-| Frontend | `apps/web` — Next.js 15 App Router | ✅ Slider × chart workspace |
-| Backend | `services/simulation-service` — FastAPI | ✅ `/health`, `/sims`, `/sims/{slug}`, `/sims/{slug}/run` |
-| SDK | `packages/sdk-python` — `SimulationBase`, `Driver`, `Output` | ✅ Minimal contract |
-| Sim | `PlaceholderSim` (compound-growth toy) | ✅ Registered |
-| Infra | Turborepo + pnpm + uv workspaces | ✅ Wired |
-| Infra | Docker Compose (local / dev / prod) | ✅ This commit |
-| DB / Auth / Agents / API gateway | — | ⏳ Not yet (see backlog in `docs/tasks/current.md`) |
+This README is the **operational orientation**. For product vision/personas/business model see [DESIGN.md](./DESIGN.md). For day-to-day coding conventions see [CLAUDE.md](./CLAUDE.md). For the per-slice work log see [docs/tasks/current.md](./docs/tasks/current.md).
 
 ---
 
-## 2. Repository layout
+## 1. Current architecture (2026-05-21)
+
+**5 services + 2 Next.js apps**, all wired through `docker-compose`. Postgres-backed; Anthropic + yfinance + Gemini consumed externally.
+
+```
+                            ┌───────────────────────────────────────┐
+ Browser  ──── :3000 ──────►│  apps/web  (Next.js 15, RSC)          │
+                            │  sector workspace + equities + report │
+                            └──────┬────────────────────────────────┘
+                                   │  /api/sim/* rewrite
+                            ┌──────▼────────────┐
+ Admin    ──── :3100 ──────►│  apps/admin       │──┐
+                            │  sectors / agent  │  │
+                            │  runs / scenarios │  │
+                            └──────┬────────────┘  │
+                                   │ tRPC          │
+                            ┌──────▼────────────────▼──┐
+                            │  sector-service  :8001   │
+                            │  Fastify + tRPC + Prisma │
+                            └─┬──────────┬─────────┬───┘
+                              │          │         │
+                ┌─────────────▼┐  ┌──────▼──────┐ ┌▼──────────────────┐
+                │ simulation-  │  │ agent-      │ │ data-pipeline     │
+                │  service     │  │ orchestr.   │ │  yfinance ingest  │
+                │  :8000       │  │  :8002      │ │  :8003            │
+                │  FastAPI     │  │  FastAPI    │ │  FastAPI +        │
+                │  Python sims │  │  workflows  │ │  APScheduler      │
+                └──────┬───────┘  └──────┬──────┘ └─────┬─────────────┘
+                       │                 │              │
+                       └───────┬─────────┴──────────────┘
+                               ▼
+                       ┌────────────────┐
+                       │ postgres :5432 │  (host :6543)
+                       │  16-alpine     │
+                       └────────────────┘
+```
+
+### Service inventory
+
+| Service | Port | Language | Role |
+|---|---:|---|---|
+| `apps/web` | **3000** | TS / Next.js 15 | User-facing sector workspace |
+| `apps/admin` | **3100** | TS / Next.js 15 | Sector / scenario / agent-run inspection |
+| `services/sector-service` | **8001** | TS / Fastify + tRPC | Single API surface — proxies sims, owns scenarios + equities |
+| `services/simulation-service` | **8000** | Python / FastAPI | Executes `SimulationBase` sims (3 hand-coded sectors) |
+| `services/agent-orchestration` | **8002** | Python / FastAPI | LLM workflows (DecompositionWorkflow live; more in pipeline) |
+| `services/data-pipeline` | **8003** | Python / FastAPI + APScheduler | Daily yfinance ingest — snapshot + 90d history |
+| `postgres` | 5432 → host **6543** | PostgreSQL 16 | Sectors / scenarios / agent_workflows / sector_equities / equity_quotes |
+
+### Shared workspaces (`packages/`)
+
+- `@platform/db` — Prisma 5.22, schema + migrations source-of-truth
+- `@platform/ui` — shared shadcn-flavored components (`Breadcrumbs`, `SubNav`, `Sparkline`)
+- `@platform/sdk-python` — `SimulationBase`, `Driver`, `Output`
+- `@platform/agent-tools` — Anthropic LLM client + prompt loader + cost meter
+
+---
+
+## 2. Feature inventory (what works today)
+
+### User app (`/`)
+
+| Route | What |
+|---|---|
+| `/sectors` | Registered sector grid (3 sectors) |
+| `/sectors/[slug]` | Overview hub — 6-card preview |
+| `/sectors/[slug]/live` | Live KPI dashboard, 3s polling |
+| `/sectors/[slug]/manual` | Slider editor, drivers → outputs |
+| `/sectors/[slug]/graph` | React Flow causal graph |
+| `/sectors/[slug]/sources` | Provenance (history + source URLs) |
+| `/sectors/[slug]/equities` | **Equities tab** — 49 curated US/KR stocks, 90d sparklines, impliedImpact score |
+| `/compare?sector=…&a=…&b=…` | A/B scenario comparison |
+| `/?scenario=<id>` | Share-link hydrate |
+
+### Admin app (`/`)
+
+| Route | What |
+|---|---|
+| `/` | Sector list with "Open in user app" links |
+| `/sectors/[slug]` | Sector internal view + scenario inspection |
+| `/agent-runs` | List of recent agent workflow runs |
+| `/agent-runs/new` | Trigger a new DecompositionWorkflow (form) |
+| `/agent-runs/[id]` | Workflow status + output (decomposition JSON, cost USD, errors) |
+| `/scenarios` | Scenario list across sectors |
+
+### Equities domain
+
+- **49 hand-curated listings** (17 memory-semi + 15 space-data-center + 17 sofc) across NASDAQ / NYSE / KOSPI / KOSDAQ.
+- Each row carries editorial **`driver_links`** (which sim drivers affect this stock + sign + magnitude).
+- **`impliedImpact`** score: `100 × tanh(Σ((cur-def)/|def| × sign × magnitude) × 100 / 100)`. Editorial directional cue, not econometric.
+- **90d sparklines** loaded lazily; period return % chip color-coded.
+- Daily snapshot refresh via `data-pipeline:8003` cron (08:30 UTC = 17:30 KST).
+- 90-day history refresh on demand (POST `/jobs/refresh-quote-history`).
+
+### Agent orchestration
+
+- `DecompositionWorkflow` (Opus 4.7) — natural-language sector description → structured `Decomposition` (drivers / intermediates / outputs).
+- Workflow records persisted in Postgres (`agent_workflows` table), survive restarts.
+- Dangling sweep on startup flips zombie pending/running workflows to failed after 5min grace.
+- Prompt files in `prompts/` (5 versioned system prompts; hot-reloadable in local mode).
+- Cost meter logs every LLM call with token + USD breakdown.
+- Eval harness in `tests/agent_evals/` (Tier 1: prompt sanity / Tier 2: workflow behavior).
+
+---
+
+## 3. Quickstart
+
+### One-shot Docker (all 7 services)
+
+```bash
+cp .env.example .env       # set ANTHROPIC_API_KEY if you want agent runs
+docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+```
+
+Then open:
+- **http://localhost:3000** — user app
+- **http://localhost:3100** — admin app
+- `curl localhost:8000/health` / `:8001/health` / `:8002/health` / `:8003/health` — service liveness
+
+### Without Docker
+
+```bash
+# prereqs: Node 20+, pnpm 9+, Python 3.12+, uv, Postgres 16 reachable
+pnpm install
+uv sync
+cp .env.example .env       # set DATABASE_URL + ANTHROPIC_API_KEY
+pnpm db:migrate            # apply all migrations
+pnpm db:seed               # 3 sectors
+pnpm db:seed:equities      # 49 equity rows
+pnpm dev                   # turbo runs web + admin + 4 services in parallel
+```
+
+---
+
+## 4. Database lifecycle
+
+```bash
+pnpm db:up                   # start the postgres container only
+pnpm db:migrate              # prisma migrate dev — apply pending migrations
+pnpm db:migrate:deploy       # prisma migrate deploy — production-safe variant
+pnpm db:migrate:reset        # drop + recreate (DEV ONLY)
+pnpm db:seed                 # upsert 3 sectors
+pnpm db:seed:equities        # upsert 49 equity rows
+pnpm db:studio               # Prisma Studio at :5555
+pnpm db:logs                 # tail postgres logs
+pnpm db:down                 # stop postgres (data persists in named volume)
+```
+
+In docker-compose, the `db-migrate` one-shot service runs `migrate:deploy && seed` automatically before sector-service / agent-orchestration / data-pipeline boot.
+
+---
+
+## 5. Common operations
+
+### Refresh equity prices (data-pipeline)
+
+```bash
+# Snapshot — updates last_close_local / last_close_usd / market_cap_usd
+curl -X POST http://localhost:8003/jobs/refresh-quotes
+
+# 90-day history — populates equity_quotes time-series for sparklines
+curl -X POST "http://localhost:8003/jobs/refresh-quote-history?days=90"
+
+# Check last run
+curl http://localhost:8003/jobs/refresh-quotes/last
+curl http://localhost:8003/jobs/refresh-quote-history/last
+```
+
+In local mode the scheduler is **off by default** (`INGEST_SCHEDULE=off`) so dev restarts don't hammer yfinance. Set `INGEST_SCHEDULE=on` to enable the daily cron (08:30 UTC).
+
+### Trigger a decomposition workflow
+
+```bash
+# Via admin UI: open http://localhost:3100/agent-runs/new
+
+# Or via curl
+curl -X POST http://localhost:8002/workflows/decompose \
+  -H 'Content-Type: application/json' \
+  -d '{"description": "Solid-state battery for EV", "horizon_years": 10}'
+# → returns workflow_id
+
+curl http://localhost:8002/workflows/<workflow_id>
+```
+
+Needs `ANTHROPIC_API_KEY` set in `.env`. Without it the endpoint returns the workflow record but the run errors out.
+
+### Quality gates
+
+```bash
+pnpm typecheck    # tsc across web / admin / ui / db / sector-service
+pnpm lint         # next lint + ruff
+pnpm test         # vitest (sector-service in-mem) + see Python below
+pnpm format:check # prettier
+
+# Python services (run from repo root)
+uv run --package agent-orchestration python -m pytest services/agent-orchestration/tests -q
+uv run --package data-pipeline      python -m pytest services/data-pipeline/tests -q
+uv run --package simulation-service python -m pytest services/simulation-service/tests -q
+```
+
+Current tally: **136 passing + 2 skipped** across all suites.
+
+---
+
+## 6. Milestones
+
+### Shipped
+
+| Phase / Milestone | Scope |
+|---|---|
+| **Phase 0** | SimulationBase SDK + simulation-service + slider workspace |
+| **Phase 1** | Live KPI strip + scenarios + sources tab + sensitivity sweep (space-data-center reference sector) |
+| **Phase 2** | Postgres + Prisma + sector-service (tRPC) + 3 sectors live (memory-semi, sofc, space-data-center) |
+| **Phase 2 — agents** | agent-tools/llm-client + 6 versioned prompts + DecompositionWorkflow + admin UI |
+| **Phase 2 — persistence** | `agent_workflows` table + asyncpg repo + dangling sweep |
+| **Phase 2 — evals** | `tests/agent_evals/` two-tier harness (prompt sanity + workflow behavior) |
+| **Phase 2.5 IA slice 1** | `@platform/ui` + Breadcrumbs + SubNav |
+| **Phase 2.5 IA slice 2** | Sector hub split — `/sectors/[slug]/{live,manual,graph,sources}` nested routes |
+| **Equities M1** | `SectorEquity` schema + 49 US/KR seed + analyst-grade table UI + impliedImpact score |
+| **Equities M2** | `data-pipeline` service + yfinance adapter + daily snapshot refresh job |
+| **Equities M3** | `EquityQuote` time-series + 90d sparkline ingest + inline sparkline column |
+
+### In progress
+
+| | Scope |
+|---|---|
+| **Equities M4** | Price-driver regression — β / α / σ / max DD vs equal-weighted sector basket + dual sparkline overlay |
+
+### Deferred (Phase 3+)
+
+- Full agent business workflow: Research → Decomposition → Driver Inference → Edge Inference → Code Gen → Code Review → Sandbox validation → Deploy
+- DART (한국 공시) + EDGAR (US 10-K) adapters → `EquityFinancial`
+- MarketFactor / MarketFactorObservation (macro / policy / event)
+- Backtest: counterfactual "if I'd held HBM premium at X 90 days ago"
+- Modal / E2B sandboxed code execution
+- LangSmith / Helicone tracing integration
+- Temporal-backed workflow runner (current is in-process + Postgres)
+- Sector hub IA slices 3-7 (cmd+K, `/scenarios/[id]`, `/compare/[a]/[b]`, reports index, equities tab — last shipped)
+
+---
+
+## 7. Repository layout
 
 ```
 .
 ├── apps/
-│   └── web/                       # Next.js 15 (App Router, RSC, Tailwind, Recharts)
-│       ├── src/app/
-│       │   ├── layout.tsx         # Root layout, dark theme
-│       │   ├── page.tsx           # RSC: fetches sim metadata server-side
-│       │   ├── sim-workspace.tsx  # Client: sliders + chart, refetches on change
-│       │   └── globals.css        # Tailwind + dark scheme
-│       └── src/lib/sim-client.ts  # Typed fetch wrapper for simulation-service
-│
+│   ├── web/                          # Next.js 15 — user app  (3000)
+│   └── admin/                        # Next.js 15 — admin app (3100)
 ├── services/
-│   └── simulation-service/        # FastAPI on :8000
-│       └── simulation_service/
-│           ├── main.py            # App, CORS, route handlers
-│           ├── schemas.py         # Pydantic v2 I/O models
-│           ├── registry.py        # slug → SimulationBase subclass
-│           └── sims/
-│               └── placeholder.py # PlaceholderSim (compound growth)
-│
+│   ├── simulation-service/           # FastAPI — sim execution    (8000)
+│   ├── sector-service/               # Fastify + tRPC — API     (8001)
+│   ├── agent-orchestration/          # FastAPI — LLM workflows  (8002)
+│   └── data-pipeline/                # FastAPI — ingest          (8003)
 ├── packages/
-│   └── sdk-python/                # Importable SDK (uv workspace member)
-│       └── platform_sdk/
-│           └── base.py            # SimulationBase, Driver, Output, resolve_drivers
-│
-├── infra/
-│   └── docker/                    # Dockerfiles (multi-stage: dev + prod targets)
-│       ├── web.Dockerfile
-│       └── simulation-service.Dockerfile
-│
+│   ├── db/                           # Prisma schema + migrations + seed
+│   ├── ui/                           # Shared shadcn components
+│   ├── sdk-python/                   # SimulationBase + Driver + Output
+│   └── agent-tools/                  # Anthropic client + prompts loader
+├── prompts/                          # 6 versioned agent prompts (.md)
+├── infra/docker/                     # Per-service Dockerfiles
+├── docker-compose.{yml,local,dev,prod}.yml
+├── tests/
+│   ├── agent_evals/                  # Tier-1/2 agent harnesses
+│   ├── integration/                  # (reserved)
+│   └── e2e/                          # (reserved)
 ├── docs/
-│   ├── adr/                       # Architectural Decision Records
-│   └── tasks/current.md           # Active task & backlog
-│
-├── docker-compose.yml             # Base service definitions
-├── docker-compose.local.yml       # Local override — hot reload, source bind-mounts
-├── docker-compose.dev.yml         # Dev override — built images, verbose logs
-├── docker-compose.prod.yml        # Prod override — optimized images, restart policies
-│
-├── turbo.json                     # Turborepo task graph
-├── pnpm-workspace.yaml            # JS workspace (apps/*, packages/*, services/*)
-├── pyproject.toml                 # uv workspace root (packages/sdk-python, services/simulation-service)
-├── tsconfig.base.json             # Shared strict TS config
-└── .env.example                   # NEXT_PUBLIC_SIMULATION_SERVICE_URL, plus phase-1+ placeholders
-```
-
-Per `CLAUDE.md`, additional directories (`apps/admin`, `services/api-gateway`, `services/agent-orchestration`, etc.) are reserved for later phases and not yet present.
-
----
-
-## 3. Code walkthrough
-
-### 3.1 `packages/sdk-python/platform_sdk/base.py` — the contract
-
-The single most important file. The frontend is **sector-agnostic** because every sim conforms to this interface:
-
-- **`Driver`** *(frozen dataclass)* — declarative input: `default`, `range=(low, high)`, optional `unit`, `description`. Validates that `default` lies inside `range` at construction.
-- **`Output`** *(frozen dataclass)* — declarative output: either a `series` (per-year vector) or a `scalar`, with `unit` and `description`.
-- **`SimulationBase`** *(class)* — every sim subclasses this and sets `slug`, `name`, `drivers: dict[str, Driver]`, `horizon_years`, then implements `simulate(**kwargs) -> dict[str, Output]`.
-  - `resolve_drivers(supplied)` fills in defaults for any drivers the caller omitted and **raises `ValueError` on unknown driver names** — this is what backs the `400` response from the API.
-  - `monte_carlo()` and `sensitivity()` exist as `NotImplementedError` stubs; intentionally deferred to a later phase.
-
-Determinism is a hard invariant — sims must be pure functions of their drivers because the future caching layer keys on `hash(sector_id, code_version, drivers_dict)`.
-
-### 3.2 `services/simulation-service` — execution API
-
-A thin FastAPI shell over the SDK. There is no business logic here other than wiring.
-
-- **`main.py`** — three routes plus `/health`:
-  - `GET /sims` — list all registered sim metadata
-  - `GET /sims/{slug}` — single sim metadata (drivers with ranges, units)
-  - `POST /sims/{slug}/run` — body `{ drivers: {name: value, ...} }` → returns resolved drivers and computed outputs
-
-  Unknown slug → `404`. Unknown driver name → `400` (raised by `resolve_drivers`). CORS is currently locked to `http://localhost:3000`; **update this when deploying**.
-
-- **`schemas.py`** — Pydantic v2 mirrors of the SDK dataclasses for HTTP I/O (`DriverSchema`, `OutputSchema`, `SimMetadata`, `SimRunRequest`, `SimRunResponse`).
-
-- **`registry.py`** — `_REGISTRY: dict[str, type[SimulationBase]]`. To add a sim: import its class and add `Cls.slug: Cls` here.
-
-- **`sims/placeholder.py`** — `PlaceholderSim`: 2 drivers (`annual_growth_rate_pct`, `base_value`), 1 output series over an 11-year horizon (`year 0 … horizon_years`). Compound growth, fully deterministic.
-
-### 3.3 `apps/web` — Next.js frontend
-
-- **`src/app/page.tsx`** *(Server Component)* — fetches sim metadata at request time (`cache: "no-store"`) and either renders the workspace or an error card if the backend is unreachable.
-
-- **`src/app/sim-workspace.tsx`** *(Client Component)* — owns slider state in a `Record<string, number>`. On every change, fires `runSim` inside `useTransition` (so the UI stays responsive), pipes outputs into a Recharts `<LineChart>`. A `cancelled` flag guards against stale responses arriving out of order — important because the user can drag a slider faster than the network round-trip.
-
-- **`src/lib/sim-client.ts`** — typed fetch wrapper. `SIM_SERVICE_URL` reads `NEXT_PUBLIC_SIMULATION_SERVICE_URL` (default `http://localhost:8000`). Will be replaced by a generated tRPC client once `services/api-gateway` lands.
-
-- **Tailwind** is configured in dark mode by default (`color-scheme: dark` + `bg-neutral-950`).
-
-### 3.4 Build orchestration
-
-- **Turborepo** (`turbo.json`) — task graph for `dev`, `build`, `lint`, `typecheck`, `test`. `pnpm dev` runs `apps/web` (`next dev`) and `services/simulation-service` (`uvicorn --reload`) in parallel.
-- **uv workspace** (`pyproject.toml`) — `platform-sdk` is consumed as a workspace dependency by `simulation-service` so changes to the SDK are picked up without publishing.
-
----
-
-## 4. Quickstart (without Docker)
-
-```bash
-# prerequisites: Node 20+, pnpm 9+, Python 3.12+, uv
-pnpm install
-uv sync
-cp .env.example .env
-pnpm dev
-```
-
-Open <http://localhost:3000>. Drag sliders. Chart updates on every change (compute is local, <5 ms).
-
-API smoke-check:
-
-```bash
-curl http://localhost:8000/sims
-curl -X POST http://localhost:8000/sims/placeholder/run \
-  -H 'Content-Type: application/json' \
-  -d '{"drivers": {"annual_growth_rate_pct": 12}}'
+│   ├── adr/                          # Architectural Decision Records
+│   └── tasks/current.md              # Active slice log
+├── pyproject.toml                    # uv workspace root
+├── pnpm-workspace.yaml               # JS workspace
+└── turbo.json
 ```
 
 ---
 
-## 5. Docker Compose — `local` / `dev` / `prod`
+## 8. Compose modes — `local` / `dev` / `prod`
 
-Three modes, expressed as a base file plus a per-mode override. The base file (`docker-compose.yml`) defines services and networks; each override adjusts build target, mounts, command, and restart policy.
-
-| Mode | Use case | Build target | Hot reload | Source mounts | Restart policy |
-|---|---|---|---|---|---|
-| `local` | Inner-loop dev on your machine | `dev` | **Yes** (Next.js + uvicorn `--reload`) | bind-mounted | `no` |
-| `dev` | Shared dev/staging environment | `prod` | No | none (baked in) | `unless-stopped` |
-| `prod` | Production deploy | `prod` | No | none (baked in) | `always` |
-
-### 5.1 Running
-
-Use `docker compose -f docker-compose.yml -f docker-compose.<mode>.yml up`:
+| Mode | File | Build target | Hot reload | Use case |
+|---|---|---|---|---|
+| `local` | `docker-compose.local.yml` | `dev` | yes (bind-mounts) | inner-loop dev on your machine |
+| `dev` | `docker-compose.dev.yml` | `prod` | no | shared dev/staging |
+| `prod` | `docker-compose.prod.yml` | `prod` | no | production deploy |
 
 ```bash
-# Local — hot reload, code edits reflect immediately
+# Local — full stack with hot reload
 docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 
-# Dev — built images, verbose logs
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
-
-# Prod — optimized images, auto-restart
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# Bring up only some services
+docker compose -f docker-compose.yml -f docker-compose.local.yml up admin web sector-service
 ```
 
-Or set `COMPOSE_FILE` once in your shell:
+### Env vars (set in `.env`)
 
-```bash
-export COMPOSE_FILE=docker-compose.yml:docker-compose.local.yml
-docker compose up --build
-```
-
-### 5.2 What `local` mode actually does
-
-- `apps/web` runs `pnpm dev` inside the container with `./apps/web` bind-mounted; Next.js's file watcher triggers Fast Refresh on save. `node_modules` is kept on a named volume so host/container Node ABIs don't collide.
-- `services/simulation-service` runs `uvicorn --reload`; `./services/simulation-service` and `./packages/sdk-python` are both bind-mounted, so changes to either propagate without a rebuild.
-- `WATCHPACK_POLLING=true` and `CHOKIDAR_USEPOLLING=true` are set so file watching works reliably on macOS/Windows Docker Desktop and on some Linux bind-mount drivers.
-
-### 5.3 What `dev` / `prod` mode actually does
-
-- Both build the `prod` Dockerfile stage. `apps/web` runs `next start` against the standalone build; `simulation-service` runs `uvicorn` (no `--reload`).
-- `dev` keeps `NODE_ENV=production` but allows verbose logs and exposes ports directly to the host for easy probing.
-- `prod` adds `restart: always` and drops the host port bindings for the API service in favor of internal networking — the gateway/ingress in front (not yet in repo) is expected to terminate TLS and forward.
-
-### 5.4 Where the Dockerfiles live
-
-- `infra/docker/web.Dockerfile` — multi-stage: `base` → `deps` → `dev` (target for local) → `builder` → `prod` (target for dev/prod).
-- `infra/docker/simulation-service.Dockerfile` — multi-stage: `base` (uv) → `deps` → `dev` (target for local, with `--reload`) → `prod`.
-
-Both use `corepack` / `uv` lockfile-aware installs so reproducibility holds across mode boundaries.
-
-### 5.5 Env vars
-
-Compose reads `.env` at the repo root (created from `.env.example`). The only required variable today is `NEXT_PUBLIC_SIMULATION_SERVICE_URL`, which in Docker defaults to `http://localhost:8000` (browser-side) — Compose maps the simulation-service port to the host so the browser can hit it directly.
-
----
-
-## 6. Quality gates
-
-```bash
-pnpm typecheck     # tsc (apps/web) + mypy (simulation-service)
-pnpm lint          # next lint (web) + ruff (python)
-pnpm test          # placeholders, no real suite yet — see Phase 0 backlog
-pnpm format:check  # prettier
-```
-
-All four must pass before a PR merges. CI (GitHub Actions) is part of the Phase 0 backlog.
-
----
-
-## 7. Adding a new simulation (Phase 0/1 workflow)
-
-Manual, no agents yet:
-
-1. Create `services/simulation-service/simulation_service/sims/<slug>.py` with a `SimulationBase` subclass — set `slug`, `name`, `drivers`, `horizon_years`, implement `simulate`.
-2. Register it in `simulation_service/registry.py`.
-3. Restart the service (in `local` mode, `--reload` does this automatically).
-4. The frontend will pick it up at `GET /sims/<slug>` — no frontend changes needed because the UI is metadata-driven.
-
-Determinism is non-negotiable: same inputs → identical outputs, every time. Random sources need fixed seeds.
-
----
-
-## 8. What's next
-
-Tracked in `docs/tasks/current.md`. Highlights from the Phase 0 backlog:
-
-- GitHub Actions CI (typecheck / lint / test gates)
-- Prisma schema v1 + Postgres in `docker-compose.yml`
-- First real sector ("AI Memory Demand") replacing `PlaceholderSim`
-- `services/api-gateway` (Fastify + tRPC) in front of the simulation-service
-- `apps/admin` skeleton
-- `packages/ui`, `packages/sdk-ts`, `packages/shared-types`
-
-Out of scope until Phase 2+: agents, sandboxed code execution, LangSmith/Helicone, Monte Carlo / sensitivity endpoints.
+| Var | Default | Purpose |
+|---|---|---|
+| `DATABASE_URL` | `postgresql://platform:platform@postgres:5432/platform_dev` | All services that talk to Postgres |
+| `ANTHROPIC_API_KEY` | (unset) | Required for live agent runs; without it agent-orchestration only serves `/health` |
+| `SECTOR_SERVICE_URL` | `http://sector-service:8001` | RSC-side fetch from web/admin |
+| `AGENT_ORCHESTRATION_URL` | `http://agent-orchestration:8002` | Admin → orchestration calls |
+| `INGEST_SOURCE` | local: `fake`, prod: `yfinance` | data-pipeline data source |
+| `INGEST_SCHEDULE` | local: `off`, prod: `on` | data-pipeline daily cron |
+| `INGEST_CRON_QUOTES` | `30 8 * * *` (UTC) | data-pipeline cron expression |
 
 ---
 
 ## 9. References
 
-- [DESIGN.md](./DESIGN.md) — vision, personas, business model, roadmap
-- [CLAUDE.md](./CLAUDE.md) — operating context for Claude Code (and humans)
+- [DESIGN.md](./DESIGN.md) — product vision, personas, roadmap, IA spec (§8.5), Equities domain spec (§14)
+- [CLAUDE.md](./CLAUDE.md) — coding conventions, model routing, common-task recipes
+- [docs/tasks/current.md](./docs/tasks/current.md) — per-slice work log
 - [docs/adr/](./docs/adr/) — Architectural Decision Records
-- [docs/tasks/current.md](./docs/tasks/current.md) — active task and backlog
-- [packages/sdk-python/README.md](./packages/sdk-python/README.md) — SDK usage
+- [prompts/](./prompts/) — versioned agent system prompts
+- [packages/sdk-python/README.md](./packages/sdk-python/README.md) — SimulationBase usage

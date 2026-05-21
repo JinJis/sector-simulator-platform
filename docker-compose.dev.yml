@@ -47,5 +47,17 @@ services:
       - "3000:3000"
     restart: unless-stopped
 
+  admin:
+    build:
+      target: prod
+    environment:
+      NODE_ENV: production
+      SECTOR_SERVICE_URL: http://sector-service:8001
+      AGENT_ORCHESTRATION_URL: http://agent-orchestration:8002
+      ENVIRONMENT: dev
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+
 volumes:
   postgres_data:

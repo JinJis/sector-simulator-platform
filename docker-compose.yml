@@ -136,6 +136,26 @@ services:
     networks:
       - internal
 
+  admin:
+    # Admin console — sector + scenario inspection + agent-runs.
+    # Same image shape as `web` but pinned to port 3100 to avoid
+    # collisions when both apps are up at once.
+    image: tssp/admin:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: infra/docker/admin.Dockerfile
+    environment:
+      # RSC / route handlers run inside the container, so address
+      # sector-service / agent-orchestration by their compose hostnames
+      # (not localhost). next.config.ts reads SECTOR_SERVICE_URL.
+      SECTOR_SERVICE_URL: http://sector-service:8001
+      AGENT_ORCHESTRATION_URL: http://agent-orchestration:8002
+    depends_on:
+      - sector-service
+      - agent-orchestration
+    networks:
+      - internal
+
 networks:
   internal:
     driver: bridge
