@@ -1,8 +1,61 @@
 # Tech Sector Simulator Platform
 
-> AI-agent-driven analysis platform — turn industries into simulatable causal graphs, drive them with live market data, and validate scenarios against real-world equity baskets.
+> Turn industries into simulatable causal graphs, drive them with live market data, see how every key listed equity reacts in real time.
 
-This README is the **operational orientation**. For product vision/personas/business model see [DESIGN.md](./DESIGN.md). For day-to-day coding conventions see [CLAUDE.md](./CLAUDE.md). For the per-slice work log see [docs/tasks/current.md](./docs/tasks/current.md).
+For product vision / personas / business model see [DESIGN.md](./DESIGN.md). For day-to-day coding conventions see [CLAUDE.md](./CLAUDE.md). For the per-slice work log see [docs/tasks/current.md](./docs/tasks/current.md).
+
+---
+
+## Problem
+
+Investors who care about a thematic sector — AI memory, orbital data centers, hydrogen fuel cells — hit the same wall every quarter:
+
+1. **The macro story lives in analyst notes.** "AI HBM demand will grow 50%" sits in a PDF. There's no machinery that connects that claim to any single ticker's earnings, let alone its price.
+2. **The supporting data is scattered.** Quarterly revenue from EDGAR, KR filings from DART, daily prices from yfinance, capex from a 10-K appendix — five logins, five formats, none stitched.
+3. **Theses don't update.** When ASP cycles or HBM premium drifts, the original "memory will rip" thesis ages silently. The investor who wrote it doesn't get a ping.
+4. **Counterfactuals are hand-coded.** "What if HBM mix drops to 50%?" — answering means rebuilding an Excel model from scratch, every time.
+5. **Per-equity attribution is muddy.** Even if you have a sector view, mapping it back to "which of the 17 listed names benefits most, and by how much" is a separate research project.
+
+The chain *macro driver → sector flow → company P&L → stock price* exists in every investor's head, but nowhere in software. So the chain rots — and the investor finds out late.
+
+## Solution
+
+A platform where each sector is a **simulatable causal graph**, every node has a **provenance source**, and every key listed equity is a **first-class node** wired to its driver dependencies.
+
+Three things light up at once:
+
+- **Edit the graph, the math moves.** Drag an edge weight to 2.0 in `/sectors/memory-semi/graph` → the NPV chart on the overview page updates → every equity's 30-day projection line shifts. Real time, no rebuilds.
+- **Per-equity narrative falls out of the model.** Each equity carries a graph-derived `impactScore ∈ [-100, +100]` summarizing how today's driver state vs defaults benefits or hurts it. Map that score → 30-day projected price → upside vs current.
+- **Real data keeps the graph honest.** Daily yfinance ingest refreshes quote series; weekly SEC EDGAR + Korean OPEN DART refresh quarterly revenue / margins / capex / balance sheet. Frankfurter handles historical FX so old quarters aren't distorted by today's KRW rate.
+
+The platform answers, in one place: *"What's the upside on this stock if the sector goes the way I think it does, and what would have to be true?"*
+
+## Why now
+
+- **Open financial data is unusually open.** SEC EDGAR's XBRL Facts API ships every US public filing as machine-readable JSON, no key. DART exposes every Korean filing the same way. yfinance handles intra-day. None of this existed in usable shape a decade ago.
+- **AI agents make causal-graph authoring tractable.** Hand-coding a sector simulation takes a senior engineer two weeks. An agent loop (research → decomposition → driver inference → code-gen → review) can ship a credible first cut in hours. Phase 3 brings that loop fully online.
+- **Investor demand is shifting toward thesis iteration speed.** Public-side allocators want to flex a thesis in minutes (slider drag) rather than days (Excel rebuild). The slow-iteration alternative isn't competitive.
+
+## How (mechanism in 60 seconds)
+
+1. **Each sector is a `SimulationBase` class** in Python (`services/simulation-service`). It declares drivers (with ranges + provenance), an in-code causal `SimGraph`, and a `simulate(**drivers)` method.
+2. **First boot bootstraps the graph into Postgres** — `graph_nodes` + `graph_edges` rows. From then on the DB is authoritative; the Python literal is the "reset target."
+3. **Each row in `sector_equities`** (49 hand-curated US + KR tickers across 3 sectors today) becomes a `GraphNode(kind="equity")` with `driver_links` JSONB lifted into `GraphEdge` rows. `weight = sign × magnitude_weight`.
+4. **Sliders + graph edits feed the same simulation.** Sector-service reads `graph_edges`, forwards non-neutral weights to simulation-service on every `sim.run`; sims multiply by those weights at named choke points. Default weight = 1.0 means edits are opt-in — legacy math is unchanged until someone touches the graph.
+5. **Per-equity impact derives from the graph.** `equity.impactScores` walks inbound edges to each equity node:
+   ```
+   raw_i  = (driver_value_i − default_i) / |default_i|
+   score  = 100 · tanh( Σ edge.weight × raw_i )
+   ```
+   M5 turns the score into a 30-day projected price line on every sparkline.
+6. **Real data refreshes on schedule.** Daily yfinance (08:30 UTC), weekly EDGAR + DART financials (Sun 04:00 UTC). All ingest is failure-isolated per ticker.
+
+## What it doesn't try to be
+
+- Not a brokerage. We don't route orders; we surface a thesis-and-evidence layer.
+- Not an analyst-report generator. The agent slices write code + graph topology; humans approve before deploy.
+- Not a backtester (yet). Phase 4 adds historical replay; for now the projection layer is forward-only.
+- Not multi-tenant. Single workspace until auth lands.
 
 ---
 
@@ -272,14 +325,14 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **Equities M10b** | Real DART + EDGAR adapters — `EdgarSource` (SEC XBRL Facts, no key) + `DartSource` (OPEN DART, KR ticker→corp_code map for 16 seed equities) + `FakeFinancialsSource`. New `refresh_financials` APScheduler-ready job with per-country routing. `POST /jobs/refresh-financials` endpoint. 21 new tests covering adapter math, fallback chains, failure isolation. |
 | **Equities M10c** | Financials refinement — EDGAR `DepreciationAndAmortization` → true EBITDA. DART switches to `fnlttSinglAcntAll` (full statements) so KR equities now have capex + true EBITDA. Historical FX via free `FrankfurterFx` (ECB-sourced) — DART converts each quarter at its quarter-end rate. Weekly cron via `REFRESH_FINANCIALS_CRON` (default Sun 04:00 UTC). 14 new tests. |
 | **Equities M10d** | Financials breadth — DART `corpCode.xml` auto-discovery for unmapped KR tickers (lazy, cached, fetch-error tolerant). `EquityFinancial` schema gains `total_assets_usd` / `total_liabilities_usd` / `total_equity_usd` populated by both adapters (DART K-IFRS BS items + EDGAR instant facts via `_pick_instant_facts`). Frankfurter generalized to any base/target pair + `local_per_usd_factory` for non-KR future adapters. 21 new tests. |
+| **M14** | README expansion — Problem / Solution / Why-now / How (mechanism in 60 seconds) / What it doesn't try to be. Investor narrative now precedes the architecture diagram. |
 
-### Planned next (M14 → M19)
+### Planned next (M15 → M19)
 
-Ordered top-down by dependency. M14 + M15 are pure-doc / content work — do them first so the bigger UX builds (M16, M17) land with framing in place.
+Ordered top-down by dependency. M15 is pure-content work — does it next so the bigger UX builds (M16, M17) land with framing in place.
 
 | | Scope |
 |---|---|
-| **M14** | README expansion — add Problem / Solution / Why-now / How sections. Reorder so investor narrative precedes architecture diagrams. |
 | **M15** | Per-page intent panels — every sector subpage (live / manual / graph / equities / sources) gets a "왜 보는가 + 무엇을 찾는가" intro card. Content lives in a central `page-intents.ts` for easy revision. |
 | **M16** | Home page / investor dashboard — new `/` route with unified search (sector / ticker / driver), trending sectors, biggest movers, recent scenarios, what's-changed feed pulling from `audit_logs`. Replaces the current redirect-only home. |
 | **M17** | Investment narrative UI — sector growth thesis + per-equity upside/downside grid + per-stock detail pages with "why this number" decomposition (driver × edge weight, ranked) + source citations. The main payoff. |

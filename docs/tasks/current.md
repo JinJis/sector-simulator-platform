@@ -1753,38 +1753,37 @@ problem at current scale.
 
 ---
 
-## Planned next (M14 → M19)
+## Planned next (M15 → M19)
 
 Ordered by dependency + leverage. Each slice is independent enough to
-ship alone; do them top-down so foundational context (M14, M15) is in
-place before the bigger UX builds (M16, M17). M18 + M19 are quality /
-operational improvements that can interleave when needed.
+ship alone; do them top-down so foundational context (M14 done, M15
+next) is in place before the bigger UX builds (M16, M17). M18 + M19
+are quality / operational improvements that can interleave when needed.
 
-### M14 — README expansion (Problem / Solution / Why / How) — *do first*
+### M14 — README expansion (shipped 2026-05-21)
 
-**Why first**: pure documentation, no code, immediate value. Without
-this anyone reading the repo sees architecture-first and misses the
-*purpose* of the platform.
+Added to README.md, before the architecture section:
 
-- Add **Problem** section to README.md: investors can't reliably
-  connect a sector's macro story to per-equity earnings impact —
-  research is fragmented across analyst notes, filings, and macro
-  data; nothing keeps the chain "macro driver → sector flow →
-  company P&L → stock price" coherent and current.
-- Add **Solution**: simulatable causal graphs per sector + live
-  data + per-equity impact derivation. Edit the graph, see prices
-  move. Backtest your thesis with historical data.
-- Add **Why now**: AI agents make it tractable to keep dozens of
-  sector graphs current; equities + financials data is more open
-  than ever (yfinance / EDGAR / DART); investor demand for fast
-  thesis iteration is high.
-- Add **How** (mechanism): hand-authored sims today, agent-generated
-  in Phase 3. Hybrid weights wire DB graph edits to outputs. Equity
-  impact = graph traversal over driver→equity edges.
-- Reorder so investor narrative comes before architecture
-  diagrams; architecture stays but moves below.
+- **Problem** — investors hit the same wall every quarter (macro
+  story siloed from per-ticker impact, data scattered across
+  EDGAR/DART/yfinance, theses don't update, counterfactuals are
+  hand-coded, per-equity attribution muddy)
+- **Solution** — sector = simulatable causal graph, every key
+  equity is a graph node, edit the graph + math moves + projection
+  lines shift in real time
+- **Why now** — open financial data + AI agents for graph
+  authoring + investor demand for thesis-iteration speed
+- **How (mechanism in 60 seconds)** — SimulationBase → DB-bootstrap
+  → equity nodes from `driver_links` → hybrid edge weights →
+  graph-traversal impact score → forward projection
+- **What it doesn't try to be** — not a brokerage, not an analyst-
+  report generator, not yet a backtester, not multi-tenant
 
-### M15 — Per-page intent panels — *do second, content-heavy*
+Korean DESIGN.md (vision / personas / business model in depth) is
+unchanged and remains the in-depth product spec; README is the
+English investor-facing front door.
+
+### M15 — Per-page intent panels — *do next, content-heavy*
 
 **Why second**: still pure content; needs M14's framing established
 first so the per-page copy doesn't re-explain the basics. Each
