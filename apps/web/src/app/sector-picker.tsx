@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import type { SimMetadata } from "@/lib/sim-client";
 
@@ -10,21 +10,27 @@ interface Props {
 }
 
 /**
- * Sector switcher rendered above the workspace. Single source of truth for
- * which sim is loaded: the `?sector=<slug>` query param. Click a chip →
- * router.push updates the URL → server-side page.tsx refetches metadata.
+ * Sector switcher rendered above the workspace. The URL is `/sectors/<slug>`
+ * (with optional `/{live,manual,graph,sources}` sub-tab). Switching sectors
+ * preserves whichever sub-tab the user is currently on so e.g. the Manual
+ * sliders don't snap back to Live mid-task.
  *
  * Falls back to a dropdown if more than 6 sectors are registered, so the
  * pill row doesn't overflow on mobile.
  */
 export function SectorPicker({ sims, currentSlug }: Props) {
   const router = useRouter();
-  const useDropdown = sims.length > 6;
+  const pathname = usePathname() ?? "";
 
   function go(slug: string) {
     if (slug === currentSlug) return;
-    router.push(`/?sector=${encodeURIComponent(slug)}`);
+    // /sectors/<old-slug>(/sub)? → /sectors/<new-slug>(/sub)?
+    const m = pathname.match(/^\/sectors\/[^/]+(\/.*)?$/);
+    const subPath = m?.[1] ?? "";
+    router.push(`/sectors/${encodeURIComponent(slug)}${subPath}`);
   }
+
+  const useDropdown = sims.length > 6;
 
   if (useDropdown) {
     return (

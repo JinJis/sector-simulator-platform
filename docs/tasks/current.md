@@ -421,6 +421,72 @@ split is slice 2.
   generated CSS). The web Dockerfile + `docker-compose.local.yml`
   copy/bind-mount `packages/ui` so docker dev works.
 
+### Phase 2.5 IA slice 2 — Sector hub split (2026-05-21)
+
+Lift the four-tab strip (`live` / `manual` / `graph` / `sources`) out of
+a single `?sector=<slug>` page into a proper nested route tree, so each
+tool gets its own URL, its own back/forward history entry, and its own
+deep link.
+
+New route topology (apps/web):
+
+```
+/                          → redirect to /sectors (preserves ?sector and ?scenario)
+/sectors                   → server-rendered grid of registered sims
+/sectors/[slug]            → overview hub (cards linking to children)
+/sectors/[slug]/live       → LiveDashboard
+/sectors/[slug]/manual     → ManualPanel (slider editor)
+/sectors/[slug]/graph      → GraphView (React Flow causal graph)
+/sectors/[slug]/sources    → SourcesView (historical + provenance)
+/compare?sector=…&a=…&b=…  → unchanged (normalization is slice 4)
+```
+
+Implementation pieces:
+
+- **`apps/web/src/app/sectors/[slug]/layout.tsx`** — RSC; fetches sims,
+  meta, sensitivity, initialLive; 404 on unknown slug; renders
+  `<SectorShell>` (the chrome) wrapping `{children}`. Layouts in Next 15
+  can't see `searchParams` server-side, so scenario hydration is
+  client-side (see below).
+- **`sector-context.tsx`** — Client React context lifting the shared
+  state that used to live in `Workspace`: `driverValues`,
+  `activeScenario`, `scenarios`, and all CRUD callbacks. Hydrates
+  `?scenario=<id>` share links via `useSearchParams()` on mount —
+  brief flash on direct-link landing, no flash for in-app loads.
+- **`sector-shell.tsx`** — `"use client"`; renders the persistent chrome
+  (LiveStrip, SectorPicker, header, ScenarioBar, ReportPanel modal,
+  SubNav) once at the layout level so it stays mounted across child
+  route transitions. Loading a scenario routes to `/manual` (preserving
+  the original "show me the sliders that changed" affordance).
+- **`page.tsx` (overview hub)** — 6-card grid: 4 child-route cards
+  (Live / Manual / Graph / Sources) + Sensitivity preview (top-3
+  drivers for first output) + Scenarios preview (first 4 saved).
+- **Child pages** (`live/`, `manual/`, `graph/`, `sources/`) — each is
+  a tiny `"use client"` component that pulls what it needs from
+  `useSector()` and renders the existing panel. The panel components
+  themselves are untouched.
+- **`/sectors/page.tsx`** — Server-rendered grid replacing the bare
+  SectorPicker chip strip with a real index. Click → `/sectors/<slug>`.
+- **`SectorPicker` URL switch** — `/?sector=X` → `/sectors/X`,
+  preserving the sub-path (`/manual`, `/graph`, etc.) so switching
+  sectors mid-task doesn't snap you back to Live.
+- **Share link** — `ScenarioBar.handleShare()` writes
+  `/sectors/<slug>?scenario=<id>` instead of `/?sector=<slug>&scenario=<id>`.
+- **Compare Breadcrumbs** — `Sectors → <sector name> → Compare`,
+  linked into the new structure.
+- **Admin "Open in user app"** — bumped to `/sectors/<slug>` too.
+- **Legacy `/`** — converted to a server-side redirect file
+  (`apps/web/src/app/page.tsx`) so old bookmarks
+  (`/?sector=…&scenario=…`) keep working.
+- **`workspace.tsx` deleted** — its responsibilities split between
+  `sector-context.tsx` (state), `sector-shell.tsx` (chrome), and the
+  4 child route files (tab content).
+
+Verification: web/admin/ui typecheck pass; the in-memory sector-service
+suites (sim + agent, 19 tests) still green; the DB-required
+`scenario.test.ts` integration suite is skipped/red regardless of this
+slice (needs local Postgres — pre-existing environment constraint).
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

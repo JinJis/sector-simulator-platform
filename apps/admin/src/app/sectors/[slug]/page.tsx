@@ -56,7 +56,7 @@ export default async function SectorDetail({
           {scenarios.length} saved scenarios
         </span>
         <a
-          href={`http://localhost:3000/?sector=${encodeURIComponent(sim.slug)}`}
+          href={`http://localhost:3000/sectors/${encodeURIComponent(sim.slug)}`}
           className="ml-auto text-[11px] text-cyan-400 hover:text-cyan-300"
           rel="noreferrer"
         >

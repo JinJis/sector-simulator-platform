@@ -91,9 +91,9 @@ export function ScenarioBar({
     if (!active) return;
     // Always include the sector slug so the link is self-contained even if
     // the user is on a different sector when they paste it back.
-    const url = `${window.location.origin}/?sector=${encodeURIComponent(
+    const url = `${window.location.origin}/sectors/${encodeURIComponent(
       sectorSlug,
-    )}&scenario=${encodeURIComponent(active.id)}`;
+    )}?scenario=${encodeURIComponent(active.id)}`;
     try {
       await navigator.clipboard.writeText(url);
       setShareToast("Link copied to clipboard");

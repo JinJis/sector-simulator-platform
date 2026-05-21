@@ -86,8 +86,8 @@ export default async function ComparePage({
       <Breadcrumbs
         className="mb-3"
         items={[
-          { label: "Workspace", href: `/?sector=${encodeURIComponent(sector)}` },
-          { label: meta.name, href: `/?sector=${encodeURIComponent(sector)}` },
+          { label: "Sectors", href: `/sectors` },
+          { label: meta.name, href: `/sectors/${encodeURIComponent(sector)}` },
           { label: "Compare" },
         ]}
       />
@@ -163,10 +163,10 @@ function ErrorShell({ title, detail }: { title: string; detail: string }) {
       <p className="mt-4 text-sm text-red-400">{title}</p>
       <p className="mt-2 text-xs text-neutral-500">{detail}</p>
       <Link
-        href="/"
+        href="/sectors"
         className="mt-6 inline-block rounded border border-neutral-800 px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-900"
       >
-        ← back to workspace
+        ← back to sectors
       </Link>
     </main>
   );
