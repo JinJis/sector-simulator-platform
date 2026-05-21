@@ -16,6 +16,7 @@ import pytest
 from agent_orchestration.repo import (
     InMemoryWorkflowRepository,
     PostgresWorkflowRepository,
+    _naive_utc,
     build_repository,
 )
 from agent_orchestration.schemas import WorkflowRecord, WorkflowStatus
@@ -183,3 +184,30 @@ class TestPostgresRepo:
         assert got is not None
         assert got.status == WorkflowStatus.failed
         assert got.error == "crashed"
+
+
+class TestNaiveUtcHelper:
+    """Regression for the asyncpg TIMESTAMP-vs-TIMESTAMPTZ encode error
+    that crashed the service on first contact with a real Postgres
+    (Prisma maps `DateTime` → `TIMESTAMP(3)`, asyncpg refuses to encode
+    a tz-aware datetime into it). The fix strips tz at the write
+    boundary; this verifies the conversion."""
+
+    def test_strips_tzinfo_from_aware(self) -> None:
+        aware = datetime(2026, 5, 21, 3, 14, 53, tzinfo=UTC)
+        naive = _naive_utc(aware)
+        assert naive.tzinfo is None
+        assert naive == datetime(2026, 5, 21, 3, 14, 53)
+
+    def test_converts_non_utc_to_utc_naive(self) -> None:
+        from datetime import timezone
+
+        kst = timezone(timedelta(hours=9))
+        aware = datetime(2026, 5, 21, 12, 14, 53, tzinfo=kst)  # = 03:14:53 UTC
+        naive = _naive_utc(aware)
+        assert naive.tzinfo is None
+        assert naive == datetime(2026, 5, 21, 3, 14, 53)
+
+    def test_passes_naive_through_unchanged(self) -> None:
+        naive_in = datetime(2026, 5, 21, 3, 14, 53)
+        assert _naive_utc(naive_in) is naive_in

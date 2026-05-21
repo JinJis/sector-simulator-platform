@@ -158,8 +158,8 @@ class PostgresWorkflowRepository:
                 json.dumps(record.output) if record.output is not None else None,
                 record.error,
                 record.cost_usd,
-                record.created_at,
-                record.updated_at,
+                _naive_utc(record.created_at),
+                _naive_utc(record.updated_at),
             )
 
     async def update(self, record: WorkflowRecord) -> None:
@@ -171,7 +171,7 @@ class PostgresWorkflowRepository:
                 json.dumps(record.output) if record.output is not None else None,
                 record.error,
                 record.cost_usd,
-                record.updated_at,
+                _naive_utc(record.updated_at),
             )
 
     async def get(self, wid: str) -> WorkflowRecord | None:
@@ -192,7 +192,9 @@ class PostgresWorkflowRepository:
         self, *, statuses: list[str], stale_before: datetime, reason: str
     ) -> int:
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch(_SWEEP_SQL, reason, statuses, stale_before)
+            rows = await conn.fetch(
+                _SWEEP_SQL, reason, statuses, _naive_utc(stale_before)
+            )
         return len(rows)
 
     async def close(self) -> None:
@@ -238,3 +240,22 @@ async def build_repository(
 # Re-export this so callers don't need to know about `datetime`.
 def utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def _naive_utc(dt: datetime) -> datetime:
+    """Convert a tz-aware datetime to naive UTC for asyncpg.
+
+    Why: our Prisma schema maps `DateTime` to Postgres `TIMESTAMP(3)`
+    (no time zone). asyncpg refuses to encode a tz-aware datetime into
+    such a column ("can't subtract offset-naive and offset-aware
+    datetimes") — so we normalize at the write boundary.
+
+    Long-term fix is `@db.Timestamptz(3)` on every Prisma DateTime + an
+    `ALTER COLUMN ... TYPE timestamptz USING ... AT TIME ZONE 'UTC'`
+    migration. That's a wider refactor; for now this helper keeps the
+    runtime honest. Reads come back naive from the DB and are treated
+    as UTC by the rest of the code.
+    """
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(UTC).replace(tzinfo=None)

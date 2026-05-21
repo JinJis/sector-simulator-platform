@@ -14,10 +14,19 @@ in the seed script and aren't written here.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from pydantic import BaseModel
+
+
+def _naive_utc(dt: datetime) -> datetime:
+    """asyncpg → Postgres TIMESTAMP (no TZ) refuses tz-aware datetimes.
+    Normalize on the way in. See the longer note in
+    `agent-orchestration/repo.py:_naive_utc`."""
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(UTC).replace(tzinfo=None)
 
 
 class EquityRecord(BaseModel):
@@ -154,7 +163,7 @@ class PostgresEquityRepository:
                 equity_id,
                 last_close_local,
                 last_close_usd,
-                last_close_date,
+                _naive_utc(last_close_date),
                 market_cap_usd,
                 currency,
             )
