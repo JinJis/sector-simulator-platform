@@ -62,7 +62,12 @@ export type AgentDecomposition = {
 };
 
 export async function fetchSims(): Promise<SimMetadata[]> {
-  return rethrow(() => trpc.sim.list.query(), "fetchSims");
+  // Admin sees everything (drafts + archived included) — the per-row
+  // status badge handles the visual distinction.
+  return rethrow(
+    () => trpc.sim.list.query({ include_non_live: true }),
+    "fetchSims",
+  );
 }
 
 export async function fetchSim(slug: string): Promise<SimMetadata> {
@@ -182,6 +187,56 @@ export async function reviewLifecycleCandidate(input: {
 
 export async function fetchMonitoringHealth(): Promise<MonitoringHealth> {
   return rethrow(() => trpc.monitoring.health.query(), "fetchMonitoringHealth");
+}
+
+// ---------- Sector lifecycle (M21) ----------
+
+export type SectorRow = RouterOutput["sector"]["list"][number];
+export type SectorProposeResult = RouterOutput["sector"]["proposeFromAgent"];
+
+export async function listSectors(
+  status?: "live" | "draft" | "archived",
+): Promise<SectorRow[]> {
+  return rethrow(
+    () =>
+      trpc.sector.list.query({
+        ...(status ? { status } : {}),
+      }),
+    `listSectors(${status ?? "any"})`,
+  );
+}
+
+export async function proposeSectorFromAgent(input: {
+  workflow_id: string;
+  slug?: string;
+  name?: string;
+  description?: string;
+}): Promise<SectorProposeResult> {
+  return rethrow(
+    () => trpc.sector.proposeFromAgent.mutate(input),
+    `proposeSectorFromAgent(${input.workflow_id})`,
+  );
+}
+
+export async function activateSector(slug: string): Promise<SectorRow> {
+  return rethrow(
+    () => trpc.sector.activate.mutate({ slug }),
+    `activateSector(${slug})`,
+  );
+}
+
+export async function archiveSector(slug: string): Promise<SectorRow> {
+  return rethrow(
+    () => trpc.sector.archive.mutate({ slug }),
+    `archiveSector(${slug})`,
+  );
+}
+
+export async function sectorToDraft(slug: string): Promise<SectorRow> {
+  return rethrow(
+    () => trpc.sector.toDraft.mutate({ slug }),
+    `sectorToDraft(${slug})`,
+  );
 }
 
 async function rethrow<T>(fn: () => Promise<T>, label: string): Promise<T> {

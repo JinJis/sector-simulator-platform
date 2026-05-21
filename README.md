@@ -340,13 +340,17 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **M18** | Lifecycle review + audit history + monitoring — admin `/lifecycle` detects 4 deprecate-candidate classes (stale equities / orphan nodes / neutral edges / cold sectors), filters by active deferrals from the audit log, accepts Keep/Defer/Approve per item. Admin `/audit` paginated viewer with action/sector/author facets. Admin `/monitoring` proxies data-pipeline `/health` + per-table freshness. New `audit.list` / `audit.facets` / `lifecycle.candidates` / `lifecycle.review` / `monitoring.health` tRPC. Hard rule: every action writes an `audit_logs` row; nothing auto-applies. |
 | **M19** | Graph UI quality polish — `@dagrejs/dagre` auto-layout (LR, tight-tree ranker, fixed 180×64 node box) replaces hand-rolled 4-column. Edges encode 4 orthogonal axes: color by target kind / width continuous on \|weight\| / dash by origin (seed solid · edit dashed · agent dotted) / arrow head by sign (filled positive, open negative). Untouched neutral edges fade to opacity ~0.35; tuned edges saturate. Nodes get kind chip + left color band. New `<EdgeLegend>` with 9 inline-SVG samples teaches the encoding. |
 | **M20** | SaaS foundation — `users` + `sessions` Prisma models + bcrypt-hashed password auth, cookie-bound opaque sessions (httpOnly, sameSite=lax, 30d). New `auth.*` tRPC (`signUp` / `signIn` / `signOut` / `me` / `updateMe` / `changePassword`). Global sticky header on `apps/web` with logo + nav + user-menu dropdown (avatar initials, profile / settings / sign out, or sign-in CTA when anonymous). New `/login`, `/signup`, `/settings` routes. First-visit onboarding modal (localStorage-gated, replayable from Settings). Existing `author_label` fallback chain on graph / scenario / lifecycle mutations now defaults to the current user's display label. |
+| **M21** | Agent-generated sectors → draft — `sectors.status` (live / draft / archived) + `sectors.agent_workflow_id` FK. New `sector.*` tRPC (`list` / `get` / `proposeFromAgent` / `activate` / `archive` / `toDraft`). Admin `/agent-runs/[id]` gets a "Register as draft sector" two-stage modal that takes a succeeded decomposition workflow → transactional create of `sectors` + every driver/intermediate/output node in `graph_nodes` + audit row. Admin home gets Live / Draft / Archived sections with status badges + per-row Activate / Archive / Demote / Restore buttons. `sim.list` filters drafts out of the user app by default; admin passes `include_non_live: true`. |
 
 ### Planned next
 
-No backlog items remain on the M14-M20 track. Next direction TBD —
-candidates: OAuth providers / magic links, agent-generated sectors,
-real-time data-pipeline plumbing, backtest harness (see `### Deferred
-(Phase 3+)` below).
+No backlog items remain on the M14-M21 track. Next direction TBD —
+candidates: chain the remaining 5 agent prompts (research / driver-
+inference / edge-inference / code-gen / code-review) into a multi-step
+`ProposeSectorWorkflow`, build a `GenericDagSim` so agent-generated
+drafts can actually `simulate()` on activation, sandboxed (Modal / E2B)
+execution of agent-generated Python, OAuth providers, multi-tenant
+scoping (see `### Deferred (Phase 3+)` below).
 
 ### In progress
 

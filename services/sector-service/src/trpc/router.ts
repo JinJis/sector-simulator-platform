@@ -12,6 +12,7 @@ import { router } from "./init.js";
 import { lifecycleRouter } from "./lifecycle.js";
 import { monitoringRouter } from "./monitoring.js";
 import { scenarioRouter } from "./scenario.js";
+import { sectorRouter } from "./sector.js";
 import { simRouter } from "./sim.js";
 
 export const appRouter = router({
@@ -24,6 +25,7 @@ export const appRouter = router({
   lifecycle: lifecycleRouter,
   monitoring: monitoringRouter,
   auth: authRouter,
+  sector: sectorRouter,
 });
 
 export type AppRouter = typeof appRouter;

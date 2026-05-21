@@ -2261,6 +2261,92 @@ beyond `/settings`.
 - Rate limiting on signin / signup (no abuse vector at current scale,
   but trivial to add via fastify-rate-limit)
 
+### M21 — Agent-generated sectors → draft (shipped 2026-05-21)
+
+Closes the long-deferred loop on `agent-orchestration`: a Decomposition
+workflow output can now be promoted to a first-class draft sector with
+full graph topology, traceable back to the agent run that produced it,
+without any auto-deploy. Hard rule preserved — every transition writes
+an audit row, never auto.
+
+**Schema** (`packages/db/prisma/schema.prisma` + migration
+`20260523010000_sector_status`):
+
+- `sectors.status TEXT NOT NULL DEFAULT 'live'` — live | draft | archived
+- `sectors.agent_workflow_id TEXT` — FK to the agent_workflows row that
+  proposed it (nullable for the 3 in-code seed sims)
+- `CREATE INDEX sectors_status_idx ON sectors(status)`
+- Existing rows seed as `live` (data preserved on apply).
+
+**Backend** (`services/sector-service/src/trpc/sector.ts`):
+
+- `sector.list({ status?, limit })` — DB-direct query, sorts by status
+  then created_at desc.
+- `sector.get({ slug })`.
+- `sector.proposeFromAgent({ workflow_id, slug?, name?, description?,
+  author_label? })` — validates that the workflow exists, status =
+  succeeded, kind = decomposition; runs the JSONB output through the
+  zod `Decomposition` schema; resolves a collision-safe slug (suffix
+  loop, bounded at 50); transactionally creates the `sectors` row +
+  every driver / intermediate / output node in `graph_nodes` +
+  one `audit_logs` row capturing workflow_id + cost + node counts.
+- `sector.activate({ slug })` / `sector.archive({ slug })` /
+  `sector.toDraft({ slug })` — single transition helper logs the
+  `from → to` payload to audit. No-op on identical transitions.
+- All mutations default `author_label` to `ctx.user.label` (M20 chain).
+
+**Sim list filter**:
+
+- `sim.list` gains optional `include_non_live: boolean` (default false).
+- User app: drafts + archived are hidden — `sim.list` joins against
+  the DB sector status and filters by `live`. Sectors without a DB
+  row (legacy / unseeded) fall through as visible (absence isn't a
+  strong hide signal).
+- Admin client: `fetchSims()` passes `include_non_live: true` so the
+  admin sees everything with status badges.
+- Postgres unreachable → falls back to unfiltered (the legacy path),
+  logs a warn — graph integration is additive, never gating.
+
+**Admin UI**:
+
+- `/agent-runs/[id]` — succeeded decomposition workflows now show a
+  `<PromoteToDraftButton>` instead of the old "not yet a registered
+  sector" warning. Two-stage modal: confirmation collapsed →
+  expanded form (Slug / Name / Description prefilled from the agent
+  output) → result panel with deep-link to the new sector.
+- Admin `/` — three sections now: **Live** (existing card grid),
+  **Draft** (rows with status badge + Activate / Archive buttons +
+  link back to the source agent run), **Archived** (rows with
+  Restore button). Header counts updated to show live/draft/archived/scenarios.
+- New `<DraftSectorRow>` client component encapsulates the per-row
+  buttons with optimistic feedback + `router.refresh()` on success.
+
+**Verification**:
+
+- TS typecheck clean across all 5 workspaces.
+- sector-service vitest: 56 pass / 26 skipped (existing baseline —
+  the new sector.* routes are DB-required, exercise via the admin
+  UI for now).
+- @platform/db: 35 pass (unchanged).
+- **Cumulative: 275 + 17 skipped** (M20 baseline).
+
+**Out of scope (M22+)**:
+
+- Multi-step orchestration: chain Decomposition → DriverInference →
+  EdgeInference into a single `ProposeSectorWorkflow`. The 5 follow-on
+  prompts already exist (M5 of the Phase 2 — agents milestone); they
+  need workflow classes + Pydantic schemas.
+- **Generic DAG-executor sim** — agent-generated sectors land
+  without a Python sim, so `simulate()` calls return a clean
+  "no runtime registered" error. A `GenericDagSim` in
+  `simulation-service` that walks `graph_nodes` + `graph_edges`
+  in topo order and applies linear `Σ (driver × weight)` math would
+  let drafts run *some* simulation immediately on activation.
+  Deferred until either an admin asks for it or M22 ships
+  agent-generated Python code (sandboxed).
+- Sandbox (Modal / E2B) execution of agent-generated Python code.
+- Multi-tenant scoping on `sectors.tenant_id`.
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

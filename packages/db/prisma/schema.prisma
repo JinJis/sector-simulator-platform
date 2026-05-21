@@ -32,9 +32,19 @@ model Sector {
   slug           String   @unique
   name           String
   description    String?
-  // Python module path for the in-code sim. Agent-generated sectors will
-  // store a code-version ref instead (Phase 2 later slice).
+  // Python module path for the in-code sim. Agent-generated sectors
+  // currently start as `draft` with `source_module = null`; when a
+  // Python sim is authored for them they're promoted to `live`.
   source_module  String?  @map("source_module")
+  // M21: lifecycle status. The 3 in-code sims seed as "live"; agent-
+  // proposed sectors land as "draft" and an admin promotes to "live".
+  // "archived" hides from both user app and admin sector grids
+  // without dropping the row.
+  status         String   @default("live")
+  // M21: traceability — when this row was created by promoting an
+  // agent workflow, point at it so the audit/admin UI can deep-link
+  // back to the original decomposition + cost.
+  agent_workflow_id String? @map("agent_workflow_id")
   created_at     DateTime @default(now()) @map("created_at")
   updated_at     DateTime @updatedAt        @map("updated_at")
 
@@ -43,6 +53,7 @@ model Sector {
   graph_nodes    GraphNode[]
   graph_edges    GraphEdge[]
 
+  @@index([status])
   @@map("sectors")
 }
 

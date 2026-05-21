@@ -10,6 +10,7 @@ import {
 } from "@/lib/sim-client";
 
 import { StatusPill } from "../status-pill";
+import { PromoteToDraftButton } from "./promote-button";
 
 interface Props {
   id: string;
@@ -115,7 +116,12 @@ export function RunWatcher({ id, initial }: Props) {
       )}
 
       {record.status === "succeeded" && decomp && (
-        <DecompositionResult decomp={decomp} />
+        <>
+          <DecompositionResult decomp={decomp} />
+          <div className="mt-6">
+            <PromoteToDraftButton workflowId={record.id} decomp={decomp} />
+          </div>
+        </>
       )}
 
       {!TERMINAL_STATUSES.has(record.status) && (
@@ -253,12 +259,10 @@ function DecompositionResult({ decomp }: { decomp: AgentDecomposition }) {
         </table>
       </div>
 
-      <p className="rounded border border-amber-900/60 bg-amber-950/30 p-3 text-[11px] text-amber-200">
-        This decomposition is{" "}
-        <strong>not yet a registered sector</strong>. A future slice will add
-        a "Promote to registered sector" action that runs the rest of the
-        agent pipeline (driver-inference → edge-inference → code-gen →
-        code-review) before persisting a class file.
+      <p className="rounded border border-neutral-800 bg-neutral-900/40 p-3 text-[11px] text-neutral-400">
+        아래 버튼으로 draft sector로 등록할 수 있습니다. Draft는 graph_nodes를 채워 admin에서
+        검토할 수 있지만, Python sim이 작성되어 활성화(activate)되기 전까지는 user app에
+        노출되지 않습니다.
       </p>
     </section>
   );

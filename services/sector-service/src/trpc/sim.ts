@@ -127,8 +127,42 @@ const SlugInput = z.object({ slug: z.string().min(1) });
 
 export const simRouter = router({
   list: publicProcedure
+    .input(
+      z
+        .object({
+          /** Admin clients pass true to see drafts + archived alongside live. */
+          include_non_live: z.boolean().default(false),
+        })
+        .default({}),
+    )
     .output(z.array(SimMetadata))
-    .query(() => simFetch("/sims", { context: "sims" })),
+    .query(async ({ ctx, input }) => {
+      const sims = await simFetch<z.infer<typeof SimMetadata>[]>("/sims", {
+        context: "sims",
+      });
+      if (input.include_non_live) return sims;
+      // M21: filter out anything whose DB row is not `live`. Sectors
+      // without a DB row (e.g. the legacy "placeholder" or a sim that
+      // hasn't been seeded yet) fall through as visible — the absence
+      // of metadata isn't a strong "hide it" signal.
+      try {
+        const dbRows = await ctx.prisma.sector.findMany({
+          where: { slug: { in: sims.map((s) => s.slug) } },
+          select: { slug: true, status: true },
+        });
+        const statusBySlug = new Map(dbRows.map((r) => [r.slug, r.status]));
+        return sims.filter((s) => {
+          const st = statusBySlug.get(s.slug);
+          return st === undefined || st === "live";
+        });
+      } catch (e) {
+        ctx.log.warn(
+          { err: e instanceof Error ? e.message : String(e) },
+          "sim.list: status filter query failed; returning unfiltered",
+        );
+        return sims;
+      }
+    }),
 
   get: publicProcedure
     .input(SlugInput)

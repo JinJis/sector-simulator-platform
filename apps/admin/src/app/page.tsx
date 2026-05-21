@@ -3,16 +3,27 @@ import Link from "next/link";
 import {
   fetchScenarios,
   fetchSims,
+  listSectors,
   SECTOR_SERVICE_URL,
   type Scenario,
+  type SectorRow,
   type SimMetadata,
 } from "@/lib/sim-client";
+
+import { DraftSectorRow } from "./draft-sector-row";
+
+export const dynamic = "force-dynamic";
 
 export default async function AdminHome() {
   let sims: SimMetadata[];
   let scenarios: Scenario[];
+  let dbSectors: SectorRow[];
   try {
-    [sims, scenarios] = await Promise.all([fetchSims(), fetchScenarios()]);
+    [sims, scenarios, dbSectors] = await Promise.all([
+      fetchSims(),
+      fetchScenarios(),
+      listSectors(),
+    ]);
   } catch (err) {
     return (
       <main className="mx-auto max-w-6xl px-6 py-10">
@@ -35,13 +46,15 @@ export default async function AdminHome() {
   // Hide the seed-only placeholder unless it's the only registered sim.
   const visible = sims.filter((s) => s.slug !== "placeholder");
   const list = visible.length > 0 ? visible : sims;
+  const drafts = dbSectors.filter((s) => s.status === "draft");
+  const archived = dbSectors.filter((s) => s.status === "archived");
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
       <div className="mb-6 flex items-baseline justify-between">
         <h1 className="text-xl font-semibold text-neutral-50">Sectors</h1>
         <span className="text-[11px] uppercase tracking-wider text-neutral-600">
-          {list.length} registered · {scenarios.length} scenarios total
+          {list.length} live · {drafts.length} draft · {archived.length} archived · {scenarios.length} scenarios
         </span>
       </div>
 
@@ -86,7 +99,10 @@ export default async function AdminHome() {
         </StubAction>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+        Live · {list.length}
+      </h2>
+      <div className="mb-8 grid grid-cols-1 gap-3 md:grid-cols-2">
         {list.map((sim) => (
           <SectorCard
             key={sim.slug}
@@ -95,6 +111,35 @@ export default async function AdminHome() {
           />
         ))}
       </div>
+
+      {drafts.length > 0 && (
+        <>
+          <h2 className="mb-2 flex items-baseline gap-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+            Draft · {drafts.length}
+            <span className="text-[10px] font-normal normal-case text-neutral-600">
+              agent decomposition으로 등록됨 — user app에는 노출되지 않음
+            </span>
+          </h2>
+          <ul className="mb-8 flex flex-col gap-2">
+            {drafts.map((s) => (
+              <DraftSectorRow key={s.slug} sector={s} />
+            ))}
+          </ul>
+        </>
+      )}
+
+      {archived.length > 0 && (
+        <>
+          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+            Archived · {archived.length}
+          </h2>
+          <ul className="flex flex-col gap-2">
+            {archived.map((s) => (
+              <DraftSectorRow key={s.slug} sector={s} />
+            ))}
+          </ul>
+        </>
+      )}
     </main>
   );
 }
