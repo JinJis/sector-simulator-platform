@@ -90,9 +90,28 @@ export function UserMenu({ user }: Props) {
           className="absolute right-0 top-full z-30 mt-2 w-56 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950 shadow-lg"
         >
           <div className="border-b border-neutral-800 px-3 py-2.5">
-            <div className="text-sm font-medium text-neutral-100">{display}</div>
+            <div className="flex items-baseline justify-between gap-2">
+              <div className="truncate text-sm font-medium text-neutral-100">
+                {display}
+              </div>
+              {user.tier === "premium" ? (
+                <span className="rounded border border-amber-700/60 bg-amber-950/40 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-300">
+                  ★ Premium
+                </span>
+              ) : (
+                <span className="rounded border border-neutral-800 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-neutral-500">
+                  Free
+                </span>
+              )}
+            </div>
             <div className="truncate text-[11px] text-neutral-500">{user.email}</div>
           </div>
+          <MenuLink href="/my-sectors" onClick={() => setOpen(false)}>
+            🛠 내가 만든 시뮬레이터
+          </MenuLink>
+          <MenuLink href="/propose" onClick={() => setOpen(false)}>
+            🤖 새 시뮬레이터 만들기
+          </MenuLink>
           <MenuLink href="/watchlist" onClick={() => setOpen(false)}>
             ★ 관심 종목
           </MenuLink>

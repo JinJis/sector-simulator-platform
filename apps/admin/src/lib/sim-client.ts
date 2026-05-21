@@ -273,6 +273,37 @@ export async function sectorToDraft(slug: string): Promise<SectorRow> {
   );
 }
 
+// ---------- Admin / users (M25f) ----------
+
+export type AdminUserSummary = RouterOutput["admin"]["listUsers"]["rows"][number];
+export type AdminUserListResult = RouterOutput["admin"]["listUsers"];
+
+export async function listAdminUsers(input: {
+  limit?: number;
+  search?: string;
+  tier?: "free" | "premium";
+} = {}): Promise<AdminUserListResult> {
+  return rethrow(
+    () =>
+      trpc.admin.listUsers.query({
+        limit: input.limit ?? 100,
+        search: input.search,
+        tier: input.tier,
+      }),
+    "listAdminUsers",
+  );
+}
+
+export async function setUserTier(
+  user_id: string,
+  tier: "free" | "premium",
+): Promise<{ id: string; tier: string }> {
+  return rethrow(
+    () => trpc.admin.setTier.mutate({ user_id, tier }),
+    `setUserTier(${user_id})`,
+  );
+}
+
 async function rethrow<T>(fn: () => Promise<T>, label: string): Promise<T> {
   try {
     return await fn();

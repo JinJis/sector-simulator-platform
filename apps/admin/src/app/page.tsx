@@ -3,8 +3,10 @@ import Link from "next/link";
 import {
   fetchScenarios,
   fetchSims,
+  listAdminUsers,
   listSectors,
   SECTOR_SERVICE_URL,
+  type AdminUserListResult,
   type Scenario,
   type SectorRow,
   type SimMetadata,
@@ -18,11 +20,13 @@ export default async function AdminHome() {
   let sims: SimMetadata[];
   let scenarios: Scenario[];
   let dbSectors: SectorRow[];
+  let users: AdminUserListResult;
   try {
-    [sims, scenarios, dbSectors] = await Promise.all([
+    [sims, scenarios, dbSectors, users] = await Promise.all([
       fetchSims(),
       fetchScenarios(),
       listSectors(),
+      listAdminUsers({ limit: 5 }),
     ]);
   } catch (err) {
     return (
@@ -49,36 +53,53 @@ export default async function AdminHome() {
   const drafts = dbSectors.filter((s) => s.status === "draft");
   const archived = dbSectors.filter((s) => s.status === "archived");
 
+  const premiumCount = users.rows.filter((u) => u.tier === "premium").length;
+
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
       <div className="mb-6 flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold text-neutral-50">Sectors</h1>
-        <span className="text-[11px] uppercase tracking-wider text-neutral-600">
-          {list.length} live · {drafts.length} draft · {archived.length} archived · {scenarios.length} scenarios
-        </span>
+        <div>
+          <h1 className="text-xl font-semibold text-neutral-50">
+            모니터링 대시보드
+          </h1>
+          <p className="mt-1 text-[11px] text-neutral-500">
+            플랫폼 상태 · 사용자 · 섹터 · 데이터 freshness 한눈에 보기.
+            에이전트 시뮬레이터 생성은 일반 사용자 앱(:3000)으로 이동되었습니다.
+          </p>
+        </div>
       </div>
+
+      <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricTile
+          label="등록 사용자"
+          value={users.total.toString()}
+          sub={`Premium ${premiumCount}명`}
+          href="/users"
+        />
+        <MetricTile
+          label="Live 섹터"
+          value={list.length.toString()}
+          sub={`초안 ${drafts.length} · 보관 ${archived.length}`}
+        />
+        <MetricTile
+          label="저장 시나리오"
+          value={scenarios.length.toString()}
+        />
+        <MetricTile
+          label="에이전트 활동"
+          value="모니터"
+          sub="사용자 에이전트 런 조회"
+          href="/agent-runs"
+        />
+      </section>
 
       <div className="mb-6 flex flex-wrap gap-2">
         <Link
-          href="/agent-runs/new"
-          className="rounded border border-rose-700 bg-rose-900/40 px-3 py-1.5 text-[11px] font-medium text-rose-200 hover:bg-rose-800/60"
-          title="Kick off the Decomposition Agent against a free-form sector concept"
+          href="/users"
+          className="rounded border border-cyan-700 bg-cyan-900/40 px-3 py-1.5 text-[11px] font-medium text-cyan-200 hover:bg-cyan-800/60"
+          title="가입자 / Premium / 활동 통계"
         >
-          + Propose new sector (agent)
-        </Link>
-        <Link
-          href="/agent-runs"
-          className="rounded border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-[11px] font-medium text-neutral-300 hover:bg-neutral-800"
-          title="See past + in-flight agent runs"
-        >
-          ↻ Agent runs
-        </Link>
-        <Link
-          href="/lifecycle"
-          className="rounded border border-amber-700 bg-amber-900/40 px-3 py-1.5 text-[11px] font-medium text-amber-200 hover:bg-amber-800/60"
-          title="Stale equity / orphan node / cold sector deprecate review"
-        >
-          ⚠ Lifecycle review
+          👤 사용자
         </Link>
         <Link
           href="/monitoring"
@@ -93,6 +114,20 @@ export default async function AdminHome() {
           title="Full audit log viewer with filters"
         >
           ☷ Audit log
+        </Link>
+        <Link
+          href="/lifecycle"
+          className="rounded border border-amber-700 bg-amber-900/40 px-3 py-1.5 text-[11px] font-medium text-amber-200 hover:bg-amber-800/60"
+          title="Stale equity / orphan node / cold sector deprecate review"
+        >
+          ⚠ Lifecycle review
+        </Link>
+        <Link
+          href="/agent-runs"
+          className="rounded border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-[11px] font-medium text-neutral-300 hover:bg-neutral-800"
+          title="See past + in-flight agent runs (now user-driven)"
+        >
+          🤖 Agent runs
         </Link>
         <StubAction title="Phase 2 later slice — kicks data-pipeline-service">
           ↻ Run ingest (all)
@@ -197,6 +232,45 @@ function Stat({
       <dt className="text-[9px] uppercase tracking-wider text-neutral-600">{label}</dt>
       <dd className="text-sm font-semibold tabular-nums text-neutral-100">{value}</dd>
       {sub && <dd className="text-[10px] text-neutral-500">{sub}</dd>}
+    </div>
+  );
+}
+
+function MetricTile({
+  label,
+  value,
+  sub,
+  href,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  href?: string;
+}) {
+  const inner = (
+    <>
+      <div className="text-[10px] uppercase tracking-wider text-neutral-500">
+        {label}
+      </div>
+      <div className="mt-1 text-2xl font-semibold tabular-nums text-neutral-100">
+        {value}
+      </div>
+      {sub && <div className="mt-0.5 text-[11px] text-neutral-500">{sub}</div>}
+    </>
+  );
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4 transition hover:border-cyan-700"
+      >
+        {inner}
+      </Link>
+    );
+  }
+  return (
+    <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4">
+      {inner}
     </div>
   );
 }

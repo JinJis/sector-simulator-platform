@@ -39,6 +39,10 @@ const PUBLIC_USER = z.object({
   name: z.string().nullable(),
   locale: z.string().nullable(),
   theme: z.string().nullable(),
+  // M25a: surface the user's pricing tier so the web client can
+  // decorate premium features. Default is "free"; "premium" is set
+  // manually for now until payment integration lands.
+  tier: z.string(),
   created_at: z.date(),
 });
 

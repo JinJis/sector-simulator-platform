@@ -2828,6 +2828,80 @@ into one commit so the user can pick up the new flow end-to-end.
 - Focus trap on the admin app modals (PromoteToDraftButton,
   AddNodeModal). Same hook, just not yet plumbed.
 
+### M25 — Agent flow → user-facing + admin pivot + Premium scaffolding (shipped 2026-05-21)
+
+User feedback: agent orchestration should be a user feature, admin
+should pivot to monitoring, and Premium scaffolding should be in place
+even before payment integration.
+
+**Schema** (`packages/db/prisma/schema.prisma` + migration
+`20260523030000_user_tier_sector_author`):
+
+- `User.tier` (free | premium, default `free`)
+- `Sector.created_by_user_id` nullable FK (SET NULL on user delete) + index
+
+**Backend**:
+
+- `auth.me` returns `tier` on PUBLIC_USER
+- `sector.proposeFromAgent` records `ctx.user.id` as created_by_user_id
+- `sector.listMine` + `sector.deleteMine` (auth-required, 403 on
+  not-creator, cascade-delete + audit + reload upstream)
+- New `admin.*` router: `admin.listUsers` (joins sector/watchlist/
+  session counts) + `admin.setTier` (idempotent, audit-logged)
+
+**User app — new routes**:
+
+- **`/propose`** — 4-step UX:
+  1. Prompt — large textarea + 3 example cards (K-Food / 자율주행 / GLP-1)
+  2. Working — friendly Korean hints rotated by elapsed time
+  3. Result — drivers / outputs / edges / agent assumptions
+  4. Auto-activate + redirect to the new sector
+- **`/my-sectors`** — auth-required list with status badges + delete
+
+**Home + nav**:
+
+- `<ProposeCta>` card on `/` — gradient amber→cyan, ★ Premium badge
+- User menu: 🛠 내가 만든 시뮬레이터 / 🤖 새 시뮬레이터 만들기 /
+  ★ 관심 종목 / ⚙ 설정 + tier badge in header
+- 2 new page-tour entries (`/propose`, `/my-sectors`)
+
+**Settings — Premium scaffolding**:
+
+- New "현재 플랜" section with tier badge + "★ Premium 업그레이드"
+  stub (alert for now — payment integration is later slice)
+
+**Admin pivot**:
+
+- Nav reordered: Dashboard / **Users** / Monitoring / Audit /
+  Lifecycle / Agent runs / Scenarios
+- Admin home becomes monitoring dashboard: 4 metric tiles (users /
+  live sectors / scenarios / agent activity)
+- Removed "+ Propose new sector" from admin nav (it's now user-driven)
+- New `/admin/users` page — paginated list + email search + tier
+  filter + per-row ★ Promote / Demote button
+
+**Agent capabilities inventory** (`docs/agent-capabilities.md`):
+
+Full doc covering 6 shipped capabilities + 4 dormant prompts +
+infrastructure + **feature × pricing tier matrix** (what's free in
+beta, what flips Premium-only at launch) + security policy + roadmap.
+
+**Verification**:
+
+- TS typecheck clean across all 5 workspaces
+- sector-service vitest: 56 / 26 skipped (baseline; new routers DB-required)
+- @platform/db: 35 pass
+- Cumulative: 311 + 17 skipped
+
+**Out of scope (M26+)**:
+
+- Payment integration (Stripe / Toss)
+- Hard tier gating on `/propose` (currently free-for-all in beta)
+- Per-user monthly budget + rate limiting
+- Real admin role gating (`admin.*` router currently auth-only)
+- The 4 dormant prompts (research / driver-inference / code-gen /
+  code-review) — wired in a future slice
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

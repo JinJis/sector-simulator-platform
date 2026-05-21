@@ -45,6 +45,10 @@ model Sector {
   // agent workflow, point at it so the audit/admin UI can deep-link
   // back to the original decomposition + cost.
   agent_workflow_id String? @map("agent_workflow_id")
+  // M25a: who built this sector — null for the 3 seed sims, the
+  // promoting user's id for agent-proposed sectors. Powers /my-sectors.
+  created_by_user_id String? @map("created_by_user_id")
+  created_by         User?   @relation("UserCreatedSectors", fields: [created_by_user_id], references: [id], onDelete: SetNull)
   created_at     DateTime @default(now()) @map("created_at")
   updated_at     DateTime @updatedAt        @map("updated_at")
 
@@ -54,6 +58,7 @@ model Sector {
   graph_edges    GraphEdge[]
 
   @@index([status])
+  @@index([created_by_user_id])
   @@map("sectors")
 }
 
@@ -322,11 +327,16 @@ model User {
   // follow-up slice.
   locale        String?   // "ko" | "en"
   theme         String?   // "dark" | "light" | "system"
+  // M25a: pricing tier. "free" is the default; "premium" unlocks the
+  // agent flow gating that we ship behind a soft (decorative) badge
+  // today. The hard paywall lands when payment integration is wired.
+  tier          String    @default("free")
   created_at    DateTime  @default(now()) @map("created_at")
   updated_at    DateTime  @updatedAt        @map("updated_at")
 
   sessions          Session[]
   watchlist_items   WatchlistItem[]
+  created_sectors   Sector[]        @relation("UserCreatedSectors")
 
   @@map("users")
 }

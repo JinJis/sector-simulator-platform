@@ -183,6 +183,43 @@ export function SettingsForm({ user }: Props) {
         </form>
       </section>
 
+      <section className="rounded-lg border border-amber-900/40 bg-gradient-to-r from-amber-950/30 via-neutral-950 to-neutral-950 p-5">
+        <div className="flex items-baseline justify-between gap-3">
+          <div>
+            <h2 className="mb-1 flex items-baseline gap-2 text-sm font-semibold uppercase tracking-wider text-amber-300">
+              <span>현재 플랜</span>
+              {user.tier === "premium" ? (
+                <span className="rounded border border-amber-700/60 bg-amber-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200">
+                  ★ Premium
+                </span>
+              ) : (
+                <span className="rounded border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-400">
+                  Free
+                </span>
+              )}
+            </h2>
+            <p className="text-[11px] leading-relaxed text-neutral-400">
+              {user.tier === "premium"
+                ? "Premium 사용 중 — 에이전트 시뮬레이터 생성, 우선 응답, 추후 추가 기능을 모두 이용할 수 있습니다."
+                : "Free 플랜은 기본 섹터(메모리·우주·SOFC)를 모두 탐색할 수 있습니다. 에이전트로 직접 시뮬레이터를 만들 수 있는 기능은 베타 기간 모두에게 무료로 열려 있으며, 정식 출시 후 Premium 전용으로 전환됩니다."}
+            </p>
+          </div>
+          {user.tier !== "premium" && (
+            <button
+              type="button"
+              onClick={() =>
+                alert(
+                  "Premium 정식 출시 시 결제 페이지가 열립니다. 베타 기간에는 모든 기능이 이미 무료로 풀려 있습니다.",
+                )
+              }
+              className="shrink-0 rounded border border-amber-700 bg-amber-900/40 px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-800/60"
+            >
+              ★ Premium 업그레이드
+            </button>
+          )}
+        </div>
+      </section>
+
       <section className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-5">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-300">
           앱

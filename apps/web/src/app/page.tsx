@@ -127,6 +127,10 @@ export default async function HomePage({
         </div>
       </section>
 
+      {/* 2b) Agent propose CTA — the M25 entry point */}
+      <ProposeCta />
+
+
       {/* 3) 오늘의 시장 highlights */}
       {highlightMovers.length > 0 && (
         <section className="mb-10">
@@ -349,6 +353,44 @@ function MoverHighlight({ mover }: { mover: MoverRow }) {
       </p>
       <p className="mt-2 text-[11px] text-neutral-500">{mover.sectorName}</p>
     </Link>
+  );
+}
+
+function ProposeCta() {
+  return (
+    <section className="mb-10">
+      <Link
+        href="/propose"
+        className="group relative block overflow-hidden rounded-xl border border-amber-900/40 bg-gradient-to-r from-amber-950/40 via-rose-950/30 to-cyan-950/40 p-6 transition hover:border-amber-700"
+      >
+        <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="max-w-2xl">
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-amber-700/60 bg-amber-950/40 px-2.5 py-0.5 text-[10px] uppercase tracking-wider text-amber-300">
+              <span aria-hidden>🤖</span>
+              에이전트로 직접 만들기
+              <span className="ml-1 rounded bg-amber-900/50 px-1 text-[9px] text-amber-200">
+                ★ Premium
+              </span>
+            </div>
+            <h2 className="text-xl font-semibold text-neutral-50 sm:text-2xl">
+              원하는 산업이 없나요? 직접 만들어 보세요.
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-neutral-300">
+              관심 있는 산업을 자연어로 설명만 해 주시면, AI 에이전트가 그 산업의
+              핵심 드라이버 · 인과 그래프 · 수식까지 자동으로 구성해 나만의
+              시뮬레이터를 만들어 드립니다.
+            </p>
+            <p className="mt-1 text-[11px] text-amber-200/80">
+              K-Food, 자율주행, 비만 치료제 등 — 1-3 분이면 완성. 베타 기간엔
+              가입자 모두 무료.
+            </p>
+          </div>
+          <span className="shrink-0 rounded-lg bg-amber-600 px-4 py-3 text-sm font-medium text-amber-50 transition group-hover:bg-amber-500">
+            시작하기 →
+          </span>
+        </div>
+      </Link>
+    </section>
   );
 }
 

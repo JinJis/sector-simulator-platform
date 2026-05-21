@@ -345,15 +345,20 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **M22b** | GenericDagSim runtime for agent-generated sectors — `simpleeval`-backed `evaluator.py` (whitelisted operators + math funcs, dunder/import/lambda blocked, edge-weight propagation, non-finite rejection). `generic_dag.py` topo-sorts intermediates + outputs, evaluates each formula in order, series outputs iterate over `t/T`. `db_loader.py` reads sectors + graph + workflow output via asyncpg. Registry's `all_sims_async` / `get_sim_async` fall back to the DB loader with per-process cache + `POST /sims/{slug}/reload` busting. sector-service mutations call reload upstream; `sector.activate` collects formula-coverage warnings into the audit log. Agent-generated drafts now run end-to-end on activation. |
 | **M23** | Beginner-investor UX overhaul — 7 sector subpages collapsed to **3 primary (개요 / 종목 / 시뮬레이션) + 고급 expander**. Overview rewritten thesis-first (1-paragraph hero + 드라이버 / 블로커 columns with center-out deviation gauges). New `/simulate` shows only the 5 most-impactful sliders + live per-stock impact + 고급 toggle to embed the full ManualPanel. "왜 이 숫자인가" decomposition rewritten as 🟢🔴 plain-Korean sentences ("AI DRAM 수요가 기본값 대비 크게 30% 올라가서 이 종목에 유리하게 작용합니다") with "숫자로 보기" toggle for power users. Home rewritten as hero + 3 emoji-led sector cards + 3 mover highlights, everything analyst-grade behind a "더 보기" expander. Onboarding rewritten as 3-step value demo (pick sector → thesis → live single-slider demo). Plain-Korean language pass across page intents + nav. |
 | **M24** | Watchlist + stock comparison + page tours + a11y. New `watchlist_items` table + `watchlist.*` tRPC + `<WatchButton>` on every equity row/header + `/watchlist` page (★ 관심 종목 link in user menu). New `/sectors/[slug]/compare-stocks?a=&b=` route with side-by-side cards (price / 30d / 90d / 섹터 노출 / top 3 영향 요인 / 최신 분기 fundamentals) + "한눈에 비교" diff table marking the winner per row. Floating "📍 이 페이지 둘러보기" button on every primary page → 3-5 step plain-Korean modal (10 page-specific tour entries). `useFocusTrap` hook + applied to Onboarding/PageTour modals. Skip-to-content link in SiteHeader. `aria-current` / `aria-live` / `aria-label` polished. |
+| **M25** | Agent flow → user-facing + admin pivot + Premium scaffolding. `User.tier` + `Sector.created_by_user_id` schema. New `/propose` (4-step UX: prompt → working → result → activate) wired to `agent.startProposeSector` + auto `sector.activate` chain. New `/my-sectors` page + user menu links. `<ProposeCta>` on home. Settings adds "현재 플랜" section with Premium upgrade stub. Admin pivots to monitoring dashboard with 4 metric tiles + new `/admin/users` page (search/filter + ★ Promote button). New `admin.listUsers` + `admin.setTier` tRPC. Full agent capabilities inventory at `docs/agent-capabilities.md`. |
 
 ### Planned next
 
-No backlog items remain on the M14-M24 track. Next direction TBD —
-candidates: agent series cross-year coupling (`x[t-1]`), the remaining
-3 agent prompts (research / driver-inference / code-gen + code-review),
-sandboxed (Modal / E2B) execution of agent-generated Python, OAuth
-providers (Google / GitHub), multi-tenant scoping (`tenant_id` on every
-table + RLS), backtest harness (see `### Deferred (Phase 3+)` below).
+No backlog items remain on the M14-M25 track. Next direction TBD —
+candidates: payment integration (Stripe / Toss), hard tier gating on
+`/propose`, per-user monthly budget + rate limiting, the 4 dormant
+agent prompts (research / driver-inference / code-gen + code-review),
+sandboxed (Modal / E2B) execution, OAuth providers (Google / GitHub),
+multi-tenant scoping (`tenant_id` on every table + RLS), backtest
+harness (see `### Deferred (Phase 3+)` below).
+
+See [`docs/agent-capabilities.md`](docs/agent-capabilities.md) for the
+full inventory of agent features (shipped + dormant + roadmap).
 
 ### In progress
 

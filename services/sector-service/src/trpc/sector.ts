@@ -51,6 +51,7 @@ const SectorOut = z.object({
   source_module: z.string().nullable(),
   status: z.string(),
   agent_workflow_id: z.string().nullable(),
+  created_by_user_id: z.string().nullable(),
   created_at: z.date(),
   updated_at: z.date(),
 });
@@ -203,6 +204,71 @@ export const sectorRouter = router({
       return row as z.infer<typeof SectorOut>;
     }),
 
+  /**
+   * M25c: sectors created by the current user. Auth-required. Used
+   * by the /my-sectors page so each user can see + manage their own
+   * agent-proposed sectors.
+   */
+  listMine: publicProcedure
+    .output(z.array(SectorOut))
+    .query(async ({ ctx }) => {
+      if (!ctx.user) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "내가 만든 섹터는 로그인 후 확인할 수 있습니다.",
+        });
+      }
+      const rows = await ctx.prisma.sector.findMany({
+        where: { created_by_user_id: ctx.user.id },
+        orderBy: { created_at: "desc" },
+      });
+      return rows as z.infer<typeof SectorOut>[];
+    }),
+
+  /**
+   * M25c: a user can delete a sector *they* created (any status).
+   * Admins and the 3 seed sims aren't reachable through this because
+   * the where-clause is anchored to `created_by_user_id = ctx.user.id`.
+   */
+  deleteMine: publicProcedure
+    .input(SlugInput)
+    .output(z.object({ ok: z.boolean(), slug: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.user) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "삭제는 로그인이 필요합니다.",
+        });
+      }
+      const sector = await ctx.prisma.sector.findUnique({
+        where: { slug: input.slug },
+      });
+      if (!sector) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `sector ${input.slug}` });
+      }
+      if (sector.created_by_user_id !== ctx.user.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "이 섹터는 다른 사용자가 만들었습니다.",
+        });
+      }
+      // Hard delete — cascades through graph_nodes / graph_edges /
+      // scenarios / sector_equities (none expected on agent-generated
+      // sectors today, but the FKs are set up to cascade).
+      await ctx.prisma.sector.delete({ where: { slug: input.slug } });
+      await ctx.prisma.auditLog.create({
+        data: {
+          action: "sector.deleteMine",
+          sector_slug: input.slug,
+          payload: { user_id: ctx.user.id, slug: input.slug },
+          author_label: input.author_label ?? ctx.user.label ?? "anonymous",
+        },
+      });
+      // Bust the upstream sim cache so /sims stops surfacing it.
+      await reloadUpstream(input.slug, ctx.log);
+      return { ok: true, slug: input.slug };
+    }),
+
   proposeFromAgent: publicProcedure
     .input(ProposeFromAgentInput)
     .output(
@@ -288,11 +354,16 @@ export const sectorRouter = router({
             slug: finalSlug,
             name: finalName,
             description: finalDescription,
-            // No Python sim yet — `simulate()` will fail until either a
-            // module is authored or the runtime generic-DAG path lands.
+            // No Python sim yet — GenericDagSim (M22b) evaluates the
+            // agent-inferred formulas at runtime once the sector is
+            // activated.
             source_module: null,
             status: "draft",
             agent_workflow_id: wf.id,
+            // M25a: record who created this so the /my-sectors page
+            // can list it. Anonymous propose-from-agent rows stay
+            // null (admin-driven legacy path).
+            created_by_user_id: ctx.user?.id ?? null,
           },
         });
 

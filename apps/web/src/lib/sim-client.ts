@@ -430,6 +430,114 @@ export async function fetchEquityFinancials(
   );
 }
 
+// ---------- Agent / propose sector (M25b) ----------
+
+export type AgentWorkflow = RouterOutput["agent"]["getWorkflow"];
+export type AgentDecomposition = {
+  name: string;
+  slug: string;
+  description: string;
+  horizon_years: number;
+  drivers: {
+    name: string;
+    group: string;
+    unit: string;
+    default: number;
+    min: number;
+    max: number;
+    description: string;
+  }[];
+  intermediates: { name: string; unit: string; description: string }[];
+  outputs: {
+    name: string;
+    kind: "scalar" | "series";
+    unit: string;
+    description: string;
+  }[];
+};
+export type AgentEdgeInference = {
+  edges: { source: string; target: string; label: string }[];
+  intermediates: {
+    name: string;
+    formula: string;
+    unit: string;
+    description: string;
+  }[];
+  outputs: {
+    name: string;
+    formula: string;
+    kind: "scalar" | "series";
+    depends_on: string[];
+  }[];
+  assumptions: string[];
+};
+export type AgentProposeSectorResult = {
+  decomposition: AgentDecomposition;
+  edge_inference: AgentEdgeInference;
+};
+
+export async function startProposeSector(input: {
+  description: string;
+  reference_data?: string;
+}): Promise<AgentWorkflow> {
+  return rethrow(
+    () => trpc.agent.startProposeSector.mutate(input),
+    "startProposeSector",
+  );
+}
+
+export async function getAgentWorkflow(id: string): Promise<AgentWorkflow> {
+  return rethrow(
+    () => trpc.agent.getWorkflow.query({ id }),
+    `getAgentWorkflow(${id})`,
+  );
+}
+
+export async function cancelAgentWorkflow(id: string): Promise<AgentWorkflow> {
+  return rethrow(
+    () => trpc.agent.cancelWorkflow.mutate({ id }),
+    `cancelAgentWorkflow(${id})`,
+  );
+}
+
+// ---------- Sector lifecycle for user-driven flow (M25) ----------
+
+export type SectorRow = RouterOutput["sector"]["list"][number];
+export type SectorProposeResult = RouterOutput["sector"]["proposeFromAgent"];
+
+export async function proposeSectorFromAgent(input: {
+  workflow_id: string;
+  slug?: string;
+  name?: string;
+  description?: string;
+}): Promise<SectorProposeResult> {
+  return rethrow(
+    () => trpc.sector.proposeFromAgent.mutate(input),
+    `proposeSectorFromAgent(${input.workflow_id})`,
+  );
+}
+
+export async function activateSector(slug: string): Promise<SectorRow> {
+  return rethrow(
+    () => trpc.sector.activate.mutate({ slug }),
+    `activateSector(${slug})`,
+  );
+}
+
+export async function listMySectors(): Promise<SectorRow[]> {
+  return rethrow(() => trpc.sector.listMine.query(), "listMySectors");
+}
+
+export async function deleteMySector(slug: string): Promise<{
+  ok: boolean;
+  slug: string;
+}> {
+  return rethrow(
+    () => trpc.sector.deleteMine.mutate({ slug }),
+    `deleteMySector(${slug})`,
+  );
+}
+
 // ---------- Watchlist (M24a) ----------
 
 export type WatchlistRow = RouterOutput["watchlist"]["list"][number];

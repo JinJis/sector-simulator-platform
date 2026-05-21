@@ -26,22 +26,25 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             </span>
             <nav className="ml-auto flex gap-3 text-xs text-neutral-400">
               <Link href="/" className="hover:text-neutral-100">
-                Sectors
+                Dashboard
               </Link>
-              <Link href="/scenarios" className="hover:text-neutral-100">
-                Scenarios
+              <Link href="/users" className="hover:text-neutral-100">
+                Users
               </Link>
-              <Link href="/agent-runs" className="hover:text-neutral-100">
-                Agent runs
-              </Link>
-              <Link href="/lifecycle" className="hover:text-neutral-100">
-                Lifecycle
+              <Link href="/monitoring" className="hover:text-neutral-100">
+                Monitoring
               </Link>
               <Link href="/audit" className="hover:text-neutral-100">
                 Audit
               </Link>
-              <Link href="/monitoring" className="hover:text-neutral-100">
-                Monitoring
+              <Link href="/lifecycle" className="hover:text-neutral-100">
+                Lifecycle
+              </Link>
+              <Link href="/agent-runs" className="hover:text-neutral-100">
+                Agent runs
+              </Link>
+              <Link href="/scenarios" className="hover:text-neutral-100">
+                Scenarios
               </Link>
               <a
                 href="http://localhost:3000"
