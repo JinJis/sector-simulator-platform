@@ -12,9 +12,8 @@ import { fetchMe } from "@/lib/sim-client";
 import { UserMenu } from "./user-menu";
 
 const PRIMARY_NAV: { label: string; href: string }[] = [
-  { label: "Home", href: "/" },
-  { label: "Sectors", href: "/sectors" },
-  { label: "Compare", href: "/compare" },
+  { label: "홈", href: "/" },
+  { label: "섹터", href: "/sectors" },
 ];
 
 export async function SiteHeader() {

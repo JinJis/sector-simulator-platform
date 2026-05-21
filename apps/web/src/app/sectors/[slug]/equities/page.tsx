@@ -1,16 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 
 import { fetchEquities, type Equity, type EquityDriverLink } from "@/lib/sim-client";
 
-import { PageIntent } from "../../../page-intent";
-import { SECTOR_PAGE_INTENTS } from "../../../page-intents";
 import { useSector } from "../sector-context";
 
 import { EquitiesTable } from "./equities-table";
 
-export default function SectorEquitiesPage() {
+/**
+ * Stocks page (URL stays /equities for backwards compat).
+ *
+ * M23 changed the framing from analyst-grade ("Equities") to
+ * beginner-investor-first ("이 섹터의 종목 — 현재 가정에서 어떻게
+ * 움직일 예상인지"). The big table itself is the existing M5-M9
+ * component; this page just wraps it with friendlier intro copy + a
+ * link back to Simulate so users understand the cause-effect chain.
+ */
+export default function SectorStocksPage() {
   const { meta, defaults, driverValues } = useSector();
   const [equities, setEquities] = useState<Equity[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,12 +39,47 @@ export default function SectorEquitiesPage() {
     };
   }, [meta.slug]);
 
+  const dirtyCount = meta.drivers.filter(
+    (d) => Math.abs((driverValues[d.name] ?? d.default) - d.default) > 1e-9,
+  ).length;
+
   return (
-    <div>
-      <PageIntent intent={SECTOR_PAGE_INTENTS.equities!} />
+    <div className="flex flex-col gap-5">
+      <header>
+        <h1 className="text-2xl font-semibold text-neutral-50">
+          이 섹터의 종목
+        </h1>
+        <p className="mt-1 max-w-3xl text-sm text-neutral-400">
+          {dirtyCount === 0 ? (
+            <>
+              기본 가정 기준입니다. 위쪽{" "}
+              <Link
+                href={`/sectors/${meta.slug}/simulate`}
+                className="text-cyan-400 hover:text-cyan-300"
+              >
+                시뮬레이션
+              </Link>{" "}
+              탭에서 가정을 바꾸면, 종목별 30일 예상 변동이 실시간으로 갱신됩니다.
+            </>
+          ) : (
+            <>
+              현재 {dirtyCount}개 가정을 기본값과 다르게 설정 중입니다. 아래
+              <span className="text-cyan-300"> 30일 예상 변동</span> 이
+              실시간으로 갱신됩니다.{" "}
+              <Link
+                href={`/sectors/${meta.slug}/simulate`}
+                className="text-cyan-400 hover:text-cyan-300"
+              >
+                가정 조정 →
+              </Link>
+            </>
+          )}
+        </p>
+      </header>
+
       {error ? (
         <div className="rounded border border-red-900/60 bg-red-950/40 p-4 text-sm text-red-300">
-          Equity 데이터 로드 실패: {error}
+          종목 데이터 로드 실패: {error}
         </div>
       ) : !equities ? (
         <div className="rounded border border-neutral-800 bg-neutral-900/40 p-6 text-sm text-neutral-500">

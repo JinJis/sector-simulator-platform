@@ -1,16 +1,17 @@
 /**
- * Home page — investor dashboard.
+ * Home — M23 rewrite.
  *
- * Server-rendered entry door. Pulls everything in parallel from
- * sector-service:
- *   - sims list (3 sectors today)
- *   - equities per sector (49 today, fanned out)
- *   - basket stats per sector (90d return / β / volatility)
- *   - scenarios across all sectors (last 5)
- *   - audit_logs (last 20 mutations)
+ * Beginner-first front door. The page is mostly *editorial*: a hero,
+ * 3 big sector cards (the only thing a new user has to look at), and
+ * a short "오늘의 시장" feed of 2-3 highlight stories. Everything that
+ * looked like a Bloomberg terminal in M16 (movers table, scenarios
+ * carousel, audit feed, full-text search) is collapsed behind a
+ * "더 보기" expander so it stays available without overwhelming the
+ * landing experience.
  *
- * Legacy `/` redirects (`?sector=...`) are preserved at the top — old
- * bookmarks and share links keep jumping straight to a sector hub.
+ * Server-rendered: fans out per Promise.all (sims / equities /
+ * basketStats / scenarios / audit) so the page paints in one round
+ * trip. Legacy `/?sector=…[&scenario=…]` redirects preserved.
  */
 
 import { Sparkline } from "@platform/ui";
@@ -33,8 +34,8 @@ import {
 } from "@/lib/sim-client";
 
 import { HomeSearch, type SearchItem } from "./home/home-search";
-import { PageIntent } from "./page-intent";
-import { STANDALONE_PAGE_INTENTS } from "./page-intents";
+import { MoreExpander } from "./home/more-expander";
+import { SECTOR_THESES } from "./sectors/[slug]/narrative/thesis-content";
 
 interface SearchParams {
   sector?: string;
@@ -51,8 +52,15 @@ interface SectorSnapshot {
 interface MoverRow {
   equity: Equity;
   sectorName: string;
+  sectorSlug: string;
   stats: BasketStatsEquity;
 }
+
+const SECTOR_EMOJI: Record<string, string> = {
+  "memory-semi": "💾",
+  "space-data-center": "🛰️",
+  "sofc": "⚡",
+};
 
 export default async function HomePage({
   searchParams,
@@ -60,14 +68,11 @@ export default async function HomePage({
   searchParams: Promise<SearchParams>;
 }) {
   const { sector, scenario } = await searchParams;
-
-  // Legacy URL handler — keep old bookmarks working.
   if (sector) {
     const q = scenario ? `?scenario=${encodeURIComponent(scenario)}` : "";
     redirect(`/sectors/${encodeURIComponent(sector)}${q}`);
   }
 
-  // -------- Fetch core data in parallel --------
   let sims: SimMetadata[];
   try {
     sims = await fetchSims();
@@ -81,46 +86,40 @@ export default async function HomePage({
   }
 
   const userFacingSims = sims.filter((s) => s.slug !== "placeholder");
-
   const [scenarios, audit, ...sectorBundles] = await Promise.all([
     fetchScenarios().catch(() => [] as Scenario[]),
     fetchRecentAuditLogs({ limit: 20 }).catch(() => [] as AuditLog[]),
     ...userFacingSims.map((sim) => buildSectorSnapshot(sim)),
   ]);
-
   const snapshots = sectorBundles as SectorSnapshot[];
 
-  // -------- Build search index --------
   const searchItems = buildSearchIndex(snapshots);
-
-  // -------- Biggest movers (90d, absolute return) --------
-  const movers = collectMovers(snapshots, 6);
-
-  // -------- Recent scenarios (top 5 by updated_at) --------
+  const movers = collectMovers(snapshots, 8);
+  const highlightMovers = movers.slice(0, 3);
   const recentScenarios = scenarios.slice(0, 5);
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl px-6 pb-16 pt-6">
-      <header className="mb-4">
-        <h1 className="text-2xl font-semibold tracking-tight text-neutral-50">
-          Sector Simulator
+    <main className="mx-auto min-h-screen max-w-7xl px-6 pb-16 pt-8">
+      {/* 1) Hero */}
+      <section className="mb-10">
+        <h1 className="text-3xl font-semibold tracking-tight text-neutral-50 sm:text-4xl">
+          산업의 성장이 어떤 주식으로 이어지는지, 한눈에.
         </h1>
-        <p className="mt-1 text-xs text-neutral-500">
-          산업을 시뮬레이션 가능한 인과 그래프로 변환하고, 실시간 데이터로 미래를 검증합니다.
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-neutral-400">
+          섹터의 성장 가설을 직접 가정해보고, 그 가정에서 어떤 종목이 가장 큰
+          영향을 받는지를 실시간으로 확인하세요. 모든 숫자에는 근거 데이터가
+          연결되어 있습니다.
         </p>
-      </header>
-
-      <PageIntent intent={STANDALONE_PAGE_INTENTS.home!} />
-
-      <section className="mb-6">
-        <HomeSearch items={searchItems} />
       </section>
 
-      <section className="mb-8">
-        <SectionHeader title="Trending sectors" hint="등록된 섹터의 90일 basket 추이" />
+      {/* 2) Sector cards (main entry point) */}
+      <section className="mb-10">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-neutral-300">
+          어떤 산업이 궁금하신가요?
+        </h2>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {snapshots.map((s) => (
-            <SectorCard key={s.meta.slug} snapshot={s} />
+            <SectorEntryCard key={s.meta.slug} snapshot={s} />
           ))}
           {snapshots.length === 0 && (
             <p className="text-sm text-neutral-500">등록된 섹터가 없습니다.</p>
@@ -128,27 +127,28 @@ export default async function HomePage({
         </div>
       </section>
 
-      <section className="mb-8 grid gap-6 lg:grid-cols-5">
-        <div className="lg:col-span-3">
-          <SectionHeader
-            title="Biggest movers (90d)"
-            hint="섹터 전체에서 절대 수익률 상위"
-          />
-          <MoversTable movers={movers} />
-        </div>
-        <div className="lg:col-span-2">
-          <SectionHeader title="Recent scenarios" hint="최근 저장된 가설" />
-          <RecentScenarios scenarios={recentScenarios} sims={userFacingSims} />
-        </div>
-      </section>
+      {/* 3) 오늘의 시장 highlights */}
+      {highlightMovers.length > 0 && (
+        <section className="mb-10">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-neutral-300">
+            최근 90일, 가장 크게 움직인 종목
+          </h2>
+          <div className="grid gap-3 md:grid-cols-3">
+            {highlightMovers.map((m) => (
+              <MoverHighlight key={m.equity.id} mover={m} />
+            ))}
+          </div>
+        </section>
+      )}
 
-      <section className="mb-4">
-        <SectionHeader
-          title="What's changed"
-          hint="그래프 / 시나리오 변경 audit 피드"
-        />
-        <AuditFeed entries={audit} />
-      </section>
+      {/* 4) 더 보기 — search + full movers table + scenarios + audit */}
+      <MoreExpander
+        searchItems={searchItems}
+        movers={movers}
+        recentScenarios={recentScenarios}
+        sims={userFacingSims}
+        audit={audit}
+      />
     </main>
   );
 }
@@ -191,7 +191,7 @@ function buildSearchIndex(snapshots: SectorSnapshot[]): SearchItem[] {
         kind: "driver",
         label: d.name,
         hint: `${s.meta.name} · ${d.group} · default ${d.default}`,
-        href: `/sectors/${s.meta.slug}/manual`,
+        href: `/sectors/${s.meta.slug}/simulate`,
       });
     }
   }
@@ -207,10 +207,17 @@ function collectMovers(snapshots: SectorSnapshot[], n: number): MoverRow[] {
       const eq = byId.get(stat.equity_id);
       if (!eq) continue;
       if (stat.return_pct === null || stat.return_pct === undefined) continue;
-      rows.push({ equity: eq, sectorName: s.meta.name, stats: stat });
+      rows.push({
+        equity: eq,
+        sectorName: s.meta.name,
+        sectorSlug: s.meta.slug,
+        stats: stat,
+      });
     }
   }
-  rows.sort((a, b) => Math.abs(b.stats.return_pct!) - Math.abs(a.stats.return_pct!));
+  rows.sort(
+    (a, b) => Math.abs(b.stats.return_pct!) - Math.abs(a.stats.return_pct!),
+  );
   return rows.slice(0, n);
 }
 
@@ -218,75 +225,74 @@ function collectMovers(snapshots: SectorSnapshot[], n: number): MoverRow[] {
 // Presentational components
 // =========================
 
-function SectionHeader({ title, hint }: { title: string; hint: string }) {
-  return (
-    <div className="mb-3 flex items-baseline gap-3">
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-300">
-        {title}
-      </h2>
-      <span className="text-[11px] text-neutral-600">{hint}</span>
-    </div>
-  );
-}
-
-function SectorCard({ snapshot }: { snapshot: SectorSnapshot }) {
-  const { meta, equities, basket, scenarios } = snapshot;
+function SectorEntryCard({ snapshot }: { snapshot: SectorSnapshot }) {
+  const { meta, equities, basket } = snapshot;
+  const thesis = SECTOR_THESES[meta.slug];
+  const emoji = SECTOR_EMOJI[meta.slug] ?? "📊";
   const basketSeries =
-    basket?.basket.map((b) => b.basket_index).filter((v): v is number => v !== null && v !== undefined) ?? [];
-  const basketReturn =
+    basket?.basket.map((b) => b.basket_index).filter((v): v is number => v != null) ??
+    [];
+  const basket90 =
     basketSeries.length >= 2
-      ? ((basketSeries[basketSeries.length - 1]! - basketSeries[0]!) / basketSeries[0]!) * 100
+      ? ((basketSeries[basketSeries.length - 1]! - basketSeries[0]!) /
+          basketSeries[0]!) *
+        100
       : null;
-  const positive = basketReturn !== null && basketReturn >= 0;
+  const positive = basket90 !== null && basket90 >= 0;
 
   return (
     <Link
       href={`/sectors/${meta.slug}`}
-      className="group flex flex-col rounded-lg border border-neutral-800 bg-neutral-900/40 p-5 transition hover:border-cyan-700 hover:bg-neutral-900"
+      className="group flex flex-col gap-3 rounded-xl border border-neutral-800 bg-neutral-900/40 p-5 transition hover:border-cyan-700 hover:bg-neutral-900"
     >
-      <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h3 className="text-base font-semibold text-neutral-100 group-hover:text-cyan-300">
-          {meta.name}
-        </h3>
-        <span className="text-[10px] uppercase tracking-wider text-neutral-600">
-          {meta.horizon_years} yr
-        </span>
-      </div>
-      <p className="mb-3 line-clamp-2 text-xs leading-relaxed text-neutral-500">
-        {meta.description}
-      </p>
-      {basketSeries.length > 0 ? (
-        <div className="mb-3">
-          <Sparkline
-            values={basketSeries}
-            width={240}
-            height={36}
-            filled
-            showLastDot
-            ariaLabel={`${meta.name} basket 90d`}
-          />
+      <div className="flex items-baseline gap-3">
+        <span className="text-3xl">{emoji}</span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-base font-semibold text-neutral-50 group-hover:text-cyan-300">
+            {meta.name}
+          </h3>
+          {thesis && (
+            <p className="mt-0.5 text-[11px] text-cyan-400">{thesis.horizon}</p>
+          )}
         </div>
-      ) : (
-        <div className="mb-3 h-9 rounded border border-dashed border-neutral-800" />
-      )}
-      <div className="mt-auto grid grid-cols-3 gap-2 text-[11px] text-neutral-400">
-        <Metric
-          label="90d"
-          value={
-            basketReturn !== null
-              ? `${basketReturn >= 0 ? "+" : ""}${basketReturn.toFixed(1)}%`
-              : "—"
-          }
-          tone={positive ? "up" : basketReturn === null ? "muted" : "down"}
-        />
-        <Metric label="종목" value={String(equities.length)} />
-        <Metric label="시나리오" value={String(scenarios.length)} />
       </div>
+
+      <p className="line-clamp-3 text-xs leading-relaxed text-neutral-400">
+        {thesis?.summary ?? meta.description}
+      </p>
+
+      {basketSeries.length > 0 && (
+        <Sparkline
+          values={basketSeries}
+          width={260}
+          height={32}
+          filled
+          ariaLabel={`${meta.name} basket 90d`}
+        />
+      )}
+
+      <div className="mt-auto grid grid-cols-3 gap-2 border-t border-neutral-800 pt-3 text-[11px]">
+        <Stat
+          label="90일"
+          value={
+            basket90 === null
+              ? "—"
+              : `${basket90 >= 0 ? "+" : ""}${basket90.toFixed(1)}%`
+          }
+          tone={basket90 === null ? "muted" : positive ? "up" : "down"}
+        />
+        <Stat label="종목" value={`${equities.length}개`} />
+        <Stat label="조정 가능" value={`${meta.drivers.length}`} />
+      </div>
+
+      <span className="text-[11px] text-cyan-400 group-hover:text-cyan-300">
+        둘러보기 →
+      </span>
     </Link>
   );
 }
 
-function Metric({
+function Stat({
   label,
   value,
   tone = "muted",
@@ -295,263 +301,55 @@ function Metric({
   value: string;
   tone?: "up" | "down" | "muted";
 }) {
-  const color =
+  const cls =
     tone === "up"
       ? "text-emerald-400"
       : tone === "down"
         ? "text-rose-400"
         : "text-neutral-200";
   return (
-    <div className="rounded border border-neutral-800 bg-neutral-950/40 px-2 py-1.5">
+    <div>
       <div className="text-[9px] uppercase tracking-wider text-neutral-600">
         {label}
       </div>
-      <div className={`mt-0.5 text-xs font-semibold ${color}`}>{value}</div>
+      <div className={`mt-0.5 text-sm font-semibold tabular-nums ${cls}`}>
+        {value}
+      </div>
     </div>
   );
 }
 
-function MoversTable({ movers }: { movers: MoverRow[] }) {
-  if (movers.length === 0) {
-    return (
-      <div className="rounded border border-dashed border-neutral-800 p-4 text-xs text-neutral-500">
-        가격 히스토리가 아직 적재되지 않았습니다. data-pipeline의{" "}
-        <code className="rounded bg-neutral-950 px-1 py-0.5">
-          refresh-quote-history
-        </code>{" "}
-        job을 실행해주세요.
-      </div>
-    );
-  }
+function MoverHighlight({ mover }: { mover: MoverRow }) {
+  const ret = mover.stats.return_pct!;
+  const positive = ret >= 0;
+  const flag = mover.equity.iso_country === "KR" ? "🇰🇷" : "🇺🇸";
   return (
-    <div className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900/40">
-      <table className="w-full text-sm">
-        <thead className="bg-neutral-900/60 text-[10px] uppercase tracking-wider text-neutral-500">
-          <tr>
-            <th className="px-3 py-2 text-left font-medium">Ticker</th>
-            <th className="px-3 py-2 text-left font-medium">Sector</th>
-            <th className="px-3 py-2 text-right font-medium">90d</th>
-            <th className="px-3 py-2 text-right font-medium">β</th>
-            <th className="px-3 py-2 text-right font-medium">σ ann.</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-neutral-800">
-          {movers.map((m) => {
-            const ret = m.stats.return_pct!;
-            const positive = ret >= 0;
-            const flag = m.equity.iso_country === "KR" ? "🇰🇷" : "🇺🇸";
-            return (
-              <tr
-                key={m.equity.id}
-                className="transition hover:bg-neutral-900"
-              >
-                <td className="px-3 py-2">
-                  <Link
-                    href={`/sectors/${m.equity.sector_slug}/equities/${encodeURIComponent(m.equity.ticker)}`}
-                    className="flex items-center gap-2 text-neutral-100 hover:text-cyan-300"
-                  >
-                    <span aria-hidden>{flag}</span>
-                    <span className="font-medium">{m.equity.ticker}</span>
-                    <span className="text-[11px] text-neutral-500">
-                      {m.equity.company_name_local ?? m.equity.company_name}
-                    </span>
-                  </Link>
-                </td>
-                <td className="px-3 py-2 text-[11px] text-neutral-500">
-                  {m.sectorName}
-                </td>
-                <td
-                  className={`px-3 py-2 text-right font-mono text-xs ${positive ? "text-emerald-400" : "text-rose-400"}`}
-                >
-                  {positive ? "+" : ""}
-                  {ret.toFixed(1)}%
-                </td>
-                <td className="px-3 py-2 text-right font-mono text-xs text-neutral-300">
-                  {m.stats.beta !== null ? m.stats.beta.toFixed(2) : "—"}
-                </td>
-                <td className="px-3 py-2 text-right font-mono text-xs text-neutral-300">
-                  {m.stats.volatility_annual_pct !== null
-                    ? `${m.stats.volatility_annual_pct.toFixed(0)}%`
-                    : "—"}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function RecentScenarios({
-  scenarios,
-  sims,
-}: {
-  scenarios: Scenario[];
-  sims: SimMetadata[];
-}) {
-  if (scenarios.length === 0) {
-    return (
-      <div className="rounded border border-dashed border-neutral-800 p-4 text-xs text-neutral-500">
-        저장된 시나리오가 아직 없습니다. 섹터의 Manual 탭에서 슬라이더를 조정해 저장해보세요.
+    <Link
+      href={`/sectors/${mover.sectorSlug}/equities/${encodeURIComponent(mover.equity.ticker)}`}
+      className="group block rounded-lg border border-neutral-800 bg-neutral-900/40 p-4 transition hover:border-cyan-700 hover:bg-neutral-900"
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span aria-hidden>{flag}</span>
+          <span className="font-mono text-base font-semibold text-neutral-100 group-hover:text-cyan-300">
+            {mover.equity.ticker}
+          </span>
+        </div>
+        <span
+          className={`text-base font-semibold tabular-nums ${
+            positive ? "text-emerald-400" : "text-rose-400"
+          }`}
+        >
+          {positive ? "+" : ""}
+          {ret.toFixed(1)}%
+        </span>
       </div>
-    );
-  }
-  const simBySlug = new Map(sims.map((s) => [s.slug, s]));
-  return (
-    <ul className="flex flex-col gap-2">
-      {scenarios.map((sc) => {
-        const sim = simBySlug.get(sc.sector_slug);
-        const driverCount = Object.keys(sc.driver_overrides).length;
-        return (
-          <li key={sc.id}>
-            <Link
-              href={`/sectors/${sc.sector_slug}?scenario=${sc.id}`}
-              className="group block rounded-lg border border-neutral-800 bg-neutral-900/40 p-3 transition hover:border-cyan-700 hover:bg-neutral-900"
-            >
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="truncate text-sm font-medium text-neutral-100 group-hover:text-cyan-300">
-                  {sc.name}
-                </span>
-                <span className="shrink-0 text-[10px] uppercase tracking-wider text-neutral-600">
-                  {driverCount}× drivers
-                </span>
-              </div>
-              <div className="mt-1 flex items-center gap-2 text-[11px] text-neutral-500">
-                <span>{sim?.name ?? sc.sector_slug}</span>
-                <span>·</span>
-                <span>{formatRelative(sc.updated_at)}</span>
-                {sc.author_label && (
-                  <>
-                    <span>·</span>
-                    <span className="truncate">{sc.author_label}</span>
-                  </>
-                )}
-              </div>
-            </Link>
-          </li>
-        );
-      })}
-    </ul>
+      <p className="mt-1 truncate text-xs text-neutral-400">
+        {mover.equity.company_name_local ?? mover.equity.company_name}
+      </p>
+      <p className="mt-2 text-[11px] text-neutral-500">{mover.sectorName}</p>
+    </Link>
   );
-}
-
-function AuditFeed({ entries }: { entries: AuditLog[] }) {
-  if (entries.length === 0) {
-    return (
-      <div className="rounded border border-dashed border-neutral-800 p-4 text-xs text-neutral-500">
-        아직 기록된 변경이 없습니다. 그래프 편집이나 시나리오 저장이 이루어지면 여기에 나타납니다.
-      </div>
-    );
-  }
-  return (
-    <ol className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900/40 divide-y divide-neutral-800">
-      {entries.map((e) => {
-        const summary = describeAudit(e);
-        const tone = toneForAction(e.action);
-        return (
-          <li key={e.id} className="flex items-baseline gap-3 px-3 py-2">
-            <span
-              className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium ${tone}`}
-            >
-              {shortAction(e.action)}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm text-neutral-200">{summary}</div>
-              <div className="mt-0.5 flex items-center gap-2 text-[11px] text-neutral-600">
-                {e.sector_slug && (
-                  <Link
-                    href={`/sectors/${e.sector_slug}`}
-                    className="hover:text-cyan-400"
-                  >
-                    {e.sector_slug}
-                  </Link>
-                )}
-                <span>·</span>
-                <span>{formatRelative(e.created_at)}</span>
-                {e.author_label && (
-                  <>
-                    <span>·</span>
-                    <span className="truncate">{e.author_label}</span>
-                  </>
-                )}
-              </div>
-            </div>
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-// =========================
-// Tiny formatting helpers
-// =========================
-
-function shortAction(action: string): string {
-  const idx = action.indexOf(".");
-  return idx === -1 ? action : action.slice(idx + 1);
-}
-
-function toneForAction(action: string): string {
-  if (action.startsWith("graph.")) return "border-cyan-900/60 bg-cyan-950/40 text-cyan-300";
-  if (action.startsWith("scenario.")) return "border-amber-900/60 bg-amber-950/40 text-amber-300";
-  if (action.startsWith("lifecycle.")) return "border-rose-900/60 bg-rose-950/40 text-rose-300";
-  return "border-neutral-800 bg-neutral-950 text-neutral-400";
-}
-
-function describeAudit(e: AuditLog): string {
-  const p = (e.payload ?? {}) as Record<string, unknown>;
-  switch (e.action) {
-    case "graph.upsertEdge":
-      return `edge ${asString(p.source_key)} → ${asString(p.target_key)}${
-        p.weight !== undefined ? ` · w=${asString(p.weight)}` : ""
-      }`;
-    case "graph.deleteEdge":
-      return `delete edge ${asString(p.source_key)} → ${asString(p.target_key)}`;
-    case "graph.upsertNode":
-      return `node ${asString(p.node_key)}${p.label ? ` · ${asString(p.label)}` : ""}`;
-    case "graph.deleteNode":
-      return `delete node ${asString(p.node_key)}`;
-    case "graph.resetToDefaults":
-      return `${asString(p.sector_slug)} 그래프 재구성`;
-    case "graph.wipe":
-      return `${asString(p.sector_slug)} 그래프 wipe`;
-    case "scenario.create":
-      return `시나리오 생성 · ${asString(p.name)}`;
-    case "scenario.update":
-      return `시나리오 수정 · ${asString(p.id)}`;
-    case "scenario.delete":
-      return `시나리오 삭제 · ${asString(p.id)}`;
-    default:
-      return e.action;
-  }
-}
-
-function asString(v: unknown): string {
-  if (v === undefined || v === null) return "—";
-  if (typeof v === "number") return v.toString();
-  if (typeof v === "string") return v;
-  return JSON.stringify(v);
-}
-
-/**
- * `created_at` / `updated_at` arrive as ISO strings over the wire (no
- * tRPC transformer in this project), so we accept Date | string here.
- */
-function formatRelative(input: Date | string): string {
-  const t = typeof input === "string" ? Date.parse(input) : input.getTime();
-  if (!Number.isFinite(t)) return "—";
-  const diff = Date.now() - t;
-  const minutes = Math.round(diff / 60_000);
-  if (minutes < 1) return "방금";
-  if (minutes < 60) return `${minutes}분 전`;
-  const hours = Math.round(diff / 3_600_000);
-  if (hours < 24) return `${hours}시간 전`;
-  const days = Math.round(diff / 86_400_000);
-  if (days < 7) return `${days}일 전`;
-  const date = new Date(t);
-  return date.toISOString().slice(0, 10);
 }
 
 function ErrorShell({ title, detail }: { title: string; detail: string }) {

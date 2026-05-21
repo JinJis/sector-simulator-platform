@@ -1,15 +1,23 @@
-"use client";
+/**
+ * /sectors/[slug]/narrative — M17 page absorbed into Overview by M23.
+ *
+ * The investment-narrative content (thesis + drivers / blockers +
+ * per-equity upside grid) now lives on the sector Overview page +
+ * the Stocks page. This route stays as a permanent redirect so
+ * existing bookmarks and external share links don't 404.
+ */
 
-import { PageIntent } from "../../../page-intent";
-import { SECTOR_PAGE_INTENTS } from "../../../page-intents";
+import { redirect } from "next/navigation";
 
-import { NarrativeView } from "./narrative-view";
+interface Params {
+  slug: string;
+}
 
-export default function SectorNarrativePage() {
-  return (
-    <div>
-      <PageIntent intent={SECTOR_PAGE_INTENTS.narrative!} />
-      <NarrativeView />
-    </div>
-  );
+export default async function NarrativeRedirect({
+  params,
+}: {
+  params: Promise<Params>;
+}) {
+  const { slug } = await params;
+  redirect(`/sectors/${slug}`);
 }

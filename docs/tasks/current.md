@@ -2564,6 +2564,159 @@ admin "Propose sector (full)" → Decomposition (Opus) → EdgeInference (Opus)
   behavior is soft-warn). Will revisit once warning content
   stabilizes through real agent runs.
 
+### M23 — Beginner-investor UX overhaul (shipped 2026-05-21)
+
+The user feedback: "전체적으로 너무 전문가스러워. ... 좀 더 초보
+투자자들이 쉽게 접할 수 있게끔 전체 UI와 구성을 모두 싹다 바꿔봐. 이
+마일스톤이 제일 중요해 이제." M23 rewrites the IA + onboarding + every
+primary surface into the **logical investor flow**: 산업이 왜 성장하나
+→ 어떤 종목이 수혜인가 → 내 가정으로 시뮬레이션.
+
+**Information architecture** (`sector-shell.tsx` + new `sector-nav.tsx`):
+
+Old: 7 SubNav tabs all crammed together (Overview / Narrative / Live /
+Manual / Graph / Sources / Equities) → user couldn't tell where to start.
+
+New:
+- **3 primary tabs**: 개요 · 종목 · 시뮬레이션 — the only thing a
+  beginner sees on first paint.
+- **"고급 도구" expander** below the primary row: 실시간 데이터 /
+  전체 슬라이더 / 인과 그래프 / 데이터 출처 — auto-opens if the user
+  navigates directly to one of those URLs so the active tab stays
+  visible.
+- URLs unchanged for backwards compat — only the chrome changed.
+  `/narrative` becomes a permanent redirect to overview (its
+  content moved into the new Overview).
+
+**Sector Overview** (`/sectors/[slug]/page.tsx`):
+
+Old: 6-card grid linking into the sub-tools — felt like a directory.
+
+New (thesis-first):
+1. Big "성장 가설" hero card with editorial 1-paragraph thesis +
+   horizon chip (e.g. "AI 메모리 슈퍼사이클 (2026-2028)").
+2. Two columns: **성장을 끌어올리는 힘** / **발목을 잡을 수 있는
+   요인** — 3 bullets each, each with a tiny center-out gauge per
+   driver ref showing "기본값 대비 +18% 위" style deviation.
+3. Quick-stats row: 종목 수 / 90일 평균 변동 (sparkline) / 조정
+   가능한 드라이버 수 / 시뮬레이션 기간.
+4. Two CTAs at the top: "어떤 종목이 수혜를 받나요? →" / "내 가정으로
+   시뮬레이션".
+
+**Stocks page** (`/sectors/[slug]/equities/page.tsx`):
+
+URL preserved. Header copy rewritten — title now "이 섹터의 종목",
+intro spells out "위쪽 시뮬레이션 탭에서 가정을 바꾸면 종목별 30일
+예상 변동이 실시간으로 갱신됩니다". Existing M5/M9 table component
+unchanged (already does upside / sparkline / 행 펼치기).
+
+**Simulate page** (`/sectors/[slug]/simulate/page.tsx`, **new**):
+
+The headline beginner experience.
+- Picks the **5 most-impactful drivers** from `sensitivity.swing`
+  (max swing across all scalar outputs). Renders each as a large
+  `<BeginnerSlider>` with: humanized title, plain-Korean description,
+  current/default/min/max labels, +x% / -x% chip showing deviation
+  from default.
+- Below, an `<ImpactPreview>` card — fetches `equity.impactScores`
+  per slider change and renders top-6 affected stocks with "현재
+  가격 → 예상 가격" inline.
+- Bottom toggle: "고급 — 전체 드라이버 + 산출물 차트 보기" expands
+  into the full existing `<ManualPanel>` so power users still have
+  the 14-slider + tornado-chart experience.
+
+**Per-equity detail "왜 이 숫자인가"**
+(`/sectors/[slug]/equities/[ticker]/equity-detail.tsx`):
+
+Old: 7-column technical decomposition table (Driver / Default /
+Current / Δ% / Weight / Contribution / Bar).
+
+New default view: `<ContributionReasonList>` — plain-Korean
+explanation cards, top-5 contributions:
+- 🟢 / 🔴 emoji by sign-of-contribution
+- One full Korean sentence: "AI DRAM 수요가 기본값 대비 크게 30%
+  올라가서 이 종목에 유리하게 작용합니다."
+- Footer: 기본값 → 현재 + 기여 점수
+
+"숫자로 보기" toggle preserves the original technical table for
+power users.
+
+**Home** (`/page.tsx`):
+
+Old: search + 3 sector cards + biggest movers table + recent
+scenarios + audit feed all on first paint.
+
+New:
+1. Hero — "산업의 성장이 어떤 주식으로 이어지는지, 한눈에." + one-
+   paragraph explainer.
+2. **3 sector entry cards** — large, emoji-led, with editorial
+   thesis blurb + 90d basket sparkline + 3 quick stats. The only
+   thing a first-time visitor really needs.
+3. **최근 90일 가장 크게 움직인 종목** — top 3 highlight cards
+   (visual, large +/- %).
+4. **"더 보기" expander** (`<MoreExpander>`, client-side,
+   `localStorage` persistence) — collapses search + full movers
+   table + recent scenarios + audit feed. Power users open once,
+   stays open.
+
+**Onboarding** (`<OnboardingModal>`, M20 → M23 rewrite):
+
+Old: 5-step navigation tour.
+
+New: **3-step value demo**. Storage key bumped to
+`sss_onboard_v2` so existing users re-see the new tour once.
+1. "어떤 산업이 가장 궁금하신가요?" — 3 emoji cards (memory / space /
+   sofc) with editorial one-liner.
+2. Selected sector's plain-Korean thesis paragraph in a hero card.
+3. Single-slider live demo — slider 0..100 → mock 30d % per stock
+   for 2-3 demo tickers. Animated. CTA "시작하기 →" drops user
+   into the selected sector's `/simulate`.
+
+The demo is *self-contained* (no live sim call from inside the
+modal); the goal is to make the cause-effect connection visible in
+the first 90 seconds.
+
+**Language pass** (`page-intents.ts` + nav labels):
+
+- Every page intent rewritten in plain-investor Korean. "Edge
+  weight" / "decomposition" / "sensitivity sweep" / "topology"
+  vocabulary banished from primary pages — kept only where the
+  graph/manual surfaces truly need them.
+- Top-nav: "Home" / "Sectors" / "Compare" → "홈" / "섹터" (Compare
+  demoted to the per-sector scenario bar).
+- SubNav captions in Korean question form: "왜 성장하나요?" / "어떤
+  주식이 수혜?" / "내 가정으로 테스트".
+
+**Verification**:
+
+- TS typecheck clean across all 5 workspaces.
+- sector-service / simulation-service / data-pipeline / agent-
+  orchestration / @platform/db test totals **unchanged**: pure
+  presentation / IA slice.
+- Cumulative: 311 + 17 skipped.
+
+**Manual smoke** (anyone running locally):
+
+```
+/                 → hero + 3 sector cards + 3 mover highlights
+/sectors/memory-semi    → thesis hero + drivers/blockers + quick stats
+/sectors/memory-semi/simulate → 5 sliders + live preview + 고급 expander
+/sectors/memory-semi/equities → 종목 grid, header copy 친화적
+/sectors/memory-semi/equities/005930 → 왜 이 숫자인가 plain
+?onboard=1        → new 3-step value demo
+```
+
+**Out of scope (future polish)**:
+
+- Per-page guided tour (current onboarding only shows once; an
+  inline contextual `?tour=2` mode would let returning users
+  re-trigger explanations on a specific page).
+- Watchlist (\"내 관심 종목\") — needs auth + a `user_watchlist`
+  table. The header's user menu is the natural seam.
+- Stock comparison ("두 종목 나란히") — currently the platform only
+  compares scenarios, not individual stocks.
+- A11y deep pass — modal focus trap + skip links.
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

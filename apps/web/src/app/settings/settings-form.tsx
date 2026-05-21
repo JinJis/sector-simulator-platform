@@ -13,7 +13,10 @@ interface Props {
   user: CurrentUser;
 }
 
-const ONBOARD_KEY = "sss_onboard_v1";
+// Bumped to v2 alongside the M23 onboarding rewrite. Clearing the new
+// key forces the new value-demo tour to replay; the old v1 key is left
+// alone since the new modal doesn't read it.
+const ONBOARD_KEY = "sss_onboard_v2";
 
 export function SettingsForm({ user }: Props) {
   const router = useRouter();

@@ -367,36 +367,144 @@ function WhyThisNumber({
   breakdown: EquityImpactBreakdownRow | null;
   sectorName: string;
 }) {
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const positive = (breakdown?.score ?? 0) >= 0;
   return (
     <section className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-5">
-      <div className="mb-3 flex items-baseline gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-300">
-          Why this number
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h2 className="text-base font-semibold text-neutral-100">
+          왜 이 숫자인가요?
         </h2>
-        <span className="text-[11px] text-neutral-600">
-          {sectorName} 그래프 driver × edge weight 분해 · |contribution| 내림차순
-        </span>
+        {breakdown && breakdown.contributions.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="text-[11px] text-neutral-500 hover:text-cyan-300"
+          >
+            {showAdvanced ? "간단히 보기" : "숫자로 보기"}
+          </button>
+        )}
       </div>
+
       {!breakdown || breakdown.contributions.length === 0 ? (
         <p className="text-sm text-neutral-500">
-          이 종목에 연결된 driver edge가 없거나 그래프가 아직 부트스트랩되지 않았습니다.
+          이 종목은 {sectorName} 의 그래프에서 직접 연결된 요인이 없거나, 그래프가
+          아직 초기화되지 않았습니다.
         </p>
       ) : (
         <>
-          <DriverContribTable rows={breakdown.contributions} />
-          <p className="mt-3 text-[11px] text-neutral-600">
-            <span className="text-neutral-400">raw sum</span> ={" "}
-            {breakdown.raw_sum.toFixed(3)} →{" "}
-            <span className="text-neutral-400">score</span> = 100 × tanh(raw) ={" "}
-            {breakdown.score.toFixed(0)} ·{" "}
-            <span className="text-neutral-400">projected Δ</span> = score × 0.3% (M5 calibration).
+          <p className="mb-4 text-sm leading-relaxed text-neutral-300">
+            현재 가정에서 이 종목이{" "}
+            <span
+              className={
+                positive
+                  ? "font-semibold text-emerald-400"
+                  : "font-semibold text-rose-400"
+              }
+            >
+              {positive ? "수혜" : "피해"}
+            </span>
+            를 받는 이유 — 가장 큰 영향을 주는 요인 순서대로:
           </p>
+          {showAdvanced ? (
+            <>
+              <DriverContribTable rows={breakdown.contributions} />
+              <p className="mt-3 text-[11px] text-neutral-600">
+                raw sum = {breakdown.raw_sum.toFixed(3)} → score = 100 ×
+                tanh(raw) = {breakdown.score.toFixed(0)} · projected Δ = score ×
+                0.3%.
+              </p>
+            </>
+          ) : (
+            <ContributionReasonList rows={breakdown.contributions} />
+          )}
         </>
       )}
     </section>
   );
 }
 
+/**
+ * Plain-language list of driver contributions, written so a beginner
+ * can read it as English sentences. Top 5 contributions; the rest
+ * collapse behind a `+N more` footer line.
+ */
+function ContributionReasonList({ rows }: { rows: DriverContribution[] }) {
+  const top = rows.slice(0, 5);
+  const rest = rows.length - top.length;
+  return (
+    <ul className="flex flex-col gap-2">
+      {top.map((c) => (
+        <li
+          key={c.driver}
+          className="flex items-start gap-3 rounded border border-neutral-800 bg-neutral-950/60 p-3"
+        >
+          <span aria-hidden className="mt-0.5 text-base">
+            {c.contribution >= 0 ? "🟢" : "🔴"}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm text-neutral-100">
+              <span className="font-medium">{humanizeDriver(c.driver)}</span>{" "}
+              {plainLanguageDelta(c.delta_pct, c.weight)}
+            </p>
+            <div className="mt-1 flex flex-wrap items-baseline gap-2 text-[11px] text-neutral-500">
+              <span>
+                기본값 {fmtCompactNum(c.default_value)} → 현재{" "}
+                {fmtCompactNum(c.current_value)}
+              </span>
+              <span className="text-neutral-700">·</span>
+              <span
+                className={
+                  c.contribution >= 0
+                    ? "font-semibold text-emerald-400"
+                    : "font-semibold text-rose-400"
+                }
+              >
+                기여 {c.contribution >= 0 ? "+" : ""}
+                {c.contribution.toFixed(2)}
+              </span>
+            </div>
+          </div>
+        </li>
+      ))}
+      {rest > 0 && (
+        <li className="text-[11px] text-neutral-600">
+          + {rest}개 요인 추가 — "숫자로 보기" 에서 전체 표 확인
+        </li>
+      )}
+    </ul>
+  );
+}
+
+/**
+ * Translate a (delta_pct, weight) pair into a one-line Korean
+ * sentence. delta_pct is a fraction (0.3 = +30%); weight encodes the
+ * direction of effect (positive/negative).
+ */
+function plainLanguageDelta(deltaPct: number, weight: number): string {
+  const pct = Math.abs(deltaPct * 100);
+  const driverDirection = deltaPct >= 0 ? "올라가서" : "내려가서";
+  const driverMagnitude = pct < 0.5 ? "약간 " : pct < 5 ? "" : "크게 ";
+  // Sign of contribution = sign(deltaPct * weight)
+  const helps = deltaPct * weight >= 0;
+  const verb = helps ? "이 종목에 유리하게 작용합니다." : "이 종목에 불리하게 작용합니다.";
+  if (pct < 0.5) {
+    return `기본값 근처에 머물러 있어 영향이 미미합니다.`;
+  }
+  return `가 기본값 대비 ${driverMagnitude}${pct.toFixed(1)}% ${driverDirection} ${verb}`;
+}
+
+function humanizeDriver(name: string): string {
+  return name
+    .replace(/_/g, " ")
+    .replace(/\bpct\b/g, "%")
+    .replace(/\busd per\b/g, "$/")
+    .replace(/\busd\b/g, "$")
+    .replace(/\bpb y0\b/g, "PB y0")
+    .trim();
+}
+
+/** Power-user view — keep the existing table for "숫자로 보기" mode. */
 function DriverContribTable({ rows }: { rows: DriverContribution[] }) {
   const maxAbs = rows.reduce((m, r) => Math.max(m, Math.abs(r.contribution)), 0) || 1;
   return (
@@ -404,13 +512,13 @@ function DriverContribTable({ rows }: { rows: DriverContribution[] }) {
       <table className="w-full text-sm">
         <thead className="bg-neutral-900/60 text-[10px] uppercase tracking-wider text-neutral-500">
           <tr>
-            <th className="px-3 py-2 text-left font-medium">Driver</th>
-            <th className="px-3 py-2 text-right font-medium">Default</th>
-            <th className="px-3 py-2 text-right font-medium">Current</th>
+            <th className="px-3 py-2 text-left font-medium">요인</th>
+            <th className="px-3 py-2 text-right font-medium">기본</th>
+            <th className="px-3 py-2 text-right font-medium">현재</th>
             <th className="px-3 py-2 text-right font-medium">Δ %</th>
-            <th className="px-3 py-2 text-right font-medium">Weight</th>
-            <th className="px-3 py-2 text-right font-medium">Contribution</th>
-            <th className="px-3 py-2 text-left font-medium">Bar</th>
+            <th className="px-3 py-2 text-right font-medium">영향력</th>
+            <th className="px-3 py-2 text-right font-medium">기여</th>
+            <th className="px-3 py-2 text-left font-medium">시각화</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-neutral-800">

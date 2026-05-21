@@ -1,6 +1,5 @@
 "use client";
 
-import { SubNav } from "@platform/ui";
 import { useRouter } from "next/navigation";
 import { useCallback } from "react";
 
@@ -16,6 +15,7 @@ import { ReportPanel } from "../../report-panel";
 import { ScenarioBar } from "../../scenario-bar";
 import { SectorPicker } from "../../sector-picker";
 
+import { SectorNav } from "./sector-nav";
 import { SectorProvider, useSector } from "./sector-context";
 
 interface Props {
@@ -134,19 +134,5 @@ function Chrome() {
 
 function SubNavRow() {
   const { meta } = useSector();
-  const base = `/sectors/${meta.slug}`;
-  return (
-    <SubNav
-      className="mb-5"
-      items={[
-        { label: "Overview", href: base, caption: "요약" },
-        { label: "Narrative", href: `${base}/narrative`, caption: "투자 가설 + 종목별 upside" },
-        { label: "Live", href: `${base}/live`, caption: "실시간 자동 데이터" },
-        { label: "Manual", href: `${base}/manual`, caption: "슬라이더로 직접 조정" },
-        { label: "Graph", href: `${base}/graph`, caption: "드라이버 → 산출 인과 그래프" },
-        { label: "Sources", href: `${base}/sources`, caption: "과거 → 현재 + 출처" },
-        { label: "Equities", href: `${base}/equities`, caption: "키 플레이어 종목 + 영향도" },
-      ]}
-    />
-  );
+  return <SectorNav slug={meta.slug} />;
 }

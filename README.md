@@ -343,15 +343,16 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **M21** | Agent-generated sectors → draft — `sectors.status` (live / draft / archived) + `sectors.agent_workflow_id` FK. New `sector.*` tRPC (`list` / `get` / `proposeFromAgent` / `activate` / `archive` / `toDraft`). Admin `/agent-runs/[id]` gets a "Register as draft sector" two-stage modal that takes a succeeded decomposition workflow → transactional create of `sectors` + every driver/intermediate/output node in `graph_nodes` + audit row. Admin home gets Live / Draft / Archived sections with status badges + per-row Activate / Archive / Demote / Restore buttons. `sim.list` filters drafts out of the user app by default; admin passes `include_non_live: true`. |
 | **M22a** | ProposeSectorWorkflow chain — two-stage agent pipeline: Decomposition (Opus, node schema) → EdgeInference (Opus, causal DAG with formulas + assumptions). New `POST /workflows/propose-sector` + `agent.startProposeSector` tRPC. `sector.proposeFromAgent` branches on workflow kind; `propose_sector` lands nodes AND agent-inferred edges (weight=1.0, magnitude=med, origin=agent) in the same transaction. Drift-tolerant — edges whose endpoints aren't in the Decomposition get skipped + counted. Admin `/agent-runs/new` pipeline picker; watcher renders the edges + formulas + assumptions section when present. |
 | **M22b** | GenericDagSim runtime for agent-generated sectors — `simpleeval`-backed `evaluator.py` (whitelisted operators + math funcs, dunder/import/lambda blocked, edge-weight propagation, non-finite rejection). `generic_dag.py` topo-sorts intermediates + outputs, evaluates each formula in order, series outputs iterate over `t/T`. `db_loader.py` reads sectors + graph + workflow output via asyncpg. Registry's `all_sims_async` / `get_sim_async` fall back to the DB loader with per-process cache + `POST /sims/{slug}/reload` busting. sector-service mutations call reload upstream; `sector.activate` collects formula-coverage warnings into the audit log. Agent-generated drafts now run end-to-end on activation. |
+| **M23** | Beginner-investor UX overhaul — 7 sector subpages collapsed to **3 primary (개요 / 종목 / 시뮬레이션) + 고급 expander**. Overview rewritten thesis-first (1-paragraph hero + 드라이버 / 블로커 columns with center-out deviation gauges). New `/simulate` shows only the 5 most-impactful sliders + live per-stock impact + 고급 toggle to embed the full ManualPanel. "왜 이 숫자인가" decomposition rewritten as 🟢🔴 plain-Korean sentences ("AI DRAM 수요가 기본값 대비 크게 30% 올라가서 이 종목에 유리하게 작용합니다") with "숫자로 보기" toggle for power users. Home rewritten as hero + 3 emoji-led sector cards + 3 mover highlights, everything analyst-grade behind a "더 보기" expander. Onboarding rewritten as 3-step value demo (pick sector → thesis → live single-slider demo). Plain-Korean language pass across page intents + nav. |
 
 ### Planned next
 
-No backlog items remain on the M14-M22b track. Next direction TBD —
-candidates: cross-year `x[t-1]` coupling in agent series formulas;
-the remaining 3 prompts (research / driver-inference / code-gen +
-code-review); sandboxed (Modal / E2B) execution of agent-generated
-Python (sidesteppable via GenericDagSim for now); OAuth providers;
-multi-tenant scoping (see `### Deferred (Phase 3+)` below).
+No backlog items remain on the M14-M23 track. Next direction TBD —
+candidates: watchlist (\"내 관심 종목\"), per-page contextual tours,
+agent series cross-year coupling, the remaining 3 agent prompts
+(research / driver-inference / code-gen + code-review), sandboxed
+(Modal / E2B) execution, OAuth providers, multi-tenant scoping
+(see `### Deferred (Phase 3+)` below).
 
 ### In progress
 
