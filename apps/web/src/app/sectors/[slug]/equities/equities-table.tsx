@@ -31,6 +31,31 @@ const MAGNITUDE_WEIGHT: Record<EquityDriverLink["magnitude"], number> = {
 };
 
 /**
+ * Map an impliedImpact score (∈ [-100, +100]) to a projected return %
+ * over `PROJECTION_DAYS`. SCALE = 0.3 means a saturated +100 impact
+ * implies +30% over the forward window — illustrative for an editorial
+ * signal, not a forecasting commitment.
+ *
+ * The projection is suppressed (returns null) when |impact| is below
+ * `PROJECTION_THRESHOLD`, so a chart resting on slider defaults isn't
+ * cluttered by a meaningless flat extension.
+ */
+const PROJECTION_SCALE = 0.3;
+const PROJECTION_DAYS = 30;
+const PROJECTION_THRESHOLD = 1.0;
+
+function projectFromImpact(
+  lastClose: number,
+  impactScore: number,
+): { projectedClose: number; projectedReturnPct: number } | null {
+  if (Math.abs(impactScore) < PROJECTION_THRESHOLD) return null;
+  if (!Number.isFinite(lastClose) || lastClose <= 0) return null;
+  const projectedReturnPct = impactScore * PROJECTION_SCALE;
+  const projectedClose = lastClose * (1 + projectedReturnPct / 100);
+  return { projectedClose, projectedReturnPct };
+}
+
+/**
  * Compute a normalized directional impact score in [-100, +100] based on
  * how far the current driver state has drifted from defaults, weighted by
  * the equity's editorial driver_links (sign + magnitude).
@@ -314,7 +339,9 @@ export function EquitiesTable({ equities, defaults, driverValues, sectorSlug }: 
         Implied impact는 편집팀이 수기로 부여한 driver→equity 링크(부호 + magnitude)와 현재 슬라이더의
         default 대비 편차로 계산한 방향성 점수입니다 (econometric 모델 아님, [-100,+100] 클램프). 90d
         trend는 data-pipeline이 yfinance에서 받아온 일별 종가 시계열입니다 — 아직 ingest 안 됐으면
-        대시(—)로 표시.
+        대시(—)로 표시. <b className="text-neutral-400">30d projection</b>은 impact score × 0.3%로 매핑한
+        forward 30일 dashed line(예: score +50 → +15% 추정) — 편집팀 시그널의 직관적 시각화이며 가격
+        예측이 아닙니다.
       </p>
     </div>
   );
@@ -351,6 +378,15 @@ function Row({
     if (!first) return null;
     return ((last - first) / first) * 100;
   }, [history]);
+
+  // Projection — recompute every time the impact score changes (slider
+  // drag). Memo dep is the score itself so we don't recompute when only
+  // unrelated state shifts.
+  const projection = useMemo(() => {
+    if (!history || history.length < 1) return null;
+    const lastClose = history[history.length - 1]!.close_local;
+    return projectFromImpact(lastClose, score);
+  }, [history, score]);
   const scoreVisible = activeLinks > 0;
   const scoreColor =
     !scoreVisible
@@ -407,7 +443,12 @@ function Row({
           </span>
         </td>
         <td className="px-3 py-2.5 align-top">
-          <TrendCell history={history} returnPct={periodReturnPct} beta={basketStats?.beta ?? null} />
+          <TrendCell
+            history={history}
+            returnPct={periodReturnPct}
+            beta={basketStats?.beta ?? null}
+            projection={projection}
+          />
         </td>
         <td className="px-3 py-2.5 text-right align-top tabular-nums">
           <ExposureBar pct={equity.sector_exposure_pct} />
@@ -483,6 +524,9 @@ function Row({
                   periodReturnPct={periodReturnPct}
                   basketStats={basketStats}
                   basketIndex={basketIndex}
+                  projection={projection}
+                  impactScore={score}
+                  activeLinks={activeLinks}
                 />
               </div>
             </div>
@@ -570,10 +614,12 @@ function TrendCell({
   history,
   returnPct,
   beta,
+  projection,
 }: {
   history: EquityHistoryBar[] | null;
   returnPct: number | null;
   beta: number | null;
+  projection: { projectedClose: number; projectedReturnPct: number } | null;
 }) {
   if (history === null) {
     return <span className="text-[11px] text-neutral-600">…</span>;
@@ -582,6 +628,11 @@ function TrendCell({
     return <span className="text-[11px] text-neutral-600">—</span>;
   }
   const values = history.map((b) => b.close_local);
+  // Projection series for the small chart: just two points (last close
+  // → projected close). Sparkline interpolates a straight dashed line.
+  const projectionValues = projection
+    ? [values[values.length - 1]!, projection.projectedClose]
+    : undefined;
   const color =
     returnPct > 0.5
       ? "text-emerald-300"
@@ -592,10 +643,17 @@ function TrendCell({
     <div className="flex items-center gap-2">
       <Sparkline
         values={values}
+        projectionValues={projectionValues}
         width={88}
         height={26}
         filled
-        ariaLabel={`90-day price trend, ${returnPct.toFixed(1)}%`}
+        ariaLabel={
+          projection
+            ? `90-day price + 30d projection ${
+                projection.projectedReturnPct > 0 ? "+" : ""
+              }${projection.projectedReturnPct.toFixed(1)}%`
+            : `90-day price trend, ${returnPct.toFixed(1)}%`
+        }
       />
       <div className="flex flex-col leading-tight">
         <span className={`text-[11px] tabular-nums ${color}`}>
@@ -621,12 +679,18 @@ function ExpandedHistoryPanel({
   periodReturnPct,
   basketStats,
   basketIndex,
+  projection,
+  impactScore,
+  activeLinks,
 }: {
   history: EquityHistoryBar[] | null;
   currency: string | null;
   periodReturnPct: number | null;
   basketStats: BasketStatsEquity | null;
   basketIndex: BasketStats["basket"] | null;
+  projection: { projectedClose: number; projectedReturnPct: number } | null;
+  impactScore: number;
+  activeLinks: number;
 }) {
   if (history === null) {
     return (
@@ -668,26 +732,57 @@ function ExpandedHistoryPanel({
   const min = Math.min(...history.map((b) => b.close_local));
   const max = Math.max(...history.map((b) => b.close_local));
 
+  // Projection on the normalized axis: start at equity_normalized[last]
+  // (i.e. the equity's last close expressed as % of its first close)
+  // and apply the same projected return.
+  const projectionNormalized = projection
+    ? [
+        equityNormalized[equityNormalized.length - 1]!,
+        equityNormalized[equityNormalized.length - 1]! *
+          (1 + projection.projectedReturnPct / 100),
+      ]
+    : undefined;
+
   return (
     <div className="rounded border border-neutral-900 bg-neutral-950/40 p-3">
       <Sparkline
         values={equityNormalized}
         overlayValues={overlayValues && overlayValues.length >= 2 ? overlayValues : undefined}
+        projectionValues={projectionNormalized}
         width={280}
         height={60}
         filled
-        ariaLabel={`90-day price vs sector basket`}
+        ariaLabel={`90-day price vs sector basket${
+          projection
+            ? `, 30d projection ${projection.projectedReturnPct > 0 ? "+" : ""}${projection.projectedReturnPct.toFixed(1)}%`
+            : ""
+        }`}
       />
-      {overlayValues && overlayValues.length >= 2 && (
-        <div className="mt-1 flex items-center gap-3 text-[9px] uppercase tracking-wider text-neutral-600">
+      {(overlayValues && overlayValues.length >= 2) || projection ? (
+        <div className="mt-1 flex flex-wrap items-center gap-3 text-[9px] uppercase tracking-wider text-neutral-600">
           <span className="flex items-center gap-1">
             <span className="inline-block h-0.5 w-3 bg-cyan-300" /> 종목
           </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-0.5 w-3 border-t border-dashed border-neutral-500" /> 섹터 바스켓
-          </span>
+          {overlayValues && overlayValues.length >= 2 && (
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-0.5 w-3 border-t border-dashed border-neutral-500" /> 섹터 바스켓
+            </span>
+          )}
+          {projection && (
+            <span
+              className="flex items-center gap-1"
+              title="Forward 30d projection from current driver state"
+            >
+              <span
+                className={`inline-block h-0.5 w-3 border-t border-dashed ${
+                  projection.projectedReturnPct >= 0 ? "border-emerald-400" : "border-rose-400"
+                }`}
+              />
+              30d projection
+            </span>
+          )}
         </div>
-      )}
+      ) : null}
       <dl className="mt-2 grid grid-cols-3 gap-2 text-[10px] uppercase tracking-wider text-neutral-500">
         <Stat
           label="period return"
@@ -709,6 +804,29 @@ function ExpandedHistoryPanel({
         <Stat label="min" value={formatLocalPrice(min, currency)} />
         <Stat label="max" value={formatLocalPrice(max, currency)} />
       </dl>
+
+      {projection && (
+        <dl className="mt-3 grid grid-cols-3 gap-2 rounded border border-cyan-900/40 bg-cyan-950/20 p-2 text-[10px] uppercase tracking-wider text-neutral-500">
+          <Stat
+            label="30d projection"
+            value={
+              projection.projectedReturnPct > 0
+                ? `+${projection.projectedReturnPct.toFixed(1)}%`
+                : `${projection.projectedReturnPct.toFixed(1)}%`
+            }
+            tone={projection.projectedReturnPct >= 0 ? "pos" : "neg"}
+          />
+          <Stat
+            label="implied target"
+            value={formatLocalPrice(projection.projectedClose, currency)}
+            tone={projection.projectedReturnPct >= 0 ? "pos" : "neg"}
+          />
+          <Stat
+            label="impact score"
+            value={`${impactScore > 0 ? "+" : ""}${impactScore.toFixed(1)} · ${activeLinks}↗`}
+          />
+        </dl>
+      )}
 
       {basketStats && (
         <dl className="mt-3 grid grid-cols-4 gap-2 border-t border-neutral-900 pt-3 text-[10px] uppercase tracking-wider text-neutral-500">

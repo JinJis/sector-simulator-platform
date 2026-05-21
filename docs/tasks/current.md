@@ -839,6 +839,80 @@ passing (see expand panel below).
 - Per-equity attribution showing which driver_links contributed to
   realized return over the period
 
+### Equities Milestone 5 — slider → projected price overlay (2026-05-21)
+
+Closes the loop the user opened in M1: a simulation slider drag now
+shows up directly on every equity's price chart as a forward-30d
+dashed projection. The chart says, in one glance: *"this is where the
+price has been; this is where the current driver state implies it's
+heading."*
+
+Math (intentionally simple — editorial signal, not a forecast):
+
+```
+score        = impliedImpact ∈ [-100, +100]   # M1 formula
+projected%   = score × 0.3                    # ±30% saturation cap
+projected px = last_close × (1 + projected% / 100)
+```
+
+`projectFromImpact(lastClose, score)` is suppressed when
+`|score| < 1` so resting-default charts stay clean. `PROJECTION_SCALE`,
+`PROJECTION_DAYS`, `PROJECTION_THRESHOLD` are constants at the top of
+`equities-table.tsx` — easy to tune as the editorial team calibrates.
+
+**Sparkline component** (`@platform/ui/sparkline`):
+
+Adds a third series alongside the existing `values` + `overlayValues`:
+
+- `projectionValues?: number[]` — drawn dashed, **continuing from the
+  last x of `values`** (first projection point usually equals last
+  value for continuity). The x-axis is widened to accommodate, the
+  y-domain pools all three series, and the projection endpoint gets
+  its own colored dot.
+- `projectionStroke?: string` — explicit color override; otherwise
+  auto-greens when the projection ends above its start, auto-reds
+  when below.
+
+**UI integration** (web equities table):
+
+- Trend column: the small sparkline now sprouts a dashed continuation
+  every time the user drags a slider. Re-renders on every score
+  change — at the ~50-equity scale it's instant.
+- Expand panel:
+  - Big sparkline gets the same projection (normalized to base 100)
+  - New 3-up "projection" stat tile (cyan-tinted) under the chart:
+    30d projection % / implied target price / impact score · active
+    links count
+  - Footer text explains "score × 0.3% → forward 30d dashed line"
+    so the user understands what they're looking at
+
+**No backend changes** — projection is purely derived UI state from
+impliedImpact (client-computed since M1) and the last close price
+(from M3's quote history). Drag responsiveness is bounded by React
+re-render only.
+
+**Verification**
+- TS typecheck across web / admin / sector-service / ui / db ✅
+- sector-service vitest: 36 pass (no regression — scenario.test.ts
+  remains skipped without local Postgres, as before)
+- No new Python tests; data-pipeline / agent-orchestration / sim-service
+  test totals unchanged (27 / 35+2 / 55)
+- **Cumulative: 153 + 2 skipped** (same as M4 — this slice is pure UI)
+
+**Calibration note for future**: PROJECTION_SCALE = 0.3 means a
+saturated impliedImpact of +100 produces a +30% 30-day projection.
+That's aggressive — real 30-day single-name moves at that magnitude
+are rare. The conservative alternative is 0.15 (±15% max). Easy to
+flip when we have a real backtest to calibrate against (M6+).
+
+**Out of scope (M6+)**:
+- Real backtest: replay 90 historical days with the *current*
+  impliedImpact formula and see how its prediction lines up vs realized
+  returns — would let us calibrate SCALE empirically
+- Multi-horizon projections (30d / 90d / 1y) selectable per row
+- Confidence cone (low/med/high bands) instead of a single dashed line
+- Slider-to-projection animation hint (motion when score changes)
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

@@ -97,7 +97,8 @@ This README is the **operational orientation**. For product vision/personas/busi
 - Each row carries editorial **`driver_links`** (which sim drivers affect this stock + sign + magnitude).
 - **`impliedImpact`** score: `100 × tanh(Σ((cur-def)/|def| × sign × magnitude) × 100 / 100)`. Editorial directional cue, not econometric.
 - **90d sparklines** loaded lazily; period return % chip color-coded; **β chip** vs sector basket.
-- Expand row: dual sparkline (equity vs equal-weighted sector basket) + stats grid (β / α / σ / max DD / R²).
+- **Slider → projection**: every sparkline grows a dashed forward-30d line that swings with `impliedImpact` × 0.3. Drag a driver on the Manual tab → every equity's chart updates in real-time.
+- Expand row: dual sparkline (equity vs equal-weighted sector basket + 30d projection) + projection-target / β / α / σ / max DD / R² grids.
 - Daily snapshot refresh via `data-pipeline:8003` cron (08:30 UTC = 17:30 KST).
 - 90-day history refresh on demand (POST `/jobs/refresh-quote-history`).
 
@@ -229,6 +230,7 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **Equities M2** | `data-pipeline` service + yfinance adapter + daily snapshot refresh job |
 | **Equities M3** | `EquityQuote` time-series + 90d sparkline ingest + inline sparkline column |
 | **Equities M4** | Per-equity β / α / σ / max DD vs equal-weighted sector basket + dual sparkline overlay in expand view |
+| **Equities M5** | Slider → projected price — every equity's sparkline grows a dashed forward-30d line driven by `impliedImpact` × 0.3 |
 
 ### In progress
 
