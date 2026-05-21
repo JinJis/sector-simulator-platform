@@ -4,6 +4,7 @@
  */
 
 import { agentRouter } from "./agent.js";
+import { auditRouter } from "./audit.js";
 import { equityRouter } from "./equity.js";
 import { graphRouter } from "./graph.js";
 import { router } from "./init.js";
@@ -16,6 +17,7 @@ export const appRouter = router({
   agent: agentRouter,
   equity: equityRouter,
   graph: graphRouter,
+  audit: auditRouter,
 });
 
 export type AppRouter = typeof appRouter;

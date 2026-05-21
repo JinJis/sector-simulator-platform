@@ -1835,28 +1835,82 @@ followed by two columns (왜 보는가 / 무엇을 찾는가) for orientation.
   user feedback says it's worth it
 - 다국어 (English) — currently 한국어 only
 
-### M16 — Home page / investor dashboard — *foundation for M17*
+### M16 — Home page / investor dashboard (shipped 2026-05-21)
 
-**Why third**: the platform needs an entry door before we ship the
-narrative pages. Right now `/` is a redirect-only stub.
+`/` is no longer a bare redirect. It's a server-rendered investor
+dashboard that pulls the platform's state into one view; legacy
+`/?sector=…[&scenario=…]` URLs still redirect through to the sector
+hub (preserved at the top of the page handler).
 
-New `/` route:
+**What shipped**:
 
-- **Search** (top): unified search across sectors + equities +
-  drivers. Type "삼성전자" → jumps to the equity card; type
-  "memory" → jumps to memory-semi overview.
-- **Trending sectors** card grid: 3 sectors with a snapshot
-  (current basket β / 30d move / number of equities)
-- **Biggest movers (24h)**: top 5 equities by projected-impact
-  delta — surfaces what's worth attention right now
-- **Recent scenarios** carousel: 5 most-recently-saved scenarios
-  with author + key driver swings (encourages bookmark + share)
-- **What's changed**: feed pulling from `audit_logs` (M7-M9) —
-  "Anonymous tightened HBM premium edge to 1.4", "memory-semi
-  graph re-bootstrapped".
-- Sticky header with breadcrumbs once the user lands on a sector
+- **`audit.recent` tRPC procedure** (`services/sector-service/src/trpc/audit.ts`):
+  read-only window onto `audit_logs`. Filters: `limit`,
+  `sector_slug?`, `action_prefix?`. Sorted `created_at` desc.
+  Wired into the root router; web client gets a
+  `fetchRecentAuditLogs(...)` wrapper + `AuditLog` type inferred from
+  the router output.
+- **`/` page** (`apps/web/src/app/page.tsx`) — RSC. Fans out in
+  parallel (per Promise.all): `sims.list` → `equities.listForSector`
+  ×3 + `equity.basketStats` ×3 + `scenarios.list` ×3 +
+  `scenarios.list` (all) + `audit.recent`.
+- **Sections**:
+  - `<HomeSearch>` (client) — single input with substring filter over
+    a pre-flattened sector + equity + driver index. Kind badge per
+    result (cyan / amber / violet). Caps at 8 hits; debounce-light
+    (no setTimeout — just useMemo).
+  - **Trending sectors** — 3 cards (lg:grid-cols-3) per sector with:
+    name, description, 240×36 basket sparkline (90d), 90d return %
+    (green/red), equity count, scenario count. Card itself links to
+    the sector hub.
+  - **Biggest movers (90d)** — table of equities sorted by
+    |return_pct| from `equity.basketStats`. Columns: ticker (flag +
+    name), sector, 90d %, β, σ annualized. Empty-state copy tells
+    you to run `refresh-quote-history`.
+  - **Recent scenarios** — top 5 by `updated_at` desc across all
+    sectors. Each tile links to `/sectors/<slug>?scenario=<id>`
+    (round-trips through the scenario deep-link path that the sector
+    shell hydrates).
+  - **What's changed** — feed over the audit log. `describeAudit()`
+    formats per-action: edge upserts show
+    `source → target · w=X.X`; node CRUD shows the node_key + label;
+    scenario CRUD shows name / id; graph reset / wipe shows the
+    sector. Action badge colors by prefix (graph / scenario /
+    lifecycle).
+- **`page-intents.ts`** — new `STANDALONE_PAGE_INTENTS.home` entry
+  surfaced via the existing `<PageIntent>` collapsible card.
 
-Out of scope here: user accounts, watchlists (need auth — Phase 4).
+**Formatting helpers** colocated at the bottom of `page.tsx`:
+
+- `formatRelative(Date | string)` — accepts both because tRPC's
+  Date-typed fields arrive as ISO strings over the wire (no
+  transformer configured). Buckets to "방금" / "N분 전" / "N시간 전" /
+  "N일 전" / ISO date.
+- `describeAudit(e)` / `shortAction(e.action)` / `toneForAction(...)`
+  — pure functions; easy to extend as M18 adds lifecycle actions.
+
+**Verification**:
+
+- TS typecheck across all 5 workspaces clean (web / admin /
+  sector-service / ui / db)
+- @platform/db vitest: 35 pass (unchanged)
+- sector-service vitest: 45 pass / 26 skipped (unchanged baseline —
+  audit router is a thin Prisma wrapper that would only be
+  exercised by a DB-enabled CI run, like the M7 graph procedures)
+- **Cumulative still 264 + 17 skipped** (no test code added — the
+  new tRPC procedure mirrors existing audit-log writes; runtime
+  exercise comes from the home page itself)
+
+**Out of scope (lands in M17+)**:
+
+- Per-equity narrative drill-down (`/sectors/[slug]/equities/[ticker]`)
+- Editorial "growth thesis" cards per sector
+- Watchlist / user accounts (need auth — Phase 4)
+- True 24h movers (current implementation surfaces 90d basket
+  returns; daily change requires last-two-bar diff which we'll add
+  alongside M17's narrative panels)
+- Search ranking beyond substring (full-text via Postgres tsvector
+  when the index grows past O(100s))
 
 ### M17 — Investment narrative UI — *the main payoff*
 

@@ -127,9 +127,26 @@ export const SECTOR_PAGE_INTENTS: Record<string, PageIntent> = {
 };
 
 /**
- * Standalone routes (`/compare`, `/sectors` list, etc.).
+ * Standalone routes (`/`, `/compare`, `/sectors` list, etc.).
  */
 export const STANDALONE_PAGE_INTENTS: Record<string, PageIntent> = {
+  home: {
+    page: "Home",
+    pitch:
+      "오늘 시장에서 무슨 일이 일어나고 있는지, 어떤 섹터를 들여다보고 어떤 종목이 움직이고 있는지를 한 화면에서 시작합니다.",
+    why: [
+      "여러 섹터를 옮겨 다니지 않고도 \"지금 주목할 곳\"을 빠르게 파악.",
+      "검색 한 번으로 섹터 / 종목 / 드라이버 어디로든 점프.",
+      "저장된 시나리오와 그래프 편집 이력으로 팀 활동을 따라잡기.",
+    ],
+    lookFor: [
+      "Trending sectors — 섹터 basket 90일 수익률과 종목 수.",
+      "Biggest movers — 최근 90일 절대 수익률 상위 5개 종목.",
+      "Recent scenarios — 동료가 저장한 최근 가설.",
+      "What's changed — 그래프 / 시나리오 mutation 피드 (audit log).",
+    ],
+  },
+
   compare: {
     page: "Compare",
     pitch:

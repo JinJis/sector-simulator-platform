@@ -123,6 +123,7 @@ The platform answers, in one place: *"What's the upside on this stock if the sec
 
 | Route | What |
 |---|---|
+| `/` | **Investor home** — unified search + trending sectors + biggest movers + recent scenarios + audit feed |
 | `/sectors` | Registered sector grid (3 sectors) |
 | `/sectors/[slug]` | Overview hub — 6-card preview |
 | `/sectors/[slug]/live` | Live KPI dashboard, 3s polling |
@@ -131,7 +132,7 @@ The platform answers, in one place: *"What's the upside on this stock if the sec
 | `/sectors/[slug]/sources` | Provenance (history + source URLs) |
 | `/sectors/[slug]/equities` | **Equities tab** — 49 curated US/KR stocks, 90d sparklines, impliedImpact score |
 | `/compare?sector=…&a=…&b=…` | A/B scenario comparison |
-| `/?scenario=<id>` | Share-link hydrate |
+| `/?sector=<slug>` | Legacy redirect → `/sectors/<slug>` |
 
 ### Admin app (`/`)
 
@@ -327,14 +328,12 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **Equities M10d** | Financials breadth — DART `corpCode.xml` auto-discovery for unmapped KR tickers (lazy, cached, fetch-error tolerant). `EquityFinancial` schema gains `total_assets_usd` / `total_liabilities_usd` / `total_equity_usd` populated by both adapters (DART K-IFRS BS items + EDGAR instant facts via `_pick_instant_facts`). Frankfurter generalized to any base/target pair + `local_per_usd_factory` for non-KR future adapters. 21 new tests. |
 | **M14** | README expansion — Problem / Solution / Why-now / How (mechanism in 60 seconds) / What it doesn't try to be. Investor narrative now precedes the architecture diagram. |
 | **M15** | Per-page intent panels — collapsible `<PageIntent>` card at the top of every sector subpage + `/sectors` list + `/compare`. One-line pitch + two-column "왜 보는가 / 무엇을 찾는가" bullets. Centralized content in `apps/web/src/app/page-intents.ts`. |
+| **M16** | Home page / investor dashboard — new `/` route fans out per Promise.all (sims / equities ×3 / basket stats ×3 / scenarios / audit). `<HomeSearch>` client-side filters a flattened sector + equity + driver index. Trending sectors cards (basket sparkline + 90d %), Biggest movers table (sorted by |return|), Recent scenarios tiles, What's-changed feed via new `audit.recent` tRPC procedure. Legacy `/?sector=…` redirect preserved. |
 
-### Planned next (M16 → M19)
-
-Ordered top-down by dependency. M16 is the investor entry door — needs to ship before M17 narrative pages have somewhere to be discovered from.
+### Planned next (M17 → M19)
 
 | | Scope |
 |---|---|
-| **M16** | Home page / investor dashboard — new `/` route with unified search (sector / ticker / driver), trending sectors, biggest movers, recent scenarios, what's-changed feed pulling from `audit_logs`. Replaces the current redirect-only home. |
 | **M17** | Investment narrative UI — sector growth thesis + per-equity upside/downside grid + per-stock detail pages with "why this number" decomposition (driver × edge weight, ranked) + source citations. The main payoff. |
 | **M18** | Lifecycle review + audit history + monitoring — periodic deprecation/add review surface for drivers / equities / sims. **Always user-approved, never auto.** Audit log viewer + freshness/alarm panel for data feeds. |
 | **M19** | Graph UI quality polish — dagre auto-layout (no edge overlaps), visual differentiation by (color × thickness × dash × arrowhead) keyed to kind / weight / origin / sign. Equity nodes get a ticker pill + sparkline thumbnail. |

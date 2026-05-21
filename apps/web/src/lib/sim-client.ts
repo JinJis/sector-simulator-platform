@@ -341,6 +341,24 @@ export async function fetchEquityFinancials(
   );
 }
 
+export type AuditLog = RouterOutput["audit"]["recent"][number];
+
+export async function fetchRecentAuditLogs(input: {
+  limit?: number;
+  sector_slug?: string;
+  action_prefix?: string;
+} = {}): Promise<AuditLog[]> {
+  return rethrow(
+    () =>
+      trpc.audit.recent.query({
+        limit: input.limit ?? 20,
+        sector_slug: input.sector_slug,
+        action_prefix: input.action_prefix,
+      }),
+    "fetchRecentAuditLogs",
+  );
+}
+
 export type EquityImpactScores = RouterOutput["equity"]["impactScores"];
 
 /**
