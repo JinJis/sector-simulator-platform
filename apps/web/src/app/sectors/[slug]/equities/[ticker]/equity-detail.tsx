@@ -27,6 +27,7 @@ import {
 
 import { PageIntent } from "../../../../page-intent";
 import { SECTOR_PAGE_INTENTS } from "../../../../page-intents";
+import { WatchButton } from "../../../../watchlist/watch-button";
 import { useSector } from "../../sector-context";
 
 const PROJECTION_SCALE = 0.3;
@@ -193,6 +194,16 @@ function Header({
         <span className="rounded-full border border-neutral-800 bg-neutral-950 px-2 py-0.5 text-[10px] uppercase tracking-wider text-neutral-500">
           {equity.exchange}
         </span>
+        <div className="ml-auto flex items-center gap-2">
+          <WatchButton equityId={equity.id} />
+          <Link
+            href={`/sectors/${equity.sector_slug}/compare-stocks?a=${encodeURIComponent(equity.ticker)}`}
+            className="rounded border border-neutral-700 bg-neutral-900 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-cyan-700 hover:text-cyan-200"
+            title="다른 종목과 나란히 비교"
+          >
+            ⇆ 비교
+          </Link>
+        </div>
       </div>
 
       {equity.rationale && (

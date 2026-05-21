@@ -321,7 +321,11 @@ function ImpactPreview({
   }, [equities, scores]);
 
   return (
-    <section className="rounded-lg border border-neutral-800 bg-neutral-900/30 p-5">
+    <section
+      aria-live="polite"
+      aria-atomic="false"
+      className="rounded-lg border border-neutral-800 bg-neutral-900/30 p-5"
+    >
       <div className="mb-3 flex items-baseline justify-between gap-3">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-300">
           현재 가정에서 가장 큰 영향을 받는 종목

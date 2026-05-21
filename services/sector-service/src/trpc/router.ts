@@ -14,6 +14,7 @@ import { monitoringRouter } from "./monitoring.js";
 import { scenarioRouter } from "./scenario.js";
 import { sectorRouter } from "./sector.js";
 import { simRouter } from "./sim.js";
+import { watchlistRouter } from "./watchlist.js";
 
 export const appRouter = router({
   sim: simRouter,
@@ -26,6 +27,7 @@ export const appRouter = router({
   monitoring: monitoringRouter,
   auth: authRouter,
   sector: sectorRouter,
+  watchlist: watchlistRouter,
 });
 
 export type AppRouter = typeof appRouter;

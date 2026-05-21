@@ -112,6 +112,7 @@ function AdvancedExpander({
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  aria-current={isActive ? "page" : undefined}
                   className={`block rounded px-2.5 py-2 transition ${
                     isActive
                       ? "bg-neutral-800 ring-1 ring-cyan-500/30"

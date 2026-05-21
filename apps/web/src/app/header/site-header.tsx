@@ -20,6 +20,13 @@ export async function SiteHeader() {
   const user = await fetchMe();
   return (
     <header className="sticky top-0 z-20 border-b border-neutral-800 bg-neutral-950/85 backdrop-blur">
+      {/* Skip-to-content link — invisible until focused. */}
+      <a
+        href="#main"
+        className="sr-only fixed left-2 top-2 z-50 rounded bg-cyan-700 px-3 py-2 text-xs font-semibold text-cyan-50 focus:not-sr-only focus:outline-none focus:ring-2 focus:ring-cyan-400"
+      >
+        본문으로 건너뛰기
+      </a>
       <div className="mx-auto flex h-12 max-w-7xl items-center gap-4 px-6">
         <Link
           href="/"

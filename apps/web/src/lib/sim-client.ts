@@ -430,6 +430,47 @@ export async function fetchEquityFinancials(
   );
 }
 
+// ---------- Watchlist (M24a) ----------
+
+export type WatchlistRow = RouterOutput["watchlist"]["list"][number];
+
+export async function fetchWatchlist(): Promise<WatchlistRow[]> {
+  return rethrow(() => trpc.watchlist.list.query(), "fetchWatchlist");
+}
+
+export async function checkIsWatched(
+  equityId: string,
+): Promise<{ watched: boolean; id: string | null }> {
+  // Anonymous => always { watched: false, id: null }. Don't go through
+  // `rethrow` so an UNAUTHORIZED response doesn't surface as a noisy
+  // error toast — the server already short-circuits when ctx.user is
+  // missing.
+  try {
+    return await trpc.watchlist.isWatched.query({ equity_id: equityId });
+  } catch {
+    return { watched: false, id: null };
+  }
+}
+
+export async function addToWatchlist(input: {
+  equity_id: string;
+  note?: string;
+}): Promise<RouterOutput["watchlist"]["add"]> {
+  return rethrow(
+    () => trpc.watchlist.add.mutate(input),
+    `addToWatchlist(${input.equity_id})`,
+  );
+}
+
+export async function removeFromWatchlist(
+  equityId: string,
+): Promise<{ ok: boolean }> {
+  return rethrow(
+    () => trpc.watchlist.remove.mutate({ equity_id: equityId }),
+    `removeFromWatchlist(${equityId})`,
+  );
+}
+
 export type AuditLog = RouterOutput["audit"]["recent"][number];
 
 export async function fetchRecentAuditLogs(input: {

@@ -4,6 +4,8 @@ import { Sparkline } from "@platform/ui";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { WatchButton } from "../../../watchlist/watch-button";
+
 import {
   fetchBasketStats,
   fetchEquityFinancials,
@@ -518,14 +520,17 @@ function Row({
           )}
         </td>
         <td className="px-3 py-2.5 text-right align-top">
-          <button
-            onClick={onToggle}
-            className="rounded border border-neutral-800 bg-neutral-950 px-2 py-1 text-[10px] text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200"
-            aria-expanded={expanded}
-            aria-label={expanded ? "Collapse details" : "Expand details"}
-          >
-            {expanded ? "▴" : "▾"}
-          </button>
+          <div className="flex flex-col items-end gap-1">
+            <WatchButton equityId={equity.id} compact />
+            <button
+              onClick={onToggle}
+              className="rounded border border-neutral-800 bg-neutral-950 px-2 py-1 text-[10px] text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200"
+              aria-expanded={expanded}
+              aria-label={expanded ? "Collapse details" : "Expand details"}
+            >
+              {expanded ? "▴" : "▾"}
+            </button>
+          </div>
         </td>
       </tr>
 

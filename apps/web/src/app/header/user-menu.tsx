@@ -93,6 +93,9 @@ export function UserMenu({ user }: Props) {
             <div className="text-sm font-medium text-neutral-100">{display}</div>
             <div className="truncate text-[11px] text-neutral-500">{user.email}</div>
           </div>
+          <MenuLink href="/watchlist" onClick={() => setOpen(false)}>
+            ★ 관심 종목
+          </MenuLink>
           <MenuLink href="/settings" onClick={() => setOpen(false)}>
             ⚙ 설정
           </MenuLink>

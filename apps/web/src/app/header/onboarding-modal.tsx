@@ -18,6 +18,8 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { useFocusTrap } from "./use-focus-trap";
+
 const STORAGE_KEY = "sss_onboard_v2";
 
 interface SectorOption {
@@ -141,6 +143,8 @@ export function OnboardingModal() {
     router.push(`/sectors/${selected.slug}/simulate`);
   }
 
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
+
   if (!open) return null;
 
   return (
@@ -153,7 +157,11 @@ export function OnboardingModal() {
         if (e.target === e.currentTarget) close(false);
       }}
     >
-      <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950 shadow-xl">
+      <div
+        ref={trapRef}
+        tabIndex={-1}
+        className="w-full max-w-2xl overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950 shadow-xl"
+      >
         <header className="flex items-center justify-between border-b border-neutral-800 px-5 py-3">
           <span className="rounded border border-cyan-700 bg-cyan-950/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-300">
             3분 가이드

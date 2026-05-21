@@ -110,6 +110,7 @@ model SectorEquity {
   quotes              EquityQuote[]
   financials          EquityFinancial[]
   graph_nodes         GraphNode[]
+  watchlist_items     WatchlistItem[]
 
   @@unique([sector_slug, ticker, exchange])
   @@index([sector_slug])
@@ -324,9 +325,31 @@ model User {
   created_at    DateTime  @default(now()) @map("created_at")
   updated_at    DateTime  @updatedAt        @map("updated_at")
 
-  sessions      Session[]
+  sessions          Session[]
+  watchlist_items   WatchlistItem[]
 
   @@map("users")
+}
+
+model WatchlistItem {
+  // M24a: user-curated "관심 종목" list. One row per (user, equity)
+  // pair. The `note` column lets users jot a one-line reason ("AI
+  // 슈퍼사이클 후보") which surfaces on the /watchlist page.
+  //
+  // Authoritative on user_id + equity_id; cascade-delete on either
+  // side so deleting an equity or a user cleans up automatically.
+
+  id          String       @id @default(cuid())
+  user_id     String       @map("user_id")
+  user        User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  equity_id   String       @map("equity_id")
+  equity      SectorEquity @relation(fields: [equity_id], references: [id], onDelete: Cascade)
+  note        String?
+  created_at  DateTime     @default(now()) @map("created_at")
+
+  @@unique([user_id, equity_id])
+  @@index([user_id, created_at(sort: Desc)])
+  @@map("watchlist_items")
 }
 
 model Session {

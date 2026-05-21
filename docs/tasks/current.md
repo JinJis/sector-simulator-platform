@@ -2717,6 +2717,117 @@ the first 90 seconds.
   compares scenarios, not individual stocks.
 - A11y deep pass — modal focus trap + skip links.
 
+### M24 — Watchlist · stock-vs-stock · page tours · a11y (shipped 2026-05-21)
+
+Four polish slices the M23 doc flagged as out-of-scope, all rolled
+into one commit so the user can pick up the new flow end-to-end.
+
+**M24a — Watchlist** (관심 종목)
+
+- Schema: `watchlist_items` Prisma model (`user_id × equity_id` unique,
+  cascade-delete on both sides) + migration
+  `20260523020000_watchlist_items`.
+- `watchlist.*` tRPC: `list` / `add` (idempotent upsert) / `remove`
+  (idempotent, swallows P2025) / `isWatched` (returns
+  `{watched, id}` and gracefully reports false for anonymous users
+  so the star button on every equity row doesn't error).
+- Web client wrappers: `fetchWatchlist` / `addToWatchlist` /
+  `removeFromWatchlist` / `checkIsWatched` (the last one bypasses
+  `rethrow` so anonymous → silent false instead of a toast).
+- `<WatchButton>` (`apps/web/src/app/watchlist/watch-button.tsx`):
+  client component that fetches `me` once + `isWatched` per equity,
+  flips state optimistically, rolls back on error. Anonymous click
+  redirects to `/login?redirect=<current>`. Two visual modes —
+  compact (just ★/☆ for table rows) and labelled.
+- Wired into:
+  - Stock detail header (top right next to ⇆ 비교 button)
+  - Stocks-table row (action cell, above the expand ▾ button)
+  - Header user menu — new "★ 관심 종목" link
+- `/watchlist` page (auth-required; redirects to login when missing):
+  table of watched stocks with 90-day historical return + sector
+  link + memo + "제거" button. Empty state shows a "섹터 둘러보기 →"
+  CTA. Honest about not showing 30d forward projection here (that
+  depends on the user's open simulation; the row links into the
+  per-stock detail where the projection lives in context).
+
+**M24b — Stock-vs-stock comparison**
+
+- New route `/sectors/[slug]/compare-stocks?a=TICKER&b=TICKER`.
+  Reads two tickers from query params, resolves both via existing
+  `equity.getByTicker` (M17), fans out history + financials +
+  impact-breakdown per side in parallel.
+- Side-by-side cards mirror each other top-to-bottom:
+  현재 가격 / 30일 예상 / 90일 변동 / 섹터 노출 · top 3 영향 요인 ·
+  최신 분기 매출 / 총이익률 / EBITDA / Capex.
+- **"한눈에 비교" diff table** at the bottom — winner per row marked
+  green ← A / B → with sensible direction (낮을수록 우위는 Capex
+  하나; 나머지는 모두 클수록 우위).
+- Entry points:
+  - Equity detail header gets a `⇆ 비교` button that opens
+    `compare-stocks?a=<current>`.
+  - Picker shows up automatically when one side is missing; renders
+    the per-sector equity grid filtered out of the already-picked
+    side.
+- "변경" link on each side card swaps that slot.
+
+**M24c — Per-page contextual tour**
+
+- Floating "📍 이 페이지 둘러보기" button (bottom-right,
+  unobtrusive). Opens a 3-5 step modal walking through *this
+  specific page*'s key sections in plain Korean.
+- `page-tour-content.ts` — tour entries keyed by URL pattern
+  (`:slug` matches any segment, `:ticker` ditto). Longest-pattern-
+  first resolution so `/sectors/:slug/equities/:ticker` wins over
+  `/sectors/:slug/equities`.
+- 10 tours covered: `/`, sector overview, equities (종목),
+  simulate, equity detail, compare-stocks, watchlist, plus the 4
+  advanced surfaces (manual / graph / sources / live).
+- Opt-in only — no auto-popup (the M20 first-visit modal already
+  handles that). The button persists on every page that has tour
+  content; pages without content (login / signup / admin) render
+  no button.
+
+**M24d — A11y deep pass**
+
+- `useFocusTrap<T>(active)` hook — captures the element that had
+  focus before the modal opened, moves focus to the first focusable
+  child on activate, traps Tab/Shift+Tab inside the container,
+  restores focus on close. Tiny, no dependency.
+- Applied to OnboardingModal + PageTour modals (the 3 high-traffic
+  ones; the admin-only PromoteToDraftButton + AddNodeModal can
+  follow if anyone complains).
+- **Skip-to-content link** in SiteHeader — `<a href="#main">` with
+  `sr-only focus:not-sr-only` so it's invisible until focused. The
+  root layout wraps `{children}` in `<div id="main">`.
+- `aria-current="page"` on the SubNav's advanced expander links
+  (existing primary tabs already had it via `@platform/ui/SubNav`).
+- `aria-live="polite"` on Simulate's "현재 가정에서 가장 큰 영향을
+  받는 종목" section so screen readers announce stock updates as
+  the user drags a slider.
+- `aria-label` / `aria-pressed` / `title` filled in on the
+  WatchButton + PageTour close button + Onboarding skip button.
+
+**Verification**:
+
+- TS typecheck clean across all 5 workspaces.
+- sector-service vitest: 56 pass / 26 skipped (baseline — new
+  watchlist router is DB-required, exercise via UI).
+- @platform/db: 35 pass (unchanged — pure schema change).
+- Cumulative: **311 + 17 skipped** (no test code added; the new
+  router will be covered when the integration suite gains a DB-
+  enabled CI lane).
+
+**Out of scope (next polish)**:
+
+- Watchlist sortable columns + notes editing inline.
+- Stock comparison: ability to compare across sectors (currently
+  scoped to single sector since impact-breakdown is per-sector).
+- Auto-popup of page tour on first visit per page (currently
+  opt-in only). The right heuristic is unclear — too aggressive and
+  it's annoying, too quiet and nobody discovers it.
+- Focus trap on the admin app modals (PromoteToDraftButton,
+  AddNodeModal). Same hook, just not yet plumbed.
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

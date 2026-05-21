@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { Suspense, type ReactNode } from "react";
 
 import { OnboardingModal } from "./header/onboarding-modal";
+import { PageTour } from "./header/page-tour";
 import { SiteHeader } from "./header/site-header";
 
 export const metadata: Metadata = {
@@ -21,10 +22,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <Suspense fallback={<header className="h-12 border-b border-neutral-800" />}>
           <SiteHeader />
         </Suspense>
-        {children}
+        <div id="main">{children}</div>
         {/* OnboardingModal is client-side; it self-detects first-visit. */}
         <Suspense fallback={null}>
           <OnboardingModal />
+        </Suspense>
+        {/* PageTour adds a floating "📍 이 페이지 둘러보기" button on
+            every primary page that has tour content. Self-renders nothing
+            on routes without content (login / signup / admin). */}
+        <Suspense fallback={null}>
+          <PageTour />
         </Suspense>
       </body>
     </html>
