@@ -5,12 +5,14 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   fetchBasketStats,
+  fetchEquityFinancials,
   fetchEquityHistory,
   fetchEquityImpactScores,
   type BasketStats,
   type BasketStatsEquity,
   type Equity,
   type EquityDriverLink,
+  type EquityFinancialQuarter,
   type EquityHistoryBar,
 } from "@/lib/sim-client";
 
@@ -562,10 +564,185 @@ function Row({
                 />
               </div>
             </div>
+            <EquityFinancialsPanel equityId={equity.id} />
           </td>
         </tr>
       )}
     </>
+  );
+}
+
+/**
+ * Mock-seeded 8-quarter fundamentals (M10). Lazy-loaded when the row
+ * is expanded so we don't fetch financials for every visible equity.
+ * Rendered as four side-by-side mini bar charts: revenue, gross margin
+ * %, EBITDA, capex.
+ */
+function EquityFinancialsPanel({ equityId }: { equityId: string }) {
+  const [rows, setRows] = useState<EquityFinancialQuarter[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRows(null);
+    setError(null);
+    void fetchEquityFinancials(equityId, 8)
+      .then((r) => {
+        if (!cancelled) setRows(r);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [equityId]);
+
+  if (error) {
+    return (
+      <div className="mt-4 rounded border border-red-900/40 bg-red-950/30 p-3 text-xs text-red-300">
+        Financials 로드 실패: {error}
+      </div>
+    );
+  }
+  if (!rows) {
+    return (
+      <div className="mt-4 rounded border border-neutral-800 bg-neutral-900/40 p-3 text-xs text-neutral-500">
+        Financials 불러오는 중…
+      </div>
+    );
+  }
+  if (rows.length === 0) {
+    return null;
+  }
+
+  // Sort oldest → newest for left-to-right chart reading.
+  const sorted = [...rows].sort((a, b) =>
+    new Date(a.period_end).getTime() - new Date(b.period_end).getTime(),
+  );
+
+  const revenue = sorted.map((r) => r.revenue_usd ?? 0);
+  const grossMarginPct = sorted.map((r) =>
+    r.revenue_usd && r.gross_profit_usd
+      ? (r.gross_profit_usd / r.revenue_usd) * 100
+      : 0,
+  );
+  const ebitda = sorted.map((r) => r.ebitda_usd ?? 0);
+  const capex = sorted.map((r) => r.capex_usd ?? 0);
+
+  const sourceBadge =
+    sorted[0]!.source === "mock" ? (
+      <span className="rounded bg-amber-950/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-400">
+        Mock data
+      </span>
+    ) : null;
+
+  const labels = sorted.map((r) => `${String(r.fiscal_year).slice(2)}Q${r.fiscal_quarter}`);
+
+  return (
+    <div className="mt-5 border-t border-neutral-800 pt-4">
+      <div className="mb-2 flex items-center gap-2">
+        <h4 className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+          Financials · last {sorted.length} quarters
+        </h4>
+        {sourceBadge}
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <MiniBarChart label="Revenue (USD)" values={revenue} labels={labels} formatUsd compact />
+        <MiniBarChart
+          label="Gross margin %"
+          values={grossMarginPct}
+          labels={labels}
+          suffix="%"
+          compact
+        />
+        <MiniBarChart label="EBITDA (USD)" values={ebitda} labels={labels} formatUsd compact />
+        <MiniBarChart label="Capex (USD)" values={capex} labels={labels} formatUsd compact />
+      </div>
+      <p className="mt-2 text-[10px] text-neutral-600">
+        분기 펀더멘털 (mock) — `market_cap / 8` 앵커로 결정론적 walk. 실 DART/EDGAR 어댑터는
+        M10b 슬라이스에서 교체합니다.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Dependency-free SVG bar chart. Same visual budget as the inline
+ * sparkline — 4 of these fit alongside each other in the expanded row.
+ */
+function MiniBarChart({
+  label,
+  values,
+  labels,
+  formatUsd = false,
+  suffix = "",
+  compact = false,
+}: {
+  label: string;
+  values: number[];
+  labels: string[];
+  formatUsd?: boolean;
+  suffix?: string;
+  compact?: boolean;
+}) {
+  const width = 220;
+  const height = compact ? 64 : 90;
+  const padX = 8;
+  const padY = 12;
+  const barGap = 2;
+  const max = values.length ? Math.max(...values) : 0;
+  const safeMax = max > 0 ? max : 1;
+  const last = values[values.length - 1] ?? 0;
+
+  const formatVal = (v: number) => {
+    if (formatUsd) {
+      if (v >= 1e9) return `$${(v / 1e9).toFixed(1)}B`;
+      if (v >= 1e6) return `$${(v / 1e6).toFixed(0)}M`;
+      return `$${v.toFixed(0)}`;
+    }
+    return `${v.toFixed(1)}${suffix}`;
+  };
+
+  const innerW = width - padX * 2;
+  const innerH = height - padY * 2;
+  const barWidth = values.length ? (innerW - barGap * (values.length - 1)) / values.length : 0;
+
+  // Color: positive trend (last > first) → cyan, else neutral grey
+  const trendUp = values.length >= 2 && values[values.length - 1]! >= values[0]!;
+  const color = trendUp ? "rgb(34 211 238)" : "rgb(115 115 115)";
+
+  return (
+    <div className="rounded border border-neutral-800 bg-neutral-950/60 p-2">
+      <div className="mb-1 flex items-baseline justify-between gap-2">
+        <span className="text-[10px] uppercase tracking-wider text-neutral-500">{label}</span>
+        <span className="text-[11px] font-semibold tabular-nums text-neutral-200">
+          {formatVal(last)}
+        </span>
+      </div>
+      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+        {values.map((v, i) => {
+          const h = Math.max(1, (v / safeMax) * innerH);
+          const x = padX + i * (barWidth + barGap);
+          const y = padY + (innerH - h);
+          return (
+            <rect
+              key={i}
+              x={x}
+              y={y}
+              width={barWidth}
+              height={h}
+              fill={color}
+              fillOpacity={i === values.length - 1 ? 1 : 0.55}
+            />
+          );
+        })}
+      </svg>
+      <div className="mt-1 flex justify-between text-[9px] text-neutral-600">
+        <span>{labels[0]}</span>
+        <span>{labels[labels.length - 1]}</span>
+      </div>
+    </div>
   );
 }
 

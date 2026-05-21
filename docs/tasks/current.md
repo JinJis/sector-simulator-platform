@@ -1245,6 +1245,81 @@ when the editor surfaces them.
 - space-data-center + sofc choke-point refactor (defer until the
   editor exposes their edges to users — premature without UI demand)
 
+#### Equities Milestone 10 — EquityFinancial domain (mock-seeded) (2026-05-21)
+
+Closes the Phase 2 epic train: each equity now carries 8 quarters of
+mock-seeded fundamentals (revenue, COGS, gross_profit, opex, EBITDA,
+net_income, capex). DART/EDGAR real-data adapter splits to M10b.
+
+**Schema** (`packages/db/prisma/schema.prisma` + migration
+`20260522030000_equity_financials/migration.sql`):
+
+```prisma
+model EquityFinancial {
+  equity_id      String
+  fiscal_year    Int
+  fiscal_quarter Int       // 1..4
+  period_end     DateTime  @db.Date
+  revenue_usd, cogs_usd, gross_profit_usd, opex_usd,
+  ebitda_usd, net_income_usd, capex_usd: Float?
+  source         String   @default("mock")
+  @@id([equity_id, fiscal_year, fiscal_quarter])
+}
+```
+
+**Mock generator** (`packages/db/src/mock-financials.ts`):
+- Anchor: `market_cap_usd / 8` as rough quarterly revenue baseline
+- Quarterly growth: ~2.4% (≈ 10%/yr) compounded back from "today"
+- Per-equity margins drawn from deterministic mulberry32 PRNG seeded
+  by `hash(ticker || exchange || "financials")`:
+  - gross margin 25-45%
+  - opex (R&D + SG&A) 10-22% of revenue
+  - capex 10-30% of revenue
+  - tax + depreciation drag 30-45% of EBITDA
+- Each quarter wobbles ±3% off the trend line
+- Accounting identities preserved: `revenue = cogs + gross_profit`,
+  `ebitda = gross_profit - opex`
+
+**Mock seed** (`packages/db/prisma/seed-equity-financials.ts`): for
+every equity with non-null `market_cap_usd`, deletes prior
+`source="mock"` rows then bulk inserts the regenerated series.
+Idempotent. Wired into `db-migrate` compose chain after
+`seed:equity-quotes`.
+
+**tRPC** (`equity.financials({ id, quarters?: 8 })`): returns array
+sorted by `period_end` desc.
+
+**Web** (equities-table.tsx):
+- New `EquityFinancialsPanel` lazy-loaded on row expansion
+- New `MiniBarChart` dependency-free SVG component (4 charts:
+  Revenue / Gross margin % / EBITDA / Capex)
+- "Mock data" amber badge in the section header
+- Auto-color: cyan when last >= first (positive trend), grey
+  otherwise
+
+**Tests** (`packages/db/tests/mock-financials.test.ts`): 15 vitest
+cases — quarter-end dates, 8-quarter default, determinism per
+ticker, distinct per ticker, scale matches anchor ±20%, growth
+within ±2pp of configured, accounting identities, capex
+fractional bounds, missing-anchor degradation, quarters override,
+endYear/endQuarter override, fiscal_quarter ∈ [1,4].
+
+**Verification:**
+
+- TS typecheck (5 workspaces) clean
+- `@platform/db` vitest: 32/32 pass (17 quotes + 15 financials)
+- `sector-service` vitest: 45 pass / 26 skipped (unchanged)
+- `simulation-service` pytest: 61 pass (unchanged)
+- **Cumulative: 200 + 17 skipped** (+15 from M9 baseline).
+
+**Out of scope (M10b → future):**
+
+- DART OPEN API adapter for KR fiscal data
+- SEC EDGAR XBRL Facts adapter for US 10-K / 10-Q
+- `source = "dart"` / `source = "edgar"` variants alongside mock
+- data-pipeline refresh job for quarterly cadence
+- Reconciliation: warn when mock and real values diverge >50%
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

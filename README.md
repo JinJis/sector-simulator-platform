@@ -151,9 +151,10 @@ pnpm db:migrate:deploy       # prisma migrate deploy — production-safe variant
 pnpm db:migrate:reset        # drop + recreate (DEV ONLY)
 pnpm db:seed                 # upsert 3 sectors
 pnpm db:seed:equities        # upsert 49 equity rows
-pnpm db:seed:equity-quotes   # generate 49 × 90 = 4,410 mock daily bars (deterministic)
-pnpm db:seed:graph           # bootstrap GraphNode + GraphEdge from each sim's SimGraph literal
-pnpm db:seed:graph-equities  # promote SectorEquity rows to GraphNode(kind="equity") + driver→equity edges
+pnpm db:seed:equity-quotes        # generate 49 × 90 = 4,410 mock daily bars (deterministic)
+pnpm db:seed:equity-financials    # generate 49 × 8 = 392 mock quarterly financial rows (deterministic)
+pnpm db:seed:graph                # bootstrap GraphNode + GraphEdge from each sim's SimGraph literal
+pnpm db:seed:graph-equities       # promote SectorEquity rows to GraphNode(kind="equity") + driver→equity edges
 pnpm db:studio               # Prisma Studio at :5555
 pnpm db:logs                 # tail postgres logs
 pnpm db:down                 # stop postgres (data persists in named volume)
@@ -238,12 +239,13 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **Equities M7** | Graph topology in DB — `GraphNode` + `GraphEdge` + `AuditLog` Prisma models, `graph.*` tRPC procedures (get / upsertNode / upsertEdge / delete / reset), `seed-graph.ts` bootstraps from each sim's Python `SimGraph` literal. New `graph-bootstrap` compose service. Web prefers DB graph with Python fallback. |
 | **Equities M8** | Equity nodes inside the causal graph — each `SectorEquity` becomes a `GraphNode(kind="equity")` with edges from drivers (weights derived from sign × magnitude). Four-column graph layout (driver / intermediate / output / equity). Pure-math impliedImpact via `graph-impact.ts`. |
 | **Equities M9** | Hybrid edge weights end-to-end — `EdgeWeights` in SDK, `memory-semi` sim refactored at 14 choke points, `sim.run` forwards `graph_edges` from DB → simulation-service. New `equity.impactScores` tRPC walks graph to score per-equity impliedImpact. Equity projections now move with edge weight edits. |
+| **Equities M10** | `EquityFinancial` mock-seeded domain — 8 quarters × 49 equities (revenue, COGS, gross profit, opex, EBITDA, net income, capex). Deterministic per-ticker margins; accounting identities preserved. `equity.financials` tRPC + lazy-loaded Financials panel in expand row with 4 SVG bar charts. Real DART/EDGAR adapters deferred to M10b. |
 
 ### In progress
 
 | | Scope |
 |---|---|
-| **M10** | `EquityFinancial` domain (mock-seeded, 8 quarters × 49 equities). DART/EDGAR adapters split to M10b. |
+| _epic complete — next pick TBD_ ||
 
 (Approved plan: `.claude/plans/fluffy-plotting-hanrahan.md`.)
 

@@ -292,6 +292,18 @@ export async function fetchBasketStats(
   );
 }
 
+export type EquityFinancialQuarter = RouterOutput["equity"]["financials"][number];
+
+export async function fetchEquityFinancials(
+  id: string,
+  quarters: number = 8,
+): Promise<EquityFinancialQuarter[]> {
+  return rethrow(
+    () => trpc.equity.financials.query({ id, quarters }),
+    `fetchEquityFinancials(${id})`,
+  );
+}
+
 export type EquityImpactScores = RouterOutput["equity"]["impactScores"];
 
 /**

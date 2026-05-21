@@ -97,12 +97,46 @@ model SectorEquity {
   updated_at          DateTime @updatedAt        @map("updated_at")
 
   quotes              EquityQuote[]
+  financials          EquityFinancial[]
   graph_nodes         GraphNode[]
 
   @@unique([sector_slug, ticker, exchange])
   @@index([sector_slug])
   @@index([iso_country])
   @@map("sector_equities")
+}
+
+model EquityFinancial {
+  // Phase 2 epic milestone 10: quarterly fundamentals per equity.
+  // Mock-seeded for now (anchor on `market_cap_usd / 8` with deterministic
+  // per-equity walk); DART/EDGAR adapters land as a follow-up M10b slice.
+  //
+  // Composite PK on (equity_id, fiscal_year, fiscal_quarter). Both fields
+  // are denormalized alongside `period_end` so dashboards can group by
+  // quarter without recomputing.
+
+  equity_id      String   @map("equity_id")
+  fiscal_year    Int      @map("fiscal_year")
+  fiscal_quarter Int      @map("fiscal_quarter")  // 1..4
+
+  period_end     DateTime @map("period_end") @db.Date
+
+  revenue_usd       Float?   @map("revenue_usd")
+  cogs_usd          Float?   @map("cogs_usd")
+  gross_profit_usd  Float?   @map("gross_profit_usd")
+  opex_usd          Float?   @map("opex_usd")
+  ebitda_usd        Float?   @map("ebitda_usd")
+  net_income_usd    Float?   @map("net_income_usd")
+  capex_usd         Float?   @map("capex_usd")
+
+  source         String   @default("mock")
+  inserted_at    DateTime @default(now()) @map("inserted_at")
+
+  equity SectorEquity @relation(fields: [equity_id], references: [id], onDelete: Cascade)
+
+  @@id([equity_id, fiscal_year, fiscal_quarter])
+  @@index([equity_id, period_end(sort: Desc)])
+  @@map("equity_financials")
 }
 
 model EquityQuote {

@@ -62,6 +62,25 @@ const HistoryBarOut = z.object({
   volume: z.number().nullable(),
 });
 
+const FinancialQuarterOut = z.object({
+  fiscal_year: z.number().int(),
+  fiscal_quarter: z.number().int().min(1).max(4),
+  period_end: z.date(),
+  revenue_usd: z.number().nullable(),
+  cogs_usd: z.number().nullable(),
+  gross_profit_usd: z.number().nullable(),
+  opex_usd: z.number().nullable(),
+  ebitda_usd: z.number().nullable(),
+  net_income_usd: z.number().nullable(),
+  capex_usd: z.number().nullable(),
+  source: z.string(),
+});
+
+const FinancialsInput = z.object({
+  id: z.string().min(1),
+  quarters: z.number().int().positive().max(40).default(8),
+});
+
 export const equityRouter = router({
   listForSector: publicProcedure
     .input(ListInput)
@@ -208,6 +227,25 @@ export const equityRouter = router({
         },
       });
       return rows as z.infer<typeof HistoryBarOut>[];
+    }),
+
+  financials: publicProcedure
+    .input(FinancialsInput)
+    .output(z.array(FinancialQuarterOut))
+    .query(async ({ ctx, input }) => {
+      const exists = await ctx.prisma.sectorEquity.findUnique({
+        where: { id: input.id },
+        select: { id: true },
+      });
+      if (!exists) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `equity ${input.id}` });
+      }
+      const rows = await ctx.prisma.equityFinancial.findMany({
+        where: { equity_id: input.id },
+        orderBy: { period_end: "desc" },
+        take: input.quarters,
+      });
+      return rows as z.infer<typeof FinancialQuarterOut>[];
     }),
 
   impactScores: publicProcedure
