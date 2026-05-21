@@ -96,7 +96,8 @@ This README is the **operational orientation**. For product vision/personas/busi
 - **49 hand-curated listings** (17 memory-semi + 15 space-data-center + 17 sofc) across NASDAQ / NYSE / KOSPI / KOSDAQ.
 - Each row carries editorial **`driver_links`** (which sim drivers affect this stock + sign + magnitude).
 - **`impliedImpact`** score: `100 × tanh(Σ((cur-def)/|def| × sign × magnitude) × 100 / 100)`. Editorial directional cue, not econometric.
-- **90d sparklines** loaded lazily; period return % chip color-coded.
+- **90d sparklines** loaded lazily; period return % chip color-coded; **β chip** vs sector basket.
+- Expand row: dual sparkline (equity vs equal-weighted sector basket) + stats grid (β / α / σ / max DD / R²).
 - Daily snapshot refresh via `data-pipeline:8003` cron (08:30 UTC = 17:30 KST).
 - 90-day history refresh on demand (POST `/jobs/refresh-quote-history`).
 
@@ -227,12 +228,13 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **Equities M1** | `SectorEquity` schema + 49 US/KR seed + analyst-grade table UI + impliedImpact score |
 | **Equities M2** | `data-pipeline` service + yfinance adapter + daily snapshot refresh job |
 | **Equities M3** | `EquityQuote` time-series + 90d sparkline ingest + inline sparkline column |
+| **Equities M4** | Per-equity β / α / σ / max DD vs equal-weighted sector basket + dual sparkline overlay in expand view |
 
 ### In progress
 
 | | Scope |
 |---|---|
-| **Equities M4** | Price-driver regression — β / α / σ / max DD vs equal-weighted sector basket + dual sparkline overlay |
+| _next pick TBD — see options at the end of `docs/tasks/current.md`_ ||
 
 ### Deferred (Phase 3+)
 

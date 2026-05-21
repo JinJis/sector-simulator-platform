@@ -4,7 +4,10 @@ import { Sparkline } from "@platform/ui";
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  fetchBasketStats,
   fetchEquityHistory,
+  type BasketStats,
+  type BasketStatsEquity,
   type Equity,
   type EquityDriverLink,
   type EquityHistoryBar,
@@ -14,6 +17,8 @@ interface Props {
   equities: Equity[];
   defaults: Record<string, number>;
   driverValues: Record<string, number>;
+  /** Set by the page: needed to fetch sector-wide basketStats. */
+  sectorSlug: string;
 }
 
 type CountryFilter = "all" | "US" | "KR";
@@ -84,7 +89,7 @@ const COUNTRY_LABEL: Record<CountryFilter, string> = {
   KR: "🇰🇷 KR",
 };
 
-export function EquitiesTable({ equities, defaults, driverValues }: Props) {
+export function EquitiesTable({ equities, defaults, driverValues, sectorSlug }: Props) {
   const [country, setCountry] = useState<CountryFilter>("all");
   const [sort, setSort] = useState<SortKey>("editorial");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -97,10 +102,17 @@ export function EquitiesTable({ equities, defaults, driverValues }: Props) {
     Record<string, EquityHistoryBar[] | null>
   >({});
 
+  // Sector-wide basket statistics (β / α / σ / max DD vs equal-weighted
+  // basket of all equities in the sector + the basket's cumulative index
+  // curve for the overlay sparkline). Computed server-side from quote
+  // history; matches the per-equity history we fetch separately.
+  const [basket, setBasket] = useState<BasketStats | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     // Reset so a sector-switch doesn't show the old basket's bars.
     setHistories({});
+    setBasket(null);
     void Promise.all(
       equities.map(async (e) => {
         try {
@@ -114,10 +126,25 @@ export function EquitiesTable({ equities, defaults, driverValues }: Props) {
       if (cancelled) return;
       setHistories(Object.fromEntries(pairs));
     });
+    void fetchBasketStats(sectorSlug, 90)
+      .then((r) => {
+        if (!cancelled) setBasket(r);
+      })
+      .catch(() => {
+        if (!cancelled) setBasket({ sector_slug: sectorSlug, days: 90, basket: [], equities: [] });
+      });
     return () => {
       cancelled = true;
     };
-  }, [equities]);
+  }, [equities, sectorSlug]);
+
+  // Index basket stats by equity_id for O(1) row lookup.
+  const basketByEquity = useMemo(() => {
+    const m = new Map<string, BasketStatsEquity>();
+    if (!basket) return m;
+    for (const s of basket.equities) m.set(s.equity_id, s);
+    return m;
+  }, [basket]);
 
   // Pre-compute impact once per render — sorting + display both need it.
   const enriched = useMemo(
@@ -270,6 +297,8 @@ export function EquitiesTable({ equities, defaults, driverValues }: Props) {
                   score={score}
                   activeLinks={activeLinks}
                   history={histories[equity.id] ?? null}
+                  basketStats={basketByEquity.get(equity.id) ?? null}
+                  basketIndex={basket?.basket ?? null}
                   expanded={expanded}
                   onToggle={() => setExpandedId(expanded ? null : equity.id)}
                   defaults={defaults}
@@ -296,6 +325,8 @@ function Row({
   score,
   activeLinks,
   history,
+  basketStats,
+  basketIndex,
   expanded,
   onToggle,
   defaults,
@@ -305,6 +336,8 @@ function Row({
   score: number;
   activeLinks: number;
   history: EquityHistoryBar[] | null;
+  basketStats: BasketStatsEquity | null;
+  basketIndex: BasketStats["basket"] | null;
   expanded: boolean;
   onToggle: () => void;
   defaults: Record<string, number>;
@@ -374,7 +407,7 @@ function Row({
           </span>
         </td>
         <td className="px-3 py-2.5 align-top">
-          <TrendCell history={history} returnPct={periodReturnPct} />
+          <TrendCell history={history} returnPct={periodReturnPct} beta={basketStats?.beta ?? null} />
         </td>
         <td className="px-3 py-2.5 text-right align-top tabular-nums">
           <ExposureBar pct={equity.sector_exposure_pct} />
@@ -442,12 +475,14 @@ function Row({
               </div>
               <div>
                 <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-                  Price history (90d)
+                  Price history (90d) · vs sector basket
                 </h4>
                 <ExpandedHistoryPanel
                   history={history}
                   currency={equity.currency}
                   periodReturnPct={periodReturnPct}
+                  basketStats={basketStats}
+                  basketIndex={basketIndex}
                 />
               </div>
             </div>
@@ -534,9 +569,11 @@ function DriverDetailRow({
 function TrendCell({
   history,
   returnPct,
+  beta,
 }: {
   history: EquityHistoryBar[] | null;
   returnPct: number | null;
+  beta: number | null;
 }) {
   if (history === null) {
     return <span className="text-[11px] text-neutral-600">…</span>;
@@ -560,10 +597,20 @@ function TrendCell({
         filled
         ariaLabel={`90-day price trend, ${returnPct.toFixed(1)}%`}
       />
-      <span className={`text-[11px] tabular-nums ${color}`}>
-        {returnPct > 0 ? "+" : ""}
-        {returnPct.toFixed(1)}%
-      </span>
+      <div className="flex flex-col leading-tight">
+        <span className={`text-[11px] tabular-nums ${color}`}>
+          {returnPct > 0 ? "+" : ""}
+          {returnPct.toFixed(1)}%
+        </span>
+        {beta !== null && (
+          <span
+            className="text-[9px] uppercase tracking-wider text-neutral-500 tabular-nums"
+            title="Beta vs equal-weighted sector basket"
+          >
+            β {beta.toFixed(2)}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -572,10 +619,14 @@ function ExpandedHistoryPanel({
   history,
   currency,
   periodReturnPct,
+  basketStats,
+  basketIndex,
 }: {
   history: EquityHistoryBar[] | null;
   currency: string | null;
   periodReturnPct: number | null;
+  basketStats: BasketStatsEquity | null;
+  basketIndex: BasketStats["basket"] | null;
 }) {
   if (history === null) {
     return (
@@ -598,21 +649,45 @@ function ExpandedHistoryPanel({
     );
   }
 
-  const values = history.map((b) => b.close_local);
   const first = history[0]!;
   const last = history[history.length - 1]!;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+
+  // Normalize both the equity and the basket to a common base of 100 so
+  // the dual sparkline shows percentage trajectories — comparing absolute
+  // prices vs an index curve would be visually meaningless.
+  const equityBase = first.close_local;
+  const equityNormalized = history.map((b) => (b.close_local / equityBase) * 100);
+
+  // Align basket dates with equity dates (basket may have a slightly
+  // different calendar — use the dates that exist in both).
+  const equityDates = new Set(history.map((b) => fmtDate(b.trade_date)));
+  const overlayValues = basketIndex
+    ? basketIndex.filter((p) => equityDates.has(p.trade_date)).map((p) => p.basket_index)
+    : undefined;
+
+  const min = Math.min(...history.map((b) => b.close_local));
+  const max = Math.max(...history.map((b) => b.close_local));
 
   return (
     <div className="rounded border border-neutral-900 bg-neutral-950/40 p-3">
       <Sparkline
-        values={values}
+        values={equityNormalized}
+        overlayValues={overlayValues && overlayValues.length >= 2 ? overlayValues : undefined}
         width={280}
         height={60}
         filled
-        ariaLabel={`90-day price trend`}
+        ariaLabel={`90-day price vs sector basket`}
       />
+      {overlayValues && overlayValues.length >= 2 && (
+        <div className="mt-1 flex items-center gap-3 text-[9px] uppercase tracking-wider text-neutral-600">
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-0.5 w-3 bg-cyan-300" /> 종목
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-0.5 w-3 border-t border-dashed border-neutral-500" /> 섹터 바스켓
+          </span>
+        </div>
+      )}
       <dl className="mt-2 grid grid-cols-3 gap-2 text-[10px] uppercase tracking-wider text-neutral-500">
         <Stat
           label="period return"
@@ -634,10 +709,66 @@ function ExpandedHistoryPanel({
         <Stat label="min" value={formatLocalPrice(min, currency)} />
         <Stat label="max" value={formatLocalPrice(max, currency)} />
       </dl>
+
+      {basketStats && (
+        <dl className="mt-3 grid grid-cols-4 gap-2 border-t border-neutral-900 pt-3 text-[10px] uppercase tracking-wider text-neutral-500">
+          <Stat
+            label="β vs basket"
+            value={basketStats.beta !== null ? basketStats.beta.toFixed(2) : "—"}
+          />
+          <Stat
+            label="α (ann %)"
+            value={
+              basketStats.alpha_annual_pct !== null
+                ? `${basketStats.alpha_annual_pct > 0 ? "+" : ""}${basketStats.alpha_annual_pct.toFixed(1)}`
+                : "—"
+            }
+            tone={
+              basketStats.alpha_annual_pct === null
+                ? undefined
+                : basketStats.alpha_annual_pct > 0
+                  ? "pos"
+                  : basketStats.alpha_annual_pct < 0
+                    ? "neg"
+                    : undefined
+            }
+          />
+          <Stat
+            label="vol (ann %)"
+            value={
+              basketStats.volatility_annual_pct !== null
+                ? basketStats.volatility_annual_pct.toFixed(1)
+                : "—"
+            }
+          />
+          <Stat
+            label="max DD"
+            value={
+              basketStats.max_drawdown_pct !== null
+                ? `−${basketStats.max_drawdown_pct.toFixed(1)}%`
+                : "—"
+            }
+            tone={
+              basketStats.max_drawdown_pct !== null && basketStats.max_drawdown_pct > 0
+                ? "neg"
+                : undefined
+            }
+          />
+        </dl>
+      )}
+
       <p className="mt-2 text-[10px] text-neutral-600">
         {fmtDate(first.trade_date)} → {fmtDate(last.trade_date)} · {history.length}
         {" "}
         bars
+        {basketStats && basketStats.bars_used > 0 && (
+          <>
+            {" · "}β·α fit on {basketStats.bars_used} aligned returns
+            {basketStats.r_squared !== null && (
+              <> · R² {basketStats.r_squared.toFixed(2)}</>
+            )}
+          </>
+        )}
       </p>
     </div>
   );

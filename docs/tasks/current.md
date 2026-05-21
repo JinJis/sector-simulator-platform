@@ -766,6 +766,79 @@ curl -X POST http://localhost:8003/jobs/refresh-quote-history?days=90  # history
 - Quote refresh scheduler split (snapshot vs history can run on
   different cadences)
 
+### Equities Milestone 4 — basket β/α/σ/MDD + dual sparkline (2026-05-21)
+
+Adds the analytical leg on top of M3's time-series. Each equity now
+gets per-sector β/α/σ/max-DD measured against an equal-weighted basket
+of every equity in its sector, plus a dual sparkline (equity vs basket)
+in the expand panel.
+
+This is the "price-driver regression" piece, kept honest about its
+scope — we're correlating equities against a peer basket, not against
+slider state. Mapping slider state → projected price line is even
+further (model layer) and is deliberately deferred.
+
+**Pure math** (`services/sector-service/src/lib/stats.ts`):
+
+- Generic descriptive: `mean / variance / stdev / covariance / correlation`
+- Series helpers: `dailyReturns / cumulativeIndex / maxDrawdown`
+- CAPM fit: `fitCapm(equity_r, basket_r) → { beta, alpha_annual_pct, r_squared }`
+- Aggregator: `computeBasketStats(series[]) → { basket, equities[] }`
+  - Basket date axis = union of *bar* dates (not return dates) so
+    visually aligns from day 0 with any equity's price chart
+  - First entry: `basket_index = 100` on the earliest date; compounds
+    by mean of available equity returns each subsequent date
+  - Per-equity CAPM fit uses only dates where both that equity and
+    the basket have a return (skips holiday-asymmetric calendars)
+
+**Tests** (`tests/stats.test.ts`, 17 cases): descriptive stats edge
+cases, CAPM β=1/2/null sanity, KR-holiday alignment, monotonic-up
+no-drawdown, empty/single-bar graceful nulls.
+
+**tRPC**: `equity.basketStats({ sector_slug, days?: 90 })` →
+`{ basket: { trade_date, basket_index }[], equities: { id, return_pct,
+volatility_annual_pct, max_drawdown_pct, beta, alpha_annual_pct,
+r_squared, bars_used }[] }`. Single Postgres round-trip per call:
+one `findMany` over sector_equities + one over equity_quotes (filtered
+by `equity_id IN (...)`), then math in-process.
+
+**Sparkline overlay** (`@platform/ui/sparkline`): new optional
+`overlayValues[]` + `overlayStroke` props. Drawn dashed neutral-500
+behind the primary line; both series share the same y-domain so the
+comparison is honest. Caller normalizes both to base-100 before
+passing (see expand panel below).
+
+**UI** (`apps/web/src/app/sectors/[slug]/equities/equities-table.tsx`):
+
+- Mount-time `fetchBasketStats(sectorSlug, 90)` in parallel with the
+  per-equity history fetches. Indexed by equity_id for O(1) row lookup.
+- Trend column: β chip added under the period-return chip (uppercase
+  small caps, "β 1.24").
+- Expand panel re-laid-out:
+  - Dual sparkline (280×60): equity normalized to base 100 +
+    basket index dashed overlay. Legend row beneath ("종목" /
+    "섹터 바스켓").
+  - First stats grid (3-up): period return / min / max.
+  - Second stats grid (4-up, only when basketStats present):
+    β vs basket / α annualized % / volatility annualized % / max DD.
+  - Footer line: date range · bars count · `β·α fit on N aligned
+    returns · R² 0.xx`.
+
+**Tally**
+- sector-service vitest: 36 (was 19 + 17 stats)
+- agent-orchestration: 35 + 2 skipped
+- simulation-service: 55
+- data-pipeline: 27
+- **total: 153 + 2 skipped**
+
+**Deferred to a future slice (still M5/M6 stuff)**:
+- Slider-state → projected price overlay (forward dotted line from
+  today's close to today × (1 + impliedImpact-derived target))
+- True historical FX series for past close_usd backfill (FRED)
+- Sector-rotation / factor breakdown beyond the equal-weighted basket
+- Per-equity attribution showing which driver_links contributed to
+  realized return over the period
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

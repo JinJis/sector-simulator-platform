@@ -10,6 +10,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { computeBasketStats } from "../lib/stats.js";
 import { publicProcedure, router } from "./init.js";
 
 const DriverLink = z.object({
@@ -91,6 +92,88 @@ export const equityRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: `equity ${input.id}` });
       }
       return row as z.infer<typeof EquityOut>;
+    }),
+
+  basketStats: publicProcedure
+    .input(
+      z.object({
+        sector_slug: z.string().min(1),
+        days: z.number().int().positive().max(1825).default(90),
+      }),
+    )
+    .output(
+      z.object({
+        sector_slug: z.string(),
+        days: z.number(),
+        basket: z.array(
+          z.object({ trade_date: z.string(), basket_index: z.number() }),
+        ),
+        equities: z.array(
+          z.object({
+            equity_id: z.string(),
+            return_pct: z.number().nullable(),
+            volatility_annual_pct: z.number().nullable(),
+            max_drawdown_pct: z.number().nullable(),
+            beta: z.number().nullable(),
+            alpha_annual_pct: z.number().nullable(),
+            r_squared: z.number().nullable(),
+            bars_used: z.number().int(),
+          }),
+        ),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const since = new Date();
+      since.setUTCDate(since.getUTCDate() - input.days);
+
+      // Pull all equities in the sector + each one's quote history in a
+      // single round-trip. For ~20 equities × 90 bars this is fast — when
+      // the basket grows past a few hundred equities we'll move this
+      // aggregation into Postgres directly.
+      const equities = await ctx.prisma.sectorEquity.findMany({
+        where: { sector_slug: input.sector_slug },
+        select: { id: true },
+        orderBy: { ticker: "asc" },
+      });
+      const allQuotes = await ctx.prisma.equityQuote.findMany({
+        where: {
+          equity_id: { in: equities.map((e) => e.id) },
+          trade_date: { gte: since },
+        },
+        orderBy: [{ equity_id: "asc" }, { trade_date: "asc" }],
+        select: { equity_id: true, trade_date: true, close_local: true },
+      });
+
+      // Group by equity_id, preserving asc-by-date order.
+      const byEquity = new Map<
+        string,
+        { trade_date: string; close: number }[]
+      >();
+      for (const e of equities) byEquity.set(e.id, []);
+      for (const q of allQuotes) {
+        const arr = byEquity.get(q.equity_id);
+        if (arr) {
+          arr.push({
+            // Postgres DATE comes back as a Date — normalize to YYYY-MM-DD
+            // string for the stats helper's date-key alignment.
+            trade_date: q.trade_date.toISOString().slice(0, 10),
+            close: q.close_local,
+          });
+        }
+      }
+
+      const series = equities.map((e) => ({
+        equity_id: e.id,
+        bars: byEquity.get(e.id) ?? [],
+      }));
+      const result = computeBasketStats(series);
+
+      return {
+        sector_slug: input.sector_slug,
+        days: input.days,
+        basket: result.basket,
+        equities: result.equities,
+      };
     }),
 
   history: publicProcedure

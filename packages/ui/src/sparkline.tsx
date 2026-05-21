@@ -3,6 +3,15 @@ import type { CSSProperties } from "react";
 export interface SparklineProps {
   /** Values plotted left → right. Need at least 2 points to render a line. */
   values: number[];
+  /**
+   * Optional second series drawn behind the main line — dashed gray by
+   * default. Same length as `values`; gets normalized into the same
+   * y-range so the comparison is meaningful. Use for "equity vs sector
+   * basket" or any reference series.
+   */
+  overlayValues?: number[];
+  /** Stroke color for the overlay. Default neutral-500 dashed. */
+  overlayStroke?: string;
   /** SVG width in pixels. */
   width?: number;
   /** SVG height in pixels. */
@@ -31,6 +40,8 @@ export interface SparklineProps {
  */
 export function Sparkline({
   values,
+  overlayValues,
+  overlayStroke,
   width = 96,
   height = 28,
   stroke,
@@ -65,8 +76,14 @@ export function Sparkline({
     );
   }
 
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  // Pool both series when computing the y-domain so they share scale —
+  // makes "equity vs basket" comparisons honest. Overlay shorter than
+  // `values` is OK (gets clipped at its own length).
+  const overlayLen = overlayValues?.length ?? 0;
+  const useOverlay = overlayLen >= 2;
+  const allValues = useOverlay ? [...values, ...overlayValues!] : values;
+  const min = Math.min(...allValues);
+  const max = Math.max(...allValues);
   const span = max - min || 1;
   const padX = 2;
   const padY = 3;
@@ -91,6 +108,19 @@ export function Sparkline({
     ? `${path} L${(padX + (values.length - 1) * step).toFixed(2)} ${(padY + h).toFixed(2)} L${padX.toFixed(2)} ${(padY + h).toFixed(2)} Z`
     : null;
 
+  let overlayPath: string | null = null;
+  if (useOverlay) {
+    const ov = overlayValues!;
+    const ostep = w / (ov.length - 1);
+    overlayPath = ov
+      .map((v, i) => {
+        const x = padX + i * ostep;
+        const y = padY + h - ((v - min) / span) * h;
+        return `${i === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`;
+      })
+      .join(" ");
+  }
+
   const [lastX, lastY] = pts[pts.length - 1]!;
 
   return (
@@ -105,6 +135,18 @@ export function Sparkline({
     >
       {ariaLabel ? <title>{ariaLabel}</title> : null}
       {fillPath && <path d={fillPath} fill={color} fillOpacity={0.15} stroke="none" />}
+      {overlayPath && (
+        <path
+          d={overlayPath}
+          fill="none"
+          stroke={overlayStroke ?? "rgb(115 115 115)"}
+          strokeWidth={1}
+          strokeDasharray="3 2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity={0.85}
+        />
+      )}
       <path d={path} fill="none" stroke={color} strokeWidth={1.25} strokeLinecap="round" strokeLinejoin="round" />
       {showLastDot && (
         <circle cx={lastX} cy={lastY} r={1.75} fill={color} />

@@ -78,6 +78,8 @@ export type Scenario = RouterOutput["scenario"]["get"];
 export type Equity = RouterOutput["equity"]["get"];
 export type EquityDriverLink = Equity["driver_links"][number];
 export type EquityHistoryBar = RouterOutput["equity"]["history"][number];
+export type BasketStats = RouterOutput["equity"]["basketStats"];
+export type BasketStatsEquity = BasketStats["equities"][number];
 
 // ---------- Functional surface (unchanged shape) ----------
 //
@@ -191,6 +193,16 @@ export async function fetchEquityHistory(
   return rethrow(
     () => trpc.equity.history.query({ id, days }),
     `fetchEquityHistory(${id})`,
+  );
+}
+
+export async function fetchBasketStats(
+  sectorSlug: string,
+  days: number = 90,
+): Promise<BasketStats> {
+  return rethrow(
+    () => trpc.equity.basketStats.query({ sector_slug: sectorSlug, days }),
+    `fetchBasketStats(${sectorSlug})`,
   );
 }
 

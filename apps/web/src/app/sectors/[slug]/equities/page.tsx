@@ -59,6 +59,7 @@ export default function SectorEquitiesPage() {
       equities={equities}
       defaults={defaults}
       driverValues={driverValues}
+      sectorSlug={meta.slug}
     />
   );
 }
