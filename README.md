@@ -273,6 +273,19 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **Equities M10c** | Financials refinement — EDGAR `DepreciationAndAmortization` → true EBITDA. DART switches to `fnlttSinglAcntAll` (full statements) so KR equities now have capex + true EBITDA. Historical FX via free `FrankfurterFx` (ECB-sourced) — DART converts each quarter at its quarter-end rate. Weekly cron via `REFRESH_FINANCIALS_CRON` (default Sun 04:00 UTC). 14 new tests. |
 | **Equities M10d** | Financials breadth — DART `corpCode.xml` auto-discovery for unmapped KR tickers (lazy, cached, fetch-error tolerant). `EquityFinancial` schema gains `total_assets_usd` / `total_liabilities_usd` / `total_equity_usd` populated by both adapters (DART K-IFRS BS items + EDGAR instant facts via `_pick_instant_facts`). Frankfurter generalized to any base/target pair + `local_per_usd_factory` for non-KR future adapters. 21 new tests. |
 
+### Planned next (M14 → M19)
+
+Ordered top-down by dependency. M14 + M15 are pure-doc / content work — do them first so the bigger UX builds (M16, M17) land with framing in place.
+
+| | Scope |
+|---|---|
+| **M14** | README expansion — add Problem / Solution / Why-now / How sections. Reorder so investor narrative precedes architecture diagrams. |
+| **M15** | Per-page intent panels — every sector subpage (live / manual / graph / equities / sources) gets a "왜 보는가 + 무엇을 찾는가" intro card. Content lives in a central `page-intents.ts` for easy revision. |
+| **M16** | Home page / investor dashboard — new `/` route with unified search (sector / ticker / driver), trending sectors, biggest movers, recent scenarios, what's-changed feed pulling from `audit_logs`. Replaces the current redirect-only home. |
+| **M17** | Investment narrative UI — sector growth thesis + per-equity upside/downside grid + per-stock detail pages with "why this number" decomposition (driver × edge weight, ranked) + source citations. The main payoff. |
+| **M18** | Lifecycle review + audit history + monitoring — periodic deprecation/add review surface for drivers / equities / sims. **Always user-approved, never auto.** Audit log viewer + freshness/alarm panel for data feeds. |
+| **M19** | Graph UI quality polish — dagre auto-layout (no edge overlaps), visual differentiation by (color × thickness × dash × arrowhead) keyed to kind / weight / origin / sign. Equity nodes get a ticker pill + sparkline thumbnail. |
+
 ### In progress
 
 | | Scope |

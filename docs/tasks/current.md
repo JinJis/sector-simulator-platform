@@ -1751,6 +1751,163 @@ problem at current scale.
 - UI surfacing of balance-sheet bars in the equities table (the
   data lands now; viewing is a follow-up slice)
 
+---
+
+## Planned next (M14 → M19)
+
+Ordered by dependency + leverage. Each slice is independent enough to
+ship alone; do them top-down so foundational context (M14, M15) is in
+place before the bigger UX builds (M16, M17). M18 + M19 are quality /
+operational improvements that can interleave when needed.
+
+### M14 — README expansion (Problem / Solution / Why / How) — *do first*
+
+**Why first**: pure documentation, no code, immediate value. Without
+this anyone reading the repo sees architecture-first and misses the
+*purpose* of the platform.
+
+- Add **Problem** section to README.md: investors can't reliably
+  connect a sector's macro story to per-equity earnings impact —
+  research is fragmented across analyst notes, filings, and macro
+  data; nothing keeps the chain "macro driver → sector flow →
+  company P&L → stock price" coherent and current.
+- Add **Solution**: simulatable causal graphs per sector + live
+  data + per-equity impact derivation. Edit the graph, see prices
+  move. Backtest your thesis with historical data.
+- Add **Why now**: AI agents make it tractable to keep dozens of
+  sector graphs current; equities + financials data is more open
+  than ever (yfinance / EDGAR / DART); investor demand for fast
+  thesis iteration is high.
+- Add **How** (mechanism): hand-authored sims today, agent-generated
+  in Phase 3. Hybrid weights wire DB graph edits to outputs. Equity
+  impact = graph traversal over driver→equity edges.
+- Reorder so investor narrative comes before architecture
+  diagrams; architecture stays but moves below.
+
+### M15 — Per-page intent panels — *do second, content-heavy*
+
+**Why second**: still pure content; needs M14's framing established
+first so the per-page copy doesn't re-explain the basics. Each
+sector subpage gets a small intro card explaining "왜 보는가" and
+"무엇을 찾는가":
+
+- `/sectors/[slug]` overview — "this sector's growth thesis + main
+  drivers + key risks + how to interpret the panels below"
+- `/live` — "real-time driver drift; spot regime shifts before the
+  market does"
+- `/manual` — "stress-test your thesis by dialing drivers; output
+  charts re-run instantly"
+- `/graph` — "edit cause-and-effect; every change moves outputs and
+  per-equity impact in real time"
+- `/equities` — "key listed beneficiaries + per-name impact score
+  + 30d projection driven by current driver state"
+- `/sources` — "what data backs each driver; click through to
+  primary source"
+- `/scenarios` (when implemented) — "save + share named driver
+  configurations"
+- `/compare` — "diff two scenarios side-by-side"
+
+Each panel is collapsible (`<details>` element) so power users can
+hide them. Content lives in a single `apps/web/src/app/page-intents.ts`
+constants file so it's easy to revise centrally.
+
+### M16 — Home page / investor dashboard — *foundation for M17*
+
+**Why third**: the platform needs an entry door before we ship the
+narrative pages. Right now `/` is a redirect-only stub.
+
+New `/` route:
+
+- **Search** (top): unified search across sectors + equities +
+  drivers. Type "삼성전자" → jumps to the equity card; type
+  "memory" → jumps to memory-semi overview.
+- **Trending sectors** card grid: 3 sectors with a snapshot
+  (current basket β / 30d move / number of equities)
+- **Biggest movers (24h)**: top 5 equities by projected-impact
+  delta — surfaces what's worth attention right now
+- **Recent scenarios** carousel: 5 most-recently-saved scenarios
+  with author + key driver swings (encourages bookmark + share)
+- **What's changed**: feed pulling from `audit_logs` (M7-M9) —
+  "Anonymous tightened HBM premium edge to 1.4", "memory-semi
+  graph re-bootstrapped".
+- Sticky header with breadcrumbs once the user lands on a sector
+
+Out of scope here: user accounts, watchlists (need auth — Phase 4).
+
+### M17 — Investment narrative UI — *the main payoff*
+
+**Why fourth**: this is the platform's reason for existing. Depends on
+M16 to land users gracefully + M15 to set context per-page.
+
+For each sector (e.g. memory-semi):
+
+- **Growth thesis** card: 1-paragraph editorial summary + 3 key
+  drivers (with current-vs-default deltas) + 3 key blockers
+- **Sector basket trajectory** chart: where the equal-weighted basket
+  goes if current driver state holds (uses existing M9 sim outputs)
+- **Per-equity grid** with: ticker, current price, projected 30d
+  target (from M5 projection), upside / downside %, top 3
+  contributing drivers with arrows, confidence chip
+- **Narrative drill-down per equity**: clicking a stock opens a
+  dedicated `/sectors/[slug]/equities/[ticker]` page with:
+  - Price chart with projected target line + confidence cone
+  - "Why this number" — natural-language explanation of the impact
+    decomposition (driver × edge weight, ranked)
+  - Financials trends (M10) + balance-sheet ratios (M10d)
+  - Source citations (every claim links back to filings / driver
+    provenance)
+- Optional later: alerts when current state crosses a threshold the
+  user flagged
+
+### M18 — Lifecycle review + audit history + monitoring — *operational backbone*
+
+**Why fifth**: by this point we have 49+ equities, 4 sectors, 100+
+graph nodes. They'll drift — companies get acquired, drivers become
+irrelevant, sims become stale. The platform needs a review cadence,
+but **never auto** — every deprecation / addition requires explicit
+user approval.
+
+- **Periodic review surface** (`/admin/lifecycle`): weekly digest
+  of candidates for deprecation:
+  - Equities with stale price data > N days
+  - Drivers no driver_link references touched in N weeks
+  - Graph nodes with weight=1.0 unchanged since seed (suggests
+    they aren't pulling weight in the model)
+  - Sectors with no scenarios saved in 90 days
+- Each candidate shows the data backing the recommendation; the
+  user clicks **Approve** / **Defer** / **Keep**. No silent action.
+- **Audit history viewer** (`/admin/audit`): pageable view over
+  `audit_logs` (already being written since M7). Filters by
+  action / sector / author / date range.
+- **Monitoring panel** (`/admin/monitoring`): freshness signals
+  per data feed (yfinance, DART, EDGAR), last-success timestamp,
+  failure-reason aggregation, queued alarms when any source
+  hasn't refreshed in N hours.
+- All approvals write an `audit_logs` row with action = `lifecycle.*`
+
+### M19 — Graph UI quality polish — *quality, do alongside*
+
+**Why last (but parallelizable)**: M11 shipped a functional editor;
+M19 is visual polish. Can interleave with M17 if a frontend pair has
+bandwidth.
+
+- **No-overlap edge routing**: swap the hand-rolled column layout
+  for **dagre** (DAG auto-layout); fall back to **elk** if dagre's
+  output is too cramped at 50+ nodes. Edges become orthogonal
+  routes that re-flow when nodes are dragged.
+- **Visual differentiation by axis**:
+  - **Color** by `kind` of target (driver → intermediate: cyan;
+    → output: amber; → equity: gold; cross-kind: gradient)
+  - **Thickness** by `|weight|` (continuous, not just low/med/high)
+  - **Dash pattern** by `origin` (seed: solid; edit: dashed;
+    agent: dotted) so user edits are visually separable
+  - **Arrow head** by sign (filled for positive weights, hollow
+    for negative)
+- **Node visual**: kind chips + group color band; equity nodes get
+  a ticker pill + sparkline thumbnail inline (uses M3 sparkline).
+- **Edge labels**: only show at hover or zoom > 0.7 to avoid
+  clutter on overview view.
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14
