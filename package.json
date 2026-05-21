@@ -22,6 +22,7 @@
     "db:seed:equities": "pnpm --filter @platform/db seed:equities",
     "db:seed:equity-quotes": "pnpm --filter @platform/db seed:equity-quotes",
     "db:seed:graph": "pnpm --filter @platform/db seed:graph",
+    "db:seed:graph-equities": "pnpm --filter @platform/db seed:graph-equities",
     "db:studio": "pnpm --filter @platform/db studio",
     "db:up": "docker compose -f docker-compose.yml -f docker-compose.local.yml up -d postgres",
     "db:down": "docker compose -f docker-compose.yml -f docker-compose.local.yml stop postgres",

@@ -16,6 +16,7 @@
     "seed:equities": "tsx prisma/seed-equities.ts",
     "seed:equity-quotes": "tsx prisma/seed-equity-quotes.ts",
     "seed:graph": "tsx prisma/seed-graph.ts",
+    "seed:graph-equities": "tsx prisma/seed-graph-equities.ts",
     "studio": "prisma studio",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

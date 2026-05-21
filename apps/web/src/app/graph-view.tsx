@@ -116,13 +116,21 @@ export function GraphView({ meta, driverValues }: Props) {
             label={`intermediates (${counts.intermediate ?? 0})`}
           />
           <LegendDot color={KIND_COLORS.output} label={`outputs (${counts.output ?? 0})`} />
+          {counts.equity ? (
+            <LegendDot
+              color={KIND_COLORS.equity}
+              label={`equities (${counts.equity ?? 0})`}
+            />
+          ) : null}
           <span className="ml-auto text-[10px] text-neutral-600">
-            {graph.edges.length} edges · authored, agent-generated in a later slice
+            {graph.edges.length} edges · M9 wires weights into the sim
           </span>
         </div>
         <p>
-          왼쪽 드라이버 → 중간 계산 → 오른쪽 산출물로 흐르는 인과 그래프. 노드를 클릭하면
-          연결된 edge가 강조되고, drag로 위치 조정이 가능합니다.
+          드라이버 → 중간 계산 → 산출물 → 종목 영향도로 흐르는 인과 그래프.
+          종목 노드는 sector_equities 의 driver_links 를 graph_edges 로
+          끌어올린 결과이며, M9 에서 슬라이더 변경이 weighted 합으로
+          전파됩니다.
         </p>
       </div>
       <div className="h-[640px] overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
@@ -175,7 +183,7 @@ interface DriverNodeData {
 
 type KindStyle = { border: string; bg: string; accent: string };
 
-const KIND_COLORS: Record<"driver" | "intermediate" | "output", KindStyle> = {
+const KIND_COLORS: Record<"driver" | "intermediate" | "output" | "equity", KindStyle> = {
   driver: {
     border: "border-cyan-700/70",
     bg: "bg-cyan-950/70",
@@ -191,10 +199,21 @@ const KIND_COLORS: Record<"driver" | "intermediate" | "output", KindStyle> = {
     bg: "bg-amber-950/60",
     accent: "text-amber-300",
   },
+  equity: {
+    // Distinct from output amber — yellow/gold tints for "stock ticker".
+    border: "border-yellow-700/70",
+    bg: "bg-yellow-950/40",
+    accent: "text-yellow-300",
+  },
 };
 
 function colorFor(kind: string): KindStyle {
-  if (kind === "driver" || kind === "intermediate" || kind === "output") {
+  if (
+    kind === "driver" ||
+    kind === "intermediate" ||
+    kind === "output" ||
+    kind === "equity"
+  ) {
     return KIND_COLORS[kind];
   }
   return KIND_COLORS.intermediate;
@@ -242,12 +261,22 @@ function buildFlow(
   g: SimGraphResponse,
   driverValues: Record<string, number>,
 ): { nodes: Node<DriverNodeData>[]; edges: Edge[] } {
-  const COLS = { driver: 0, intermediate: 1, output: 2 } as const;
-  const COL_X = [40, 480, 980];
+  const COLS = { driver: 0, intermediate: 1, output: 2, equity: 3 } as const;
+  // x-positions for each column. Equity column sits to the right of
+  // outputs so the visual reads driver → math → outputs → market.
+  const COL_X = [40, 480, 980, 1280];
   const ROW_HEIGHT = 78;
+  // Equity rows are slimmer (no driver value, just ticker label) — pack
+  // them tighter so a 17-ticker basket doesn't blow the canvas height.
+  const EQUITY_ROW_HEIGHT = 56;
   const GROUP_GAP = 28;
 
-  const byCol: Record<string, GraphNode[]> = { driver: [], intermediate: [], output: [] };
+  const byCol: Record<string, GraphNode[]> = {
+    driver: [],
+    intermediate: [],
+    output: [],
+    equity: [],
+  };
   for (const n of g.nodes) {
     const col = (n.kind in COLS ? n.kind : "intermediate") as keyof typeof COLS;
     byCol[col]!.push(n);
@@ -265,6 +294,7 @@ function buildFlow(
   for (const col of Object.keys(byCol) as (keyof typeof COLS)[]) {
     let y = 30;
     let lastGroup: string | null = null;
+    const rowHeight = col === "equity" ? EQUITY_ROW_HEIGHT : ROW_HEIGHT;
     for (const n of byCol[col]!) {
       if (lastGroup !== null && n.group !== lastGroup) y += GROUP_GAP;
       lastGroup = n.group;
@@ -281,7 +311,7 @@ function buildFlow(
           value: n.kind === "driver" ? driverValues[n.id] : undefined,
         },
       });
-      y += ROW_HEIGHT;
+      y += rowHeight;
     }
   }
 

@@ -153,6 +153,7 @@ pnpm db:seed                 # upsert 3 sectors
 pnpm db:seed:equities        # upsert 49 equity rows
 pnpm db:seed:equity-quotes   # generate 49 × 90 = 4,410 mock daily bars (deterministic)
 pnpm db:seed:graph           # bootstrap GraphNode + GraphEdge from each sim's SimGraph literal
+pnpm db:seed:graph-equities  # promote SectorEquity rows to GraphNode(kind="equity") + driver→equity edges
 pnpm db:studio               # Prisma Studio at :5555
 pnpm db:logs                 # tail postgres logs
 pnpm db:down                 # stop postgres (data persists in named volume)
@@ -235,12 +236,12 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **Equities M5** | Slider → projected price — every equity's sparkline grows a dashed forward-30d line driven by `impliedImpact` × 0.3 |
 | **Equities M6** | Mock `EquityQuote` seed — deterministic 90d random walks anchored at each equity's snapshot close. Fresh `docker compose up` now ships ~4,410 quote rows; sparklines render without yfinance reachability. |
 | **Equities M7** | Graph topology in DB — `GraphNode` + `GraphEdge` + `AuditLog` Prisma models, `graph.*` tRPC procedures (get / upsertNode / upsertEdge / delete / reset), `seed-graph.ts` bootstraps from each sim's Python `SimGraph` literal. New `graph-bootstrap` compose service. Web prefers DB graph with Python fallback. |
+| **Equities M8** | Equity nodes inside the causal graph — each `SectorEquity` becomes a `GraphNode(kind="equity")` with edges from drivers (weights derived from sign × magnitude). Four-column graph layout (driver / intermediate / output / equity). Pure-math impliedImpact via `graph-impact.ts`. |
 
 ### In progress
 
 | | Scope |
 |---|---|
-| **M8** | Equity nodes inside the causal graph — each `SectorEquity` becomes a `GraphNode(kind="equity")` with edges from drivers ⇒ four-column graph layout |
 | **M9** | Hybrid sim weights — Python `simulate()` multiplies by DB edge weights at choke points so graph edits move outputs in real time; equity `impliedImpact` becomes server-side graph traversal |
 | **M10** | `EquityFinancial` domain (mock-seeded, 8 quarters × 49 equities). DART/EDGAR adapters split to M10b. |
 

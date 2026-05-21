@@ -69,7 +69,7 @@ services:
     command:
       - sh
       - -c
-      - "echo '[graph-bootstrap] waiting 5s for simulation-service…' && sleep 5 && pnpm --filter @platform/db seed:graph"
+      - "echo '[graph-bootstrap] waiting 5s for simulation-service…' && sleep 5 && pnpm --filter @platform/db seed:graph && pnpm --filter @platform/db seed:graph-equities"
     working_dir: /repo
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}

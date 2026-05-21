@@ -1079,6 +1079,80 @@ log row count. DB-required; auto-skips when Postgres is unreachable
 - Python sim actually consuming `weight` at runtime (M9)
 - Removing the `sim.graph` upstream proxy (cleanup post-M9)
 
+#### Equities Milestone 8 — Equity nodes inside the graph (2026-05-21)
+
+Each `SectorEquity` row is promoted to a first-class
+`GraphNode(kind="equity")`. The `driver_links` JSONB that M1 used as
+an editorial overlay becomes a set of `GraphEdge` rows with weights
+derived from `sign × magnitude`. The renderer learns about a new
+fourth column on the right of the existing driver → intermediate →
+output flow.
+
+**Seed** (`packages/db/prisma/seed-graph-equities.ts`): for every
+equity, upsert one `GraphNode(kind="equity", equity_id=…)` keyed
+`equity_<TICKER>_<EXCHANGE>` + one `GraphEdge` per `driver_links`
+entry. Weight mapping reproduces the M1 magnitudeWeight exactly so
+M9's graph-traversal score doesn't shift the UX:
+
+```
+magnitude_weight = {low: 0.5, med: 1.0, high: 2.0}
+weight = sign * magnitude_weight   # sign ∈ {+1, -1}
+```
+
+Edges whose `driver_links.driver` doesn't match any seeded driver
+node are skipped with a log warning (catches stale hand-typed
+references). Hooked into the `graph-bootstrap` compose service
+chain after `seed:graph` so a fresh boot ends with every sector's
+equity nodes pre-wired.
+
+**Pure-math lib** (`services/sector-service/src/lib/graph-impact.ts`):
+`computeImpactScores({ driverValues, driverDefaults, edges })`
+returns `{equity_node_key: score ∈ [-100, +100]}` using:
+
+```
+raw_i  = (driver_value_i - default_i) / |default_i|
+score  = 100 * tanh( Σ edge.weight × raw_i )
+```
+
+Division-by-zero on `default_i = 0` is skipped (drift from zero has
+no defined %-change baseline). M9 wires this into the equity table
+to replace the client-side `impliedImpact` formula; M8 ships the
+math + unit tests only.
+
+**Graph renderer** (`apps/web/src/app/graph-view.tsx`):
+
+- `KIND_COLORS` gains a `equity` variant (yellow/gold accent — distinct
+  from output amber).
+- Layout becomes 4-column (driver / intermediate / output / equity).
+  Equity column is at x=1280 with a tighter 56px row height so a
+  17-ticker basket fits without blowing the canvas vertically.
+- Legend gains an "equities" chip when the sector has any.
+- Help text updated: "M9에서 슬라이더 변경이 weighted 합으로 종목에 전파"
+
+**Tests** (`services/sector-service/tests/graph-impact.test.ts`):
+9 vitest unit cases covering: 0 at defaults, positive lift from
+positive-weight driver, negative for negative-weight, ±100
+saturation, multi-edge summation, missing driver skip, zero-default
+skip, no-output for unreferenced equities, independent equities.
+
+**Verification:**
+
+- TS typecheck across web / admin / sector-service / ui / db ✅
+- `@platform/db` vitest: 17/17 pass (no regression)
+- `sector-service` vitest: 45 pass / 26 skipped (+9 from
+  graph-impact; graph.test.ts + scenario.test.ts still skip
+  under no-DB env, expected).
+- **Cumulative: 179 + 17 skipped** (+9 from M7 baseline).
+
+**Out of scope (lands in M9):**
+
+- Edge editor side panel UI (weight slider, magnitude select,
+  delete button)
+- Python `simulate()` reading edge weights at choke points
+- Replacing M1's client-side `impliedImpact` with the
+  `graph-impact.ts` server-side traversal
+- Cache invalidation contract (`/sims/{slug}/reload`)
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14
