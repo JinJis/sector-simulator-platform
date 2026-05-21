@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 
 import { fetchEquities, type Equity } from "@/lib/sim-client";
 
+import { PageIntent } from "../../page-intent";
+import { SECTOR_PAGE_INTENTS } from "../../page-intents";
 import { useSector } from "./sector-context";
 
 /**
@@ -51,7 +53,9 @@ export default function SectorOverviewPage() {
     : [];
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+    <div>
+      <PageIntent intent={SECTOR_PAGE_INTENTS.overview!} />
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       <Card
         title="Live"
         href={`${base}/live`}
@@ -176,6 +180,7 @@ export default function SectorOverviewPage() {
           </ul>
         )}
       </Card>
+      </div>
     </div>
   );
 }

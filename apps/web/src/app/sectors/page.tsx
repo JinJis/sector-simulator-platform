@@ -7,6 +7,9 @@ import {
   type SimMetadata,
 } from "@/lib/sim-client";
 
+import { PageIntent } from "../page-intent";
+import { STANDALONE_PAGE_INTENTS } from "../page-intents";
+
 export default async function SectorsIndexPage() {
   let sims: SimMetadata[];
   try {
@@ -36,16 +39,13 @@ export default async function SectorsIndexPage() {
   return (
     <main className="mx-auto min-h-screen max-w-7xl px-6 pb-16 pt-6">
       <Breadcrumbs className="mb-3" items={[{ label: "Sectors" }]} />
-      <header className="mb-6">
+      <header className="mb-4">
         <h1 className="text-2xl font-semibold tracking-tight text-neutral-50">
           Sectors
         </h1>
-        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-neutral-400">
-          시뮬레이션 가능한 산업 섹터 목록입니다. 각 섹터는 드라이버 → 산출의
-          인과 그래프로 모델링되어 있으며, 슬라이더로 직접 조작하거나 실시간
-          데이터로 자동 실행할 수 있습니다.
-        </p>
       </header>
+
+      <PageIntent intent={STANDALONE_PAGE_INTENTS.sectorsList!} />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {visibleSims.map((sim) => (

@@ -12,6 +12,9 @@ import {
   type SimRunResponse,
 } from "@/lib/sim-client";
 
+import { PageIntent } from "../page-intent";
+import { STANDALONE_PAGE_INTENTS } from "../page-intents";
+
 import { CompareView } from "./compare-view";
 
 const DEFAULTS_SENTINEL = "defaults";
@@ -91,7 +94,7 @@ export default async function ComparePage({
           { label: "Compare" },
         ]}
       />
-      <div className="mb-6 flex flex-wrap items-baseline gap-3">
+      <div className="mb-4 flex flex-wrap items-baseline gap-3">
         <h1 className="text-xl font-semibold tracking-tight text-neutral-50">
           {meta.name}
         </h1>
@@ -102,6 +105,7 @@ export default async function ComparePage({
           {meta.horizon_years} yr · {meta.drivers.length} drivers
         </span>
       </div>
+      <PageIntent intent={STANDALONE_PAGE_INTENTS.compare!} />
       <CompareView
         meta={meta}
         scenarios={scenarios}

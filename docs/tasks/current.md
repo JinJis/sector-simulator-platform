@@ -1783,32 +1783,57 @@ Korean DESIGN.md (vision / personas / business model in depth) is
 unchanged and remains the in-depth product spec; README is the
 English investor-facing front door.
 
-### M15 — Per-page intent panels — *do next, content-heavy*
+### M15 — Per-page intent panels (shipped 2026-05-21)
 
-**Why second**: still pure content; needs M14's framing established
-first so the per-page copy doesn't re-explain the basics. Each
-sector subpage gets a small intro card explaining "왜 보는가" and
-"무엇을 찾는가":
+Every sector subpage + the `/sectors` list + `/compare` now starts
+with a small collapsible "Why" card explaining the page's purpose,
+followed by two columns (왜 보는가 / 무엇을 찾는가) for orientation.
 
-- `/sectors/[slug]` overview — "this sector's growth thesis + main
-  drivers + key risks + how to interpret the panels below"
-- `/live` — "real-time driver drift; spot regime shifts before the
-  market does"
-- `/manual` — "stress-test your thesis by dialing drivers; output
-  charts re-run instantly"
-- `/graph` — "edit cause-and-effect; every change moves outputs and
-  per-equity impact in real time"
-- `/equities` — "key listed beneficiaries + per-name impact score
-  + 30d projection driven by current driver state"
-- `/sources` — "what data backs each driver; click through to
-  primary source"
-- `/scenarios` (when implemented) — "save + share named driver
-  configurations"
-- `/compare` — "diff two scenarios side-by-side"
+**What shipped**:
 
-Each panel is collapsible (`<details>` element) so power users can
-hide them. Content lives in a single `apps/web/src/app/page-intents.ts`
-constants file so it's easy to revise centrally.
+- `apps/web/src/app/page-intents.ts` — centralized content. Two
+  maps: `SECTOR_PAGE_INTENTS` (keyed by overview / live / manual /
+  graph / equities / sources) and `STANDALONE_PAGE_INTENTS` (compare,
+  sectorsList). Editorial revisions touch one file.
+- `apps/web/src/app/page-intent.tsx` — `<PageIntent>` component:
+  - Native `<details>` element (keyboard + a11y free)
+  - Summary row: small cyan "Why" chip + one-sentence elevator pitch
+    + chevron that rotates on expand
+  - Expanded: two-column grid with bulleted Why / What lists
+  - `defaultOpen={true}` so first-time visitors see purpose
+    immediately; power users can collapse
+- Wired into every relevant page:
+  - `/sectors/[slug]` (overview)
+  - `/sectors/[slug]/live`
+  - `/sectors/[slug]/manual`
+  - `/sectors/[slug]/graph`
+  - `/sectors/[slug]/equities` (above the table; loading/error states
+    no longer return early so the intent stays visible)
+  - `/sectors/[slug]/sources`
+  - `/sectors` (replaces the old paragraph header)
+  - `/compare`
+
+**Content philosophy**:
+
+- 한 줄 pitch — page의 elevator pitch
+- 왜 보는가 (3-5 bullets) — "이 페이지가 존재하는 이유"
+- 무엇을 찾는가 (3-5 bullets) — "구체적으로 어디를 보고 어떻게 사용하는가"
+- 모든 한국어; editorial-team friendly
+
+**Verification**:
+
+- TS typecheck across all 5 workspaces clean
+- @platform/db / sector-service / simulation-service / data-pipeline
+  test totals unchanged (no logic touched)
+- **Cumulative still 264 + 17 skipped** (no test code added; this
+  is a content slice)
+
+**Out of scope (lands in M16+)**:
+
+- "지난 변경" 표시 (audit log integration) — M18
+- 페이지 별 onboarding tour (interactive tooltips) — defer until
+  user feedback says it's worth it
+- 다국어 (English) — currently 한국어 only
 
 ### M16 — Home page / investor dashboard — *foundation for M17*
 
