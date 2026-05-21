@@ -116,6 +116,7 @@ model SectorEquity {
   financials          EquityFinancial[]
   graph_nodes         GraphNode[]
   watchlist_items     WatchlistItem[]
+  predictions         Prediction[]
 
   @@unique([sector_slug, ticker, exchange])
   @@index([sector_slug])
@@ -211,11 +212,16 @@ model AgentWorkflow {
   error        String?
   // Roll-up cost in USD across every LLM call this workflow made.
   cost_usd     Float    @default(0)
+  // M27: who triggered this workflow. Null for legacy admin-driven
+  // rows; populated by sector-service after the orchestration call
+  // returns. Powers the per-user monthly budget meter.
+  user_id      String?  @map("user_id")
   created_at   DateTime @default(now()) @map("created_at")
   updated_at   DateTime @updatedAt        @map("updated_at")
 
   @@index([kind, created_at])
   @@index([status, updated_at])
+  @@index([user_id, created_at(sort: Desc)])
   @@map("agent_workflows")
 }
 
@@ -337,6 +343,11 @@ model User {
   sessions          Session[]
   watchlist_items   WatchlistItem[]
   created_sectors   Sector[]        @relation("UserCreatedSectors")
+  billing_customer  BillingCustomer?
+  predictions       Prediction[]
+  user_score        UserScore?
+  suggestions       SectorSuggestion[]
+  suggestion_votes  SectorSuggestionVote[]
 
   @@map("users")
 }
@@ -399,4 +410,200 @@ model Scenario {
 
   @@index([sector_slug])
   @@map("scenarios")
+}
+
+// =====================================================================
+// M26 — Stripe billing
+// =====================================================================
+
+model BillingCustomer {
+  // One row per User who has been seen by Stripe Checkout (created on
+  // first checkout attempt; never deleted, so the same stripe_customer_id
+  // is reused across resubscriptions).
+  id                   String   @id @default(cuid())
+  user_id              String   @unique @map("user_id")
+  user                 User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  stripe_customer_id   String   @unique @map("stripe_customer_id")
+  email                String?
+  created_at           DateTime @default(now()) @map("created_at")
+  updated_at           DateTime @updatedAt        @map("updated_at")
+
+  subscriptions        BillingSubscription[]
+
+  @@map("billing_customers")
+}
+
+model BillingSubscription {
+  // One row per Stripe Subscription. The active subscription gates
+  // `user.tier = "premium"`. We keep historical rows so a downgraded
+  // user's audit trail survives.
+  id                       String           @id @default(cuid())
+  customer_id              String           @map("customer_id")
+  customer                 BillingCustomer  @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  stripe_subscription_id   String           @unique @map("stripe_subscription_id")
+  stripe_price_id          String           @map("stripe_price_id")
+  // Stripe statuses: trialing | active | past_due | canceled | unpaid | incomplete | incomplete_expired
+  status                   String
+  // Snapshot from the latest webhook so we don't need to call Stripe
+  // for routine reads.
+  current_period_start     DateTime         @map("current_period_start")
+  current_period_end       DateTime         @map("current_period_end")
+  cancel_at_period_end     Boolean          @default(false) @map("cancel_at_period_end")
+  canceled_at              DateTime?        @map("canceled_at")
+  created_at               DateTime         @default(now()) @map("created_at")
+  updated_at               DateTime         @updatedAt        @map("updated_at")
+
+  @@index([customer_id, status])
+  @@index([status, current_period_end])
+  @@map("billing_subscriptions")
+}
+
+model BillingEvent {
+  // Append-only log of every Stripe webhook event we've ingested.
+  // Primarily used for webhook idempotency (event.id is reused if
+  // Stripe retries) and post-hoc debugging.
+  id                String   @id @default(cuid())
+  stripe_event_id   String   @unique @map("stripe_event_id")
+  type              String
+  payload           Json
+  received_at       DateTime @default(now()) @map("received_at")
+
+  @@index([type, received_at])
+  @@map("billing_events")
+}
+
+
+// =====================================================================
+// M27 — Agent budget tracking
+//   (extends existing AgentWorkflow with a user_id FK)
+// =====================================================================
+//
+// We add the column via raw migration SQL so the existing AgentWorkflow
+// Prisma model stays unchanged on the Python side. See the migration
+// 20260524000000_billing_predictions_suggestions for the ALTER TABLE.
+//
+// Reading the column from Postgres uses raw SQL in sector-service since
+// the Python agent-orchestration is the writer; Prisma stays read-only
+// against that table.
+
+
+// =====================================================================
+// M32 — Community: predictions, scores, suggestions
+// =====================================================================
+
+model Prediction {
+  // One row per user-submitted prediction. The user picks an equity,
+  // a horizon ("1d" | "1w" | "1m"), and a predicted % change. We
+  // snapshot the anchor_close at submission time so the resolver
+  // (cron, future slice) can compute actual_pct against a stable
+  // baseline.
+  id              String   @id @default(cuid())
+  user_id         String   @map("user_id")
+  user            User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  equity_id       String   @map("equity_id")
+  equity          SectorEquity @relation(fields: [equity_id], references: [id], onDelete: Cascade)
+  // "1d" | "1w" | "1m" — short enough to fit on chips, no point in
+  // enum-ing across tRPC boundary.
+  horizon         String
+  // Predicted % change vs anchor_close. Positive = up, negative = down.
+  predicted_pct   Float    @map("predicted_pct")
+  anchor_close    Float    @map("anchor_close")
+  // Computed at submission time: anchor_close * (1 + predicted_pct/100).
+  predicted_close Float    @map("predicted_close")
+  // ISO date — when the prediction was made + the horizon-shifted target.
+  anchor_at       DateTime @default(now()) @map("anchor_at")
+  target_date     DateTime @map("target_date")
+  // Optional linkage to a saved Scenario — explains "what assumptions
+  // back this prediction".
+  scenario_id     String?  @map("scenario_id")
+  rationale       String?
+  // null until the prediction resolves at target_date.
+  resolved        Boolean  @default(false)
+  created_at      DateTime @default(now()) @map("created_at")
+
+  result          PredictionResult?
+
+  @@index([user_id, created_at(sort: Desc)])
+  @@index([equity_id, created_at(sort: Desc)])
+  @@index([resolved, target_date])
+  @@map("predictions")
+}
+
+model PredictionResult {
+  // Created by the resolver cron when target_date passes. score
+  // formula in v1: max(0, 100 - |predicted_pct - actual_pct| * 5)
+  // — i.e. ±20pp error wipes the score; perfect call gets 100.
+  id               String   @id @default(cuid())
+  prediction_id    String   @unique @map("prediction_id")
+  prediction       Prediction @relation(fields: [prediction_id], references: [id], onDelete: Cascade)
+  actual_close     Float    @map("actual_close")
+  actual_pct       Float    @map("actual_pct")
+  abs_error        Float    @map("abs_error")
+  score            Float
+  resolved_at      DateTime @default(now()) @map("resolved_at")
+
+  @@map("prediction_results")
+}
+
+model UserScore {
+  // Rolling per-user totals. Updated each time a prediction resolves;
+  // a single row per user so the leaderboard is a flat query.
+  user_id              String  @id @map("user_id")
+  user                 User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  total_points         Float   @default(0) @map("total_points")
+  predictions_made     Int     @default(0) @map("predictions_made")
+  predictions_resolved Int     @default(0) @map("predictions_resolved")
+  // Lifetime hits / lifetime resolved as a percentage; "hit" = score >= 50.
+  hit_rate_pct         Float   @default(0) @map("hit_rate_pct")
+  current_streak       Int     @default(0) @map("current_streak")
+  best_streak          Int     @default(0) @map("best_streak")
+  updated_at           DateTime @updatedAt @map("updated_at")
+
+  @@index([total_points(sort: Desc)])
+  @@map("user_scores")
+}
+
+model SectorSuggestion {
+  // Community-submitted suggestion to improve a sector's structure —
+  // e.g. "add NVDA as a memory-semi equity", "remove driver X because
+  // it never moves". Editorial team reviews; an admin can flip status.
+  id            String   @id @default(cuid())
+  user_id       String   @map("user_id")
+  user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  sector_slug   String   @map("sector_slug")
+  // "add_driver" | "remove_driver" | "add_equity" | "remove_equity" |
+  // "rename_node" | "rewire_edge" — kept as a free string so new kinds
+  // don't need a migration. The payload JSONB carries kind-specific
+  // detail (e.g. {"ticker": "NVDA", "rationale": "..."}).
+  kind          String
+  title         String
+  body          String?
+  payload       Json     @default("{}")
+  // "open" | "under_review" | "approved" | "rejected" | "withdrawn"
+  status        String   @default("open")
+  // Snapshot of net votes (`+1` ups - `-1` downs). Updated transactionally
+  // with each vote insert/update so the list query stays cheap.
+  score         Int      @default(0)
+  created_at    DateTime @default(now()) @map("created_at")
+  updated_at    DateTime @updatedAt @map("updated_at")
+
+  votes         SectorSuggestionVote[]
+
+  @@index([sector_slug, status, score(sort: Desc)])
+  @@index([user_id, created_at(sort: Desc)])
+  @@map("sector_suggestions")
+}
+
+model SectorSuggestionVote {
+  // One vote per (user, suggestion). Value is +1 or -1.
+  suggestion_id  String   @map("suggestion_id")
+  suggestion     SectorSuggestion @relation(fields: [suggestion_id], references: [id], onDelete: Cascade)
+  user_id        String   @map("user_id")
+  user           User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  value          Int      // +1 | -1
+  created_at     DateTime @default(now()) @map("created_at")
+
+  @@id([suggestion_id, user_id])
+  @@index([user_id, created_at(sort: Desc)])
+  @@map("sector_suggestion_votes")
 }

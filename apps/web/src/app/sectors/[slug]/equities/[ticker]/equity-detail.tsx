@@ -203,6 +203,13 @@ function Header({
           >
             ⇆ 비교
           </Link>
+          <Link
+            href={`/community/predict?ticker=${encodeURIComponent(equity.ticker)}&sector=${encodeURIComponent(equity.sector_slug)}`}
+            className="rounded border border-violet-700 bg-violet-900/40 px-2 py-0.5 text-[11px] font-medium text-violet-200 hover:bg-violet-800/60"
+            title="이 종목의 가격을 예측하고 포인트 받기"
+          >
+            🎯 예측
+          </Link>
         </div>
       </div>
 

@@ -14,6 +14,7 @@ import cors from "@fastify/cors";
 import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 import Fastify from "fastify";
 
+import { registerStripeWebhook } from "./lib/billing-webhook.js";
 import { env } from "./lib/env.js";
 import { createContext } from "./trpc/context.js";
 import { appRouter } from "./trpc/router.js";
@@ -63,6 +64,10 @@ async function main(): Promise<void> {
     service: "sector-service",
     upstream: { simulation_service: cfg.SIMULATION_SERVICE_URL },
   }));
+
+  // Stripe webhook (raw body verification — registered before tRPC's
+  // JSON content-type takes over for /trpc/*).
+  registerStripeWebhook(fastify);
 
   try {
     await fastify.listen({ host: cfg.HOST, port: cfg.PORT });

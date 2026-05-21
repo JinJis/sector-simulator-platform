@@ -115,6 +115,12 @@ export function UserMenu({ user }: Props) {
           <MenuLink href="/watchlist" onClick={() => setOpen(false)}>
             ★ 관심 종목
           </MenuLink>
+          <MenuLink
+            href="/community/my-predictions"
+            onClick={() => setOpen(false)}
+          >
+            🎯 내 예측 기록
+          </MenuLink>
           <MenuLink href="/settings" onClick={() => setOpen(false)}>
             ⚙ 설정
           </MenuLink>

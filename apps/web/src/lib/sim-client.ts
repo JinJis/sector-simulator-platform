@@ -430,6 +430,144 @@ export async function fetchEquityFinancials(
   );
 }
 
+// ---------- Billing (M26) ----------
+
+export type BillingStatus = RouterOutput["billing"]["status"];
+export type BillingSubscription = RouterOutput["billing"]["mySubscription"];
+
+export async function fetchBillingStatus(): Promise<BillingStatus> {
+  return rethrow(() => trpc.billing.status.query(), "fetchBillingStatus");
+}
+
+export async function fetchMySubscription(): Promise<BillingSubscription> {
+  return rethrow(
+    () => trpc.billing.mySubscription.query(),
+    "fetchMySubscription",
+  );
+}
+
+export async function startCheckout(): Promise<{ url: string }> {
+  return rethrow(() => trpc.billing.checkout.mutate(), "startCheckout");
+}
+
+export async function openBillingPortal(): Promise<{ url: string }> {
+  return rethrow(() => trpc.billing.portal.mutate(), "openBillingPortal");
+}
+
+// ---------- Agent budget (M27) ----------
+
+export type AgentBudget = RouterOutput["agent"]["budget"];
+
+export async function fetchAgentBudget(): Promise<AgentBudget> {
+  return rethrow(() => trpc.agent.budget.query(), "fetchAgentBudget");
+}
+
+// ---------- Predictions (M32) ----------
+
+export type PredictionRow = RouterOutput["prediction"]["recent"][number];
+export type LeaderboardRow = RouterOutput["prediction"]["leaderboard"][number];
+export type MyScore = RouterOutput["prediction"]["myScore"];
+
+export async function createPrediction(input: {
+  equity_id: string;
+  horizon: "1d" | "1w" | "1m";
+  predicted_pct: number;
+  rationale?: string;
+  scenario_id?: string;
+}): Promise<RouterOutput["prediction"]["create"]> {
+  return rethrow(
+    () => trpc.prediction.create.mutate(input),
+    `createPrediction(${input.equity_id})`,
+  );
+}
+
+export async function fetchPredictionsForEquity(
+  equity_id: string,
+  limit = 20,
+): Promise<PredictionRow[]> {
+  return rethrow(
+    () => trpc.prediction.listForEquity.query({ equity_id, limit }),
+    `fetchPredictionsForEquity(${equity_id})`,
+  );
+}
+
+export async function fetchMyPredictions(limit = 50): Promise<PredictionRow[]> {
+  return rethrow(
+    () => trpc.prediction.listMine.query({ limit }),
+    "fetchMyPredictions",
+  );
+}
+
+export async function fetchLeaderboard(limit = 20): Promise<LeaderboardRow[]> {
+  return rethrow(
+    () => trpc.prediction.leaderboard.query({ limit }),
+    "fetchLeaderboard",
+  );
+}
+
+export async function fetchMyScore(): Promise<MyScore> {
+  return rethrow(() => trpc.prediction.myScore.query(), "fetchMyScore");
+}
+
+// ---------- Suggestions (M32) ----------
+
+export type SuggestionRow = RouterOutput["suggestion"]["listForSector"][number];
+export type SuggestionKind = SuggestionRow["kind"];
+
+export async function createSuggestion(input: {
+  sector_slug: string;
+  kind: SuggestionKind;
+  title: string;
+  body?: string;
+  payload?: Record<string, unknown>;
+}): Promise<SuggestionRow> {
+  return rethrow(
+    () => trpc.suggestion.create.mutate(input),
+    `createSuggestion(${input.sector_slug})`,
+  );
+}
+
+export async function fetchSuggestionsForSector(
+  sector_slug: string,
+  status?: "open" | "under_review" | "approved" | "rejected",
+): Promise<SuggestionRow[]> {
+  return rethrow(
+    () =>
+      trpc.suggestion.listForSector.query({
+        sector_slug,
+        status,
+      }),
+    `fetchSuggestionsForSector(${sector_slug})`,
+  );
+}
+
+export async function fetchRecentSuggestions(
+  limit = 10,
+): Promise<SuggestionRow[]> {
+  return rethrow(
+    () => trpc.suggestion.recent.query({ limit }),
+    "fetchRecentSuggestions",
+  );
+}
+
+export async function voteSuggestion(input: {
+  suggestion_id: string;
+  value: -1 | 0 | 1;
+}): Promise<{ score: number; my_vote: number | null }> {
+  return rethrow(
+    () => trpc.suggestion.vote.mutate(input),
+    `voteSuggestion(${input.suggestion_id})`,
+  );
+}
+
+// ---------- Community (M32) ----------
+
+export type CommunityFeed = RouterOutput["community"]["hubFeed"];
+
+export async function fetchCommunityFeed(): Promise<CommunityFeed> {
+  return rethrow(() => trpc.community.hubFeed.query(), "fetchCommunityFeed");
+}
+
 // ---------- Agent / propose sector (M25b) ----------
 
 export type AgentWorkflow = RouterOutput["agent"]["getWorkflow"];

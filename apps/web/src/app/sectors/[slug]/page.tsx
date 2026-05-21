@@ -171,7 +171,21 @@ export default function SectorOverviewPage() {
         </div>
       </section>
 
-      {/* 4) Footer hint */}
+      {/* 4) Community pointer */}
+      <section className="rounded-lg border border-violet-900/40 bg-violet-950/20 p-4 text-[11px] text-violet-200">
+        <p>
+          이 섹터에 빠진 요인이나 종목이 보이시나요?{" "}
+          <Link
+            href={`/community/suggestions?sector=${meta.slug}`}
+            className="font-medium text-violet-300 underline-offset-4 hover:text-violet-100 hover:underline"
+          >
+            커뮤니티에서 추가/제거를 제안해 보세요 →
+          </Link>{" "}
+          인기 제안은 편집팀이 검토 후 실제 모델에 반영합니다.
+        </p>
+      </section>
+
+      {/* 5) Footer hint */}
       <section className="rounded-lg border border-neutral-800 bg-neutral-900/30 p-4 text-[11px] text-neutral-500">
         <p>
           더 깊이 파보고 싶으신가요? 상단 메뉴의{" "}

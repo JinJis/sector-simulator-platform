@@ -21,6 +21,30 @@ const Env = z.object({
   // docker network; falls back to a "not configured" health card
   // when unset.
   DATA_PIPELINE_URL: z.string().url().optional(),
+  // M26 billing — unset means Premium upgrade is non-functional (UI
+  // surfaces the stub message). Set all three to enable Stripe.
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PRICE_ID: z.string().optional(),
+  STRIPE_SUCCESS_URL: z
+    .string()
+    .url()
+    .default("http://localhost:3000/settings?upgraded=1"),
+  STRIPE_CANCEL_URL: z
+    .string()
+    .url()
+    .default("http://localhost:3000/settings"),
+  // M26 transition flag: when true, /propose stays free-for-everyone
+  // in beta even though the hard tier gate code is wired. Flip to
+  // false at launch.
+  AGENT_BETA_FREE: z
+    .union([z.literal("true"), z.literal("false")])
+    .default("true")
+    .transform((v) => v === "true"),
+  // M27 budgets — USD per user per month. The pre-call check in the
+  // agent procedures reads these.
+  BUDGET_USD_MONTHLY_FREE: z.coerce.number().nonnegative().default(0),
+  BUDGET_USD_MONTHLY_PREMIUM: z.coerce.number().nonnegative().default(20),
   DATABASE_URL: z.string().min(1),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),

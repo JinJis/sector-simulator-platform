@@ -18,8 +18,23 @@ const { stubContext } = await import("./stub-context.js");
 
 const createCaller = createCallerFactory(appRouter);
 
+// Agent procedures became auth-required in M27 (budget check needs a
+// user). Tests inject a fake CurrentUser; the procedures don't actually
+// touch the DB for the user id beyond the budget query, which
+// gracefully degrades when prisma is unreachable in the in-memory test
+// environment.
 function caller() {
-  return createCaller(stubContext({ prisma }));
+  return createCaller(
+    stubContext({
+      prisma,
+      user: {
+        id: "test-user",
+        email: "test@example.com",
+        name: "Test",
+        label: "test@example.com",
+      },
+    }),
+  );
 }
 
 function mockFetch(

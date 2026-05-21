@@ -14,6 +14,7 @@ import { UserMenu } from "./user-menu";
 const PRIMARY_NAV: { label: string; href: string }[] = [
   { label: "홈", href: "/" },
   { label: "섹터", href: "/sectors" },
+  { label: "커뮤니티", href: "/community" },
 ];
 
 export async function SiteHeader() {

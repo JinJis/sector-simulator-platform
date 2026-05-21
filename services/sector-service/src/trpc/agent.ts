@@ -6,9 +6,11 @@
  * as sim.ts.
  */
 
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { agentFetch } from "../lib/agent-proxy.js";
+import { checkBudget, readBudget } from "../lib/budget.js";
 import { publicProcedure, router } from "./init.js";
 
 // ---------- Domain: decomposition output ----------------------------------
@@ -96,30 +98,111 @@ export const agentRouter = router({
   startDecomposition: publicProcedure
     .input(DecompositionStartInput)
     .output(WorkflowRecord)
-    .mutation(({ input }) =>
-      agentFetch("/workflows/decompose", {
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.user) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "에이전트 시뮬레이터 생성은 로그인이 필요합니다.",
+        });
+      }
+      await checkBudget(ctx.user.id);
+      const wf = await agentFetch<{ id: string }>("/workflows/decompose", {
         method: "POST",
         body: {
           description: input.description,
           reference_data: input.reference_data ?? null,
         },
         context: "agent.startDecomposition",
-      }),
-    ),
+      });
+      // Tag the workflow with the user_id post-hoc so the budget
+      // counter can find it. Idempotent: a future double-tag is a
+      // no-op since the column allows the same value.
+      try {
+        await ctx.prisma.agentWorkflow.update({
+          where: { id: wf.id },
+          data: { user_id: ctx.user.id },
+        });
+      } catch (e) {
+        ctx.log.warn(
+          { err: e, wf_id: wf.id },
+          "agent workflow user_id tag failed",
+        );
+      }
+      return wf as unknown as z.infer<typeof WorkflowRecord>;
+    }),
 
   startProposeSector: publicProcedure
     .input(ProposeSectorStartInput)
     .output(WorkflowRecord)
-    .mutation(({ input }) =>
-      agentFetch("/workflows/propose-sector", {
-        method: "POST",
-        body: {
-          description: input.description,
-          reference_data: input.reference_data ?? null,
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.user) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "에이전트 시뮬레이터 생성은 로그인이 필요합니다.",
+        });
+      }
+      await checkBudget(ctx.user.id);
+      const wf = await agentFetch<{ id: string }>(
+        "/workflows/propose-sector",
+        {
+          method: "POST",
+          body: {
+            description: input.description,
+            reference_data: input.reference_data ?? null,
+          },
+          context: "agent.startProposeSector",
         },
-        context: "agent.startProposeSector",
+      );
+      try {
+        await ctx.prisma.agentWorkflow.update({
+          where: { id: wf.id },
+          data: { user_id: ctx.user.id },
+        });
+      } catch (e) {
+        ctx.log.warn(
+          { err: e, wf_id: wf.id },
+          "agent workflow user_id tag failed",
+        );
+      }
+      return wf as unknown as z.infer<typeof WorkflowRecord>;
+    }),
+
+  /**
+   * Surface the current user's agent budget to the client — used by
+   * Settings' "이번 달 사용량" meter + the /propose flow's pre-submit
+   * sanity check.
+   */
+  budget: publicProcedure
+    .output(
+      z.object({
+        tier: z.enum(["free", "premium"]),
+        limit_usd: z.number(),
+        used_usd: z.number(),
+        remaining_usd: z.number(),
+        exhausted: z.boolean(),
+        in_flight: z.number().int(),
+        concurrent_limit: z.number().int(),
+        beta_free: z.boolean(),
       }),
-    ),
+    )
+    .query(async ({ ctx }) => {
+      const betaFree =
+        (await import("../lib/env.js")).env().AGENT_BETA_FREE;
+      if (!ctx.user) {
+        return {
+          tier: "free" as const,
+          limit_usd: 0,
+          used_usd: 0,
+          remaining_usd: 0,
+          exhausted: true,
+          in_flight: 0,
+          concurrent_limit: 0,
+          beta_free: betaFree,
+        };
+      }
+      const snap = await readBudget(ctx.user.id);
+      return { ...snap, beta_free: betaFree };
+    }),
 
   getWorkflow: publicProcedure
     .input(WorkflowIdInput)
