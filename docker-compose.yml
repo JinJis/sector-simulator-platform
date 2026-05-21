@@ -26,6 +26,14 @@ services:
     build:
       context: .
       dockerfile: infra/docker/simulation-service.Dockerfile
+    environment:
+      # M22b: GenericDagSim loads agent-generated sectors from Postgres
+      # at request time. Unset = DB-backed sims are silently disabled
+      # (the in-code 3 sims still work). Container-internal hostname.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - internal
 

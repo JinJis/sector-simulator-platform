@@ -17,7 +17,27 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { simFetch } from "../lib/sim-proxy.js";
 import { publicProcedure, router } from "./init.js";
+
+/**
+ * Tell simulation-service to drop its cached GenericDagSim for this
+ * slug so the next sim.* call re-reads the DB. Fail-soft: a network
+ * blip shouldn't roll back an otherwise-good DB transition.
+ */
+async function reloadUpstream(slug: string, ctx_log: import("fastify").FastifyBaseLogger): Promise<void> {
+  try {
+    await simFetch(`/sims/${slug}/reload`, {
+      method: "POST",
+      context: `sims-reload:${slug}`,
+    });
+  } catch (e) {
+    ctx_log.warn(
+      { slug, err: e instanceof Error ? e.message : String(e) },
+      "sims-reload upstream failed; cache may be stale until next reload",
+    );
+  }
+}
 
 // ---------- Schemas ----------
 
@@ -392,6 +412,11 @@ export const sectorRouter = router({
         "sector.proposeFromAgent",
       );
 
+      // Invalidate the upstream GenericDagSim cache so the new sector
+      // is queryable via /sims immediately (even though it's draft
+      // and the user app won't show it until activate).
+      await reloadUpstream(finalSlug, ctx.log);
+
       return {
         sector: result.sector as z.infer<typeof SectorOut>,
         node_counts: {
@@ -440,6 +465,18 @@ async function transitionStatus(
   const prev = existing.status;
   if (prev === next) return existing as z.infer<typeof SectorOut>;
 
+  // M22b: on activation of an agent-generated sector (no Python sim
+  // module), validate that the GenericDagSim can actually run before
+  // exposing it to users. The simplest sanity check is that every
+  // intermediate / output has a non-empty formula. We don't fail on
+  // missing formulas — falling back to NaN is acceptable for some
+  // node-only proposals — but we do surface a warning chip in the
+  // audit row so admins know what's incomplete.
+  let activationWarnings: string[] = [];
+  if (next === "live" && !existing.source_module) {
+    activationWarnings = await collectActivationWarnings(ctx, input.slug);
+  }
+
   const updated = await ctx.prisma.sector.update({
     where: { slug: input.slug },
     data: { status: next },
@@ -448,10 +485,117 @@ async function transitionStatus(
     data: {
       action,
       sector_slug: input.slug,
-      payload: { from: prev, to: next },
+      payload: {
+        from: prev,
+        to: next,
+        ...(activationWarnings.length > 0
+          ? { activation_warnings: activationWarnings }
+          : {}),
+      },
       author_label: input.author_label ?? ctx.user?.label ?? "anonymous",
     },
   });
-  ctx.log.info({ slug: input.slug, from: prev, to: next }, action);
+  ctx.log.info(
+    { slug: input.slug, from: prev, to: next, warnings: activationWarnings.length },
+    action,
+  );
+  await reloadUpstream(input.slug, ctx.log);
   return updated as z.infer<typeof SectorOut>;
+}
+
+/**
+ * Check that an agent-generated sector is plausibly runnable before
+ * activation. Returns a list of human-readable warnings (empty when
+ * everything is healthy).
+ *
+ * Today's checks:
+ *   - At least one driver, intermediate, or output node exists
+ *   - The agent workflow output carries formulas for every
+ *     intermediate / output node (otherwise they'd evaluate to NaN)
+ *
+ * We surface as warnings rather than hard-blockers because the editor
+ * can hand-author missing formulas in a follow-up slice, and the
+ * platform should let the admin make that call.
+ */
+async function collectActivationWarnings(
+  ctx: import("./context.js").Context,
+  slug: string,
+): Promise<string[]> {
+  const warnings: string[] = [];
+  const sector = await ctx.prisma.sector.findUnique({
+    where: { slug },
+    select: { agent_workflow_id: true },
+  });
+  const nodes = await ctx.prisma.graphNode.findMany({
+    where: { sector_slug: slug },
+    select: { node_key: true, kind: true },
+  });
+  if (nodes.length === 0) {
+    warnings.push("그래프 노드가 하나도 없습니다 — simulate() 호출 시 빈 결과 반환");
+    return warnings;
+  }
+  const intermediates = nodes
+    .filter((n) => n.kind === "intermediate")
+    .map((n) => n.node_key);
+  const outputs = nodes
+    .filter((n) => n.kind === "output")
+    .map((n) => n.node_key);
+  if (outputs.length === 0) {
+    warnings.push("Output 노드가 없습니다 — UI 차트가 비어 보임");
+  }
+
+  if (!sector?.agent_workflow_id) {
+    if (intermediates.length + outputs.length > 0) {
+      warnings.push(
+        "수식 소스(workflow)가 연결되지 않음 — intermediate/output이 NaN으로 평가됨",
+      );
+    }
+    return warnings;
+  }
+
+  const wf = await ctx.prisma.agentWorkflow.findUnique({
+    where: { id: sector.agent_workflow_id },
+    select: { output: true, kind: true },
+  });
+  if (!wf || !wf.output) {
+    warnings.push("원본 workflow 의 output이 비어있음 — 수식을 평가할 수 없음");
+    return warnings;
+  }
+  // Walk the output JSONB for formula coverage.
+  const blob = wf.output as Record<string, unknown>;
+  const edgeInf =
+    wf.kind === "propose_sector"
+      ? (blob["edge_inference"] as Record<string, unknown> | undefined)
+      : undefined;
+  if (wf.kind === "decomposition") {
+    warnings.push(
+      "Decomposition-only workflow — edges/수식이 없음. Manual 으로 graph 편집 필요",
+    );
+    return warnings;
+  }
+  if (!edgeInf) {
+    warnings.push("workflow output에 edge_inference 블록이 없음");
+    return warnings;
+  }
+  const intermediateFormulas = new Set<string>();
+  for (const f of (edgeInf.intermediates as { name: string }[]) ?? []) {
+    intermediateFormulas.add(f.name);
+  }
+  const outputFormulas = new Set<string>();
+  for (const f of (edgeInf.outputs as { name: string }[]) ?? []) {
+    outputFormulas.add(f.name);
+  }
+  const missingI = intermediates.filter((n) => !intermediateFormulas.has(n));
+  const missingO = outputs.filter((n) => !outputFormulas.has(n));
+  if (missingI.length > 0) {
+    warnings.push(
+      `수식 없는 intermediate: ${missingI.slice(0, 5).join(", ")}${missingI.length > 5 ? " …" : ""}`,
+    );
+  }
+  if (missingO.length > 0) {
+    warnings.push(
+      `수식 없는 output: ${missingO.slice(0, 5).join(", ")}${missingO.length > 5 ? " …" : ""}`,
+    );
+  }
+  return warnings;
 }

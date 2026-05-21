@@ -8,7 +8,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from platform_sdk import EdgeWeights, SimulationBase
 
-from simulation_service.registry import all_sims, get_sim
+from simulation_service.registry import (
+    all_sims_async,
+    get_sim_async,
+    invalidate,
+    invalidate_all,
+)
 from simulation_service.report import build_report
 from simulation_service.schemas import (
     DriverSchema,
@@ -118,29 +123,64 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.post("/sims/{slug}/reload", status_code=204)
+async def reload_sim(slug: str) -> None:
+    """Drop the cached GenericDagSim subclass for `slug` so the next
+    sim.* request re-reads the DB.
+
+    Called by sector-service after every graph or sector mutation —
+    keeps the agent-generated sim's runtime view in sync with the
+    Postgres source of truth. No-op for in-code sims (they ignore the
+    cache invalidation since they're class objects, not DB-derived).
+    """
+    invalidate(slug)
+    return None
+
+
+@app.post("/sims/_reload-all", status_code=204)
+async def reload_all_sims() -> None:
+    """Bulk invalidation for the cases where sector-service does
+    something graph-wide (re-seed, reset). Cheaper than enumerating
+    every slug to call /sims/{slug}/reload."""
+    invalidate_all()
+    return None
+
+
+@app.on_event("shutdown")
+async def _shutdown() -> None:
+    """Drain the asyncpg pool on graceful shutdown so the next process
+    boot doesn't hit `connection slot full`."""
+    from simulation_service.db_loader import close_pool
+
+    await close_pool()
+
+
 @app.get("/sims", response_model=list[SimMetadata])
-def list_sims() -> list[SimMetadata]:
-    return [_metadata(cls) for cls in all_sims()]
+async def list_sims() -> list[SimMetadata]:
+    return [_metadata(cls) for cls in await all_sims_async()]
 
 
 @app.get("/sims/{slug}", response_model=SimMetadata)
-def get_sim_meta(slug: str) -> SimMetadata:
+async def get_sim_meta(slug: str) -> SimMetadata:
     try:
-        return _metadata(get_sim(slug))
+        return _metadata(await get_sim_async(slug))
     except KeyError as e:
         raise HTTPException(status_code=404, detail=f"sim not found: {slug}") from e
 
 
 @app.post("/sims/{slug}/run", response_model=SimRunResponse)
-def run_sim(slug: str, req: SimRunRequest) -> SimRunResponse:
+async def run_sim(slug: str, req: SimRunRequest) -> SimRunResponse:
     try:
-        sim_cls = get_sim(slug)
+        sim_cls = await get_sim_async(slug)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=f"sim not found: {slug}") from e
 
     try:
         resolved = sim_cls.resolve_drivers(req.drivers)
         edge_weights = _to_edge_weights(req.edge_weights)
+        # GenericDagSim subclasses pick up the spec from their class
+        # attribute (set by make_generic_dag_class); in-code sims
+        # ignore the unused kwarg. Both honor edge_weights.
         outputs = sim_cls(edge_weights=edge_weights).simulate(**resolved)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -162,9 +202,9 @@ def run_sim(slug: str, req: SimRunRequest) -> SimRunResponse:
 
 
 @app.get("/sims/{slug}/sensitivity", response_model=SensitivityResponse)
-def sim_sensitivity(slug: str) -> SensitivityResponse:
+async def sim_sensitivity(slug: str) -> SensitivityResponse:
     try:
-        sim_cls = get_sim(slug)
+        sim_cls = await get_sim_async(slug)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=f"sim not found: {slug}") from e
 
@@ -178,13 +218,13 @@ def sim_sensitivity(slug: str) -> SensitivityResponse:
 
 
 @app.post("/sims/{slug}/report", response_model=ReportResponse)
-def sim_report(slug: str, req: ReportRequest) -> ReportResponse:
+async def sim_report(slug: str, req: ReportRequest) -> ReportResponse:
     """Templated markdown report. No LLM in this slice — the layout and
     wording is deterministic so caching is trivial and the UI can iterate
     on shape before we spend tokens. Phase 2 will swap the body builder
     for an LLM call (with the templated version as fallback)."""
     try:
-        sim_cls = get_sim(slug)
+        sim_cls = await get_sim_async(slug)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=f"sim not found: {slug}") from e
 
@@ -197,7 +237,7 @@ def sim_report(slug: str, req: ReportRequest) -> ReportResponse:
 
 
 @app.get("/sims/{slug}/graph", response_model=SimGraphResponse)
-def sim_graph(slug: str) -> SimGraphResponse:
+async def sim_graph(slug: str) -> SimGraphResponse:
     """Causal dependency graph: drivers → intermediates → outputs.
 
     Authored by hand on each `SimulationBase` subclass for now (Phase 2
@@ -205,7 +245,7 @@ def sim_graph(slug: str) -> SimGraphResponse:
     graph yet, so the frontend can render a placeholder rather than 404.
     """
     try:
-        sim_cls = get_sim(slug)
+        sim_cls = await get_sim_async(slug)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=f"sim not found: {slug}") from e
 
@@ -231,7 +271,7 @@ def sim_graph(slug: str) -> SimGraphResponse:
 
 
 @app.get("/sims/{slug}/live", response_model=LiveResponse)
-def sim_live(slug: str) -> LiveResponse:
+async def sim_live(slug: str) -> LiveResponse:
     """Mock live feed: smoothly drifting driver values + sim outputs.
 
     Phase 2 will replace the drift logic with real data-pipeline-service feeds
@@ -239,7 +279,7 @@ def sim_live(slug: str) -> LiveResponse:
     demo signal.
     """
     try:
-        sim_cls = get_sim(slug)
+        sim_cls = await get_sim_async(slug)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=f"sim not found: {slug}") from e
 

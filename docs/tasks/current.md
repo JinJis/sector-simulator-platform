@@ -2439,6 +2439,131 @@ transaction.
   class.
 - Sandboxed (Modal / E2B) execution of agent-generated Python.
 
+### M22b — GenericDagSim runtime for agent-generated sectors (shipped 2026-05-21)
+
+Closes the activation-time question raised by M21: agent-proposed
+sectors now have a real runtime. The simulation-service can evaluate
+the DAG of formulas EdgeInference produced, so an admin activating an
+agent-generated draft gets a sector that actually answers
+`sim.run` / `sim.sensitivity` / `sim.live` requests — the same surface
+the in-code sims expose.
+
+**simulation-service** (`services/simulation-service/`):
+
+- New deps: `simpleeval` (safe expression evaluator) + `asyncpg`
+  (DB topology loader).
+- **`evaluator.py`** — `evaluate_formula(formula, variables,
+  edge_weights, target)`. Whitelist of operators + `min/max/abs/sum/exp/
+  log/sqrt/pow/floor/ceil/round` functions + `pi/e/MWh_per_MMBtu/
+  MMBtu_per_MWh` constants. Variable references at the target node
+  get multiplied by their incoming edge weight (M19's hybrid model
+  extends to agent sectors). Dunder access, `__import__`, attribute
+  walks, lambdas, comprehensions: all blocked by simpleeval +
+  wrapped as `FormulaError`. Non-finite results are rejected so
+  inf / NaN don't propagate silently into charts.
+- **`generic_dag.py`** — `GenericDagSpec` dataclass + `GenericDagSim`
+  subclass of `SimulationBase` + `make_generic_dag_class(spec)`
+  factory:
+  - `simulate(**driver_values)` topologically sorts intermediates +
+    outputs, evaluates each formula in order against the resolved
+    variable bindings, returns the standard `dict[str, Output]`.
+  - Series outputs evaluate once per year with `t` and `T` time
+    variables bound; scalar outputs evaluate once.
+  - FormulaError per node → NaN (graceful degradation; logged).
+  - Cycle in the DAG → loud `ValueError`. Activation-time
+    validation surfaces this before it ever runs.
+  - Sensitivity sweep, `_metadata()`, live drift all work
+    unchanged — the factory baking the spec into class-level slots
+    keeps the SDK contract intact.
+- **`db_loader.py`** — asyncpg-backed loader that walks `sectors` +
+  `graph_nodes` + `graph_edges` + the agent_workflow's `output`
+  JSONB (the canonical formula source). Pool is lazy + fail-soft:
+  unset / unreachable `DATABASE_URL` disables the DB path without
+  breaking the in-code sims.
+- **`registry.py`** — extended with `all_sims_async` /
+  `get_sim_async` that fall back to the DB loader. Per-process
+  `_DB_CACHE` keyed by slug; `invalidate(slug)` + `invalidate_all()`
+  expose cache busting.
+- **`main.py`** — all `/sims*` routes converted to async +
+  `get_sim_async`. New `POST /sims/{slug}/reload` (single-slug
+  invalidate) + `POST /sims/_reload-all` (bulk). Lifespan shutdown
+  drains the asyncpg pool.
+
+**sector-service**:
+
+- `sim-proxy.ts` handles `204 No Content` (the reload endpoint
+  returns empty body — calling `res.json()` on that throws).
+- `sector.proposeFromAgent` + every status transition
+  (`activate` / `archive` / `toDraft`) POSTs
+  `/sims/<slug>/reload` upstream so the GenericDagSim cache stays
+  in sync. Fail-soft: a network blip during reload just logs a
+  warning; the DB transition is still committed.
+- **Activation-time validation**: when activating a sector with no
+  Python module, `collectActivationWarnings` walks the workflow
+  output and surfaces missing formulas, decomposition-only
+  workflows, empty graphs, etc. Warnings go onto the audit_log
+  payload (`activation_warnings: string[]`) so admins reviewing
+  `/audit` see what's incomplete. Soft-block, not hard-block — the
+  agent's intent is preserved even when partial.
+
+**docker-compose.yml**:
+
+- `simulation-service` gains `DATABASE_URL` (container-internal) +
+  `depends_on: postgres: healthy`. Unset in non-Docker dev →
+  DB sims silently disabled.
+
+**Tests** (+31, all hermetic):
+
+- `tests/test_evaluator.py` (17) — arithmetic correctness, edge-
+  weight scaling, dunder block, `__import__` block, lambda block,
+  division-by-zero, overflow → non-finite, bool coercion.
+- `tests/test_generic_dag.py` (14) — scalar / series eval, driver
+  override, unknown-driver rejection, topological sort (chain +
+  edges-fallback), cycle detection, FormulaError → NaN, class-level
+  metadata for SDK contract, sensitivity sweep works off
+  GenericDagSim.
+
+**Verification**:
+
+- TS typecheck clean across all 5 workspaces.
+- simulation-service pytest: **92 pass** (was 61 → +31).
+- sector-service vitest: 56 pass / 26 skipped (unchanged baseline).
+- agent-orchestration: 40 pass / 2 skipped (unchanged).
+- @platform/db: 35 pass (unchanged).
+- **Cumulative: 311 + 17 skipped** (+31 from M22a).
+
+**End-to-end flow now**:
+
+```
+admin "Propose sector (full)" → Decomposition (Opus) → EdgeInference (Opus)
+  → "+ Draft 등록" → sectors row + graph_nodes + graph_edges (origin=agent)
+  → admin reviews draft + warnings in /audit
+  → admin "✓ Activate" → POST /sims/<slug>/reload upstream
+  → user app /sectors shows the new sector
+  → /sectors/<slug>/manual sliders + /graph + /narrative all work
+    via GenericDagSim evaluating the agent's formulas at run time
+```
+
+**Out of scope (M22c+)**:
+
+- Cross-year coupling in series formulas (`x[t-1]`). Current series
+  outputs can reference `t` but can't read prior-year results — the
+  EdgeInference prompt doesn't reliably produce that shape yet.
+  Workaround: a single discount-rate / aggregator formula treats
+  `t` as the year index and produces the full series in one shot.
+- The remaining 3 prompts (research, driver-inference,
+  code-gen + code-review). Driver-inference would replace the
+  "default=0 / range=(0,1)" placeholder in the DB loader with
+  agent-calibrated ranges; code-gen + code-review would write a
+  Python class to disk instead of falling back to GenericDagSim.
+- Sandboxed (Modal / E2B) execution of agent-generated Python.
+  GenericDagSim sidesteps the sandbox question by not executing
+  Python — the formulas are pure expressions evaluated by
+  `simpleeval` with a tight whitelist.
+- Hard-block activation when warnings list is non-empty (current
+  behavior is soft-warn). Will revisit once warning content
+  stabilizes through real agent runs.
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

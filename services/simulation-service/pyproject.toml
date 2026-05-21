@@ -8,6 +8,14 @@ dependencies = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.32.0",
   "pydantic>=2.9.0",
+  # M22b: safe expression evaluator for agent-generated formulas.
+  # Whitelist of operators + functions; no imports / attribute access /
+  # comprehensions / lambdas / dunders. CVE history is short and the
+  # API surface is tiny.
+  "simpleeval>=1.0.0",
+  # M22b: async Postgres driver for GenericDagSim to read DB-backed
+  # sector topology + formulas without bouncing through sector-service.
+  "asyncpg>=0.30.0",
 ]
 
 [build-system]

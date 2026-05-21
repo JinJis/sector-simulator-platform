@@ -63,6 +63,14 @@ export async function simFetch<T>(path: string, opts: ProxyOpts = {}): Promise<T
     });
   }
 
+  // M22b: a couple of endpoints (e.g. /sims/{slug}/reload) return 204
+  // — `res.json()` would throw on empty body. Return undefined cast as
+  // T for that case; callers that don't care about the body never
+  // touch the value.
+  if (res.status === 204) {
+    return undefined as unknown as T;
+  }
+
   return (await res.json()) as T;
 }
 
