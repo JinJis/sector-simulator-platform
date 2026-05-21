@@ -190,10 +190,47 @@ export async function deleteGraphEdge(input: {
   );
 }
 
+export async function upsertGraphNode(input: {
+  sector_slug: string;
+  node_key: string;
+  kind: "driver" | "intermediate" | "output" | "equity";
+  label: string;
+  group?: string;
+  unit?: string | null;
+  description?: string | null;
+  equity_id?: string | null;
+  author_label?: string;
+}): Promise<DbGraphNode> {
+  return rethrow(
+    () => trpc.graph.upsertNode.mutate(input),
+    `upsertGraphNode(${input.node_key})`,
+  );
+}
+
+export async function deleteGraphNode(input: {
+  sector_slug: string;
+  node_key: string;
+  author_label?: string;
+}): Promise<{ sector_slug: string; node_key: string }> {
+  return rethrow(
+    () => trpc.graph.deleteNode.mutate(input),
+    `deleteGraphNode(${input.node_key})`,
+  );
+}
+
+export type GraphResetResult = {
+  sector_slug: string;
+  nodes: number;
+  edges: number;
+  equity_nodes: number;
+  equity_edges: number;
+  skipped_driver_misses: number;
+};
+
 export async function resetGraphToDefaults(
   sectorSlug: string,
   authorLabel?: string,
-): Promise<{ sector_slug: string; nodes_deleted: number; edges_deleted: number }> {
+): Promise<GraphResetResult> {
   return rethrow(
     () =>
       trpc.graph.resetToDefaults.mutate({

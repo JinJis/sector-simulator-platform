@@ -52,6 +52,24 @@ class QuoteBar(BaseModel):
     source: str = "yfinance"
 
 
+class FinancialRow(BaseModel):
+    """Single row destined for `equity_financials`. Adapter-produced —
+    adapters convert to USD before handing to the job, so the repo
+    treats values as already-USD."""
+
+    fiscal_year: int
+    fiscal_quarter: int
+    period_end: date
+    revenue_usd: float | None = None
+    cogs_usd: float | None = None
+    gross_profit_usd: float | None = None
+    opex_usd: float | None = None
+    ebitda_usd: float | None = None
+    net_income_usd: float | None = None
+    capex_usd: float | None = None
+    source: str = "dart"
+
+
 class EquityRepository(Protocol):
     async def list_all(self) -> list[EquityRecord]: ...
 
@@ -74,6 +92,14 @@ class EquityRepository(Protocol):
         to chunk if it ever has thousands of bars per call."""
         ...
 
+    async def bulk_upsert_financials(
+        self, equity_id: str, rows: list[FinancialRow]
+    ) -> int:
+        """Insert (or overwrite on PK conflict on
+        (equity_id, fiscal_year, fiscal_quarter)) the given financial
+        rows. Returns the number of rows written."""
+        ...
+
     async def close(self) -> None: ...
 
 
@@ -91,6 +117,9 @@ class InMemoryEquityRepository:
         # equity_id → date → bar  — simulates the (equity_id, trade_date)
         # composite PK with upsert-on-conflict semantics.
         self.history: dict[str, dict[date, QuoteBar]] = {}
+        # equity_id → (fy, fq) → row — simulates the (equity_id, fy, fq)
+        # PK on equity_financials.
+        self.financials: dict[str, dict[tuple[int, int], FinancialRow]] = {}
 
     async def list_all(self) -> list[EquityRecord]:
         return list(self._records.values())
@@ -128,6 +157,16 @@ class InMemoryEquityRepository:
             store[bar.trade_date] = bar
         return len(bars)
 
+    async def bulk_upsert_financials(
+        self, equity_id: str, rows: list[FinancialRow]
+    ) -> int:
+        if equity_id not in self._records:
+            raise KeyError(f"unknown equity: {equity_id}")
+        store = self.financials.setdefault(equity_id, {})
+        for r in rows:
+            store[(r.fiscal_year, r.fiscal_quarter)] = r
+        return len(rows)
+
     async def close(self) -> None:
         return None
 
@@ -163,6 +202,27 @@ DO UPDATE SET
     close_local = EXCLUDED.close_local,
     close_usd = EXCLUDED.close_usd,
     volume = EXCLUDED.volume,
+    source = EXCLUDED.source,
+    inserted_at = now()
+"""
+
+_UPSERT_FINANCIALS_SQL = """
+INSERT INTO equity_financials
+    (equity_id, fiscal_year, fiscal_quarter, period_end,
+     revenue_usd, cogs_usd, gross_profit_usd, opex_usd, ebitda_usd,
+     net_income_usd, capex_usd, source)
+VALUES
+    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+ON CONFLICT (equity_id, fiscal_year, fiscal_quarter)
+DO UPDATE SET
+    period_end = EXCLUDED.period_end,
+    revenue_usd = EXCLUDED.revenue_usd,
+    cogs_usd = EXCLUDED.cogs_usd,
+    gross_profit_usd = EXCLUDED.gross_profit_usd,
+    opex_usd = EXCLUDED.opex_usd,
+    ebitda_usd = EXCLUDED.ebitda_usd,
+    net_income_usd = EXCLUDED.net_income_usd,
+    capex_usd = EXCLUDED.capex_usd,
     source = EXCLUDED.source,
     inserted_at = now()
 """
@@ -238,6 +298,32 @@ class PostgresEquityRepository:
             # crosses ~10k rows per call, switch to COPY.
             await conn.executemany(_UPSERT_QUOTE_HISTORY_SQL, rows)
         return len(rows)
+
+    async def bulk_upsert_financials(
+        self, equity_id: str, rows: list[FinancialRow]
+    ) -> int:
+        if not rows:
+            return 0
+        payload = [
+            (
+                equity_id,
+                r.fiscal_year,
+                r.fiscal_quarter,
+                r.period_end,
+                r.revenue_usd,
+                r.cogs_usd,
+                r.gross_profit_usd,
+                r.opex_usd,
+                r.ebitda_usd,
+                r.net_income_usd,
+                r.capex_usd,
+                r.source,
+            )
+            for r in rows
+        ]
+        async with self._pool.acquire() as conn:
+            await conn.executemany(_UPSERT_FINANCIALS_SQL, payload)
+        return len(payload)
 
     async def close(self) -> None:
         await self._pool.close()

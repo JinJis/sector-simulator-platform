@@ -12,6 +12,8 @@ dependencies = [
   # yfinance is unofficial — fine for dev/MVP, swap for a paid source
   # (AlphaVantage / Polygon / Tiingo) when SLA-bound usage shows up.
   "yfinance>=0.2.50",
+  # httpx for async HTTP (DART + EDGAR adapters in M10b).
+  "httpx>=0.27.0",
 ]
 
 [build-system]

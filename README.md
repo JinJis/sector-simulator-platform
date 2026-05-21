@@ -166,6 +166,23 @@ In docker-compose, the `db-migrate` one-shot service runs `migrate:deploy && see
 
 ## 5. Common operations
 
+### Refresh equity financials (data-pipeline)
+
+```bash
+# Manual trigger (US uses EDGAR, KR uses DART if DART_API_KEY set)
+curl -X POST "http://localhost:8003/jobs/refresh-financials?quarters=8"
+
+# Last result + per-equity failure reasons
+curl http://localhost:8003/jobs/refresh-financials/last
+```
+
+Env:
+- `EDGAR_USER_AGENT` — required for EDGAR (SEC policy). Default
+  `"sector-simulator-platform info@example.com"` — please override
+  with your contact email before production use.
+- `DART_API_KEY` — required for KR equities. Skip KR silently when
+  unset. Free registration: https://opendart.fss.or.kr/
+
 ### Refresh equity prices (data-pipeline)
 
 ```bash
@@ -241,6 +258,9 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **Equities M9** | Hybrid edge weights end-to-end — `EdgeWeights` in SDK, `memory-semi` sim refactored at 14 choke points, `sim.run` forwards `graph_edges` from DB → simulation-service. New `equity.impactScores` tRPC walks graph to score per-equity impliedImpact. Equity projections now move with edge weight edits. |
 | **Equities M10** | `EquityFinancial` mock-seeded domain — 8 quarters × 49 equities (revenue, COGS, gross profit, opex, EBITDA, net income, capex). Deterministic per-ticker margins; accounting identities preserved. `equity.financials` tRPC + lazy-loaded Financials panel in expand row with 4 SVG bar charts. Real DART/EDGAR adapters deferred to M10b. |
 | **Equities M11** | Graph editor UI — side panel with weight slider + magnitude select + label edit + delete on edge click. Drag-new-edge from node handles. Optimistic local state with rollback. Edge styling by weight (cyan amplify / rose inverse / amber dampen) and magnitude (stroke width). Brings M7-M9 backend plumbing alive. |
+| **Equities M12** | Node CRUD UI — editable node side panel (label / group / unit / description, blur-to-save). "+ Add node" toolbar button → modal with key collision check + kind picker. Delete-node button respects the server-side attached-edges guard. |
+| **Equities M13** | Reset graph — `graph.resetToDefaults` tRPC now wipes + re-bootstraps from Python SimGraph + SectorEquity.driver_links (inlines seed-graph + seed-graph-equities). New "↻ Reset" toolbar button with confirm + success banner. Convenience `graph.wipe` mutation preserved for tests. |
+| **Equities M10b** | Real DART + EDGAR adapters — `EdgarSource` (SEC XBRL Facts, no key) + `DartSource` (OPEN DART, KR ticker→corp_code map for 16 seed equities) + `FakeFinancialsSource`. New `refresh_financials` APScheduler-ready job with per-country routing. `POST /jobs/refresh-financials` endpoint. 21 new tests covering adapter math, fallback chains, failure isolation. |
 
 ### In progress
 

@@ -18,6 +18,7 @@ import "reactflow/dist/style.css";
 
 import {
   deleteGraphEdge,
+  deleteGraphNode,
   fetchDbGraph,
   fetchGraph,
   type DbGraph,
@@ -26,12 +27,14 @@ import {
   type GraphEdge,
   type GraphNode,
   normalizeDbGraph,
+  resetGraphToDefaults,
   type SimGraphResponse,
   type SimMetadata,
   upsertGraphEdge,
+  upsertGraphNode,
 } from "@/lib/sim-client";
 
-import { GraphSidePanel, type SidePanelSelection } from "./graph-side-panel";
+import { GraphAddNodeModal, GraphSidePanel, type SidePanelSelection } from "./graph-side-panel";
 import { formatDriverValue, prettyName } from "./shared";
 
 interface Props {
@@ -68,6 +71,9 @@ export function GraphView({ meta, driverValues }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [selection, setSelection] = useState<SidePanelSelection>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
+  const [addNodeOpen, setAddNodeOpen] = useState(false);
+  const [resetStatus, setResetStatus] = useState<"idle" | "running">("idle");
+  const [resetSummary, setResetSummary] = useState<string | null>(null);
 
   // Initial fetch — prefer DB, fall back to upstream Python proxy.
   useEffect(() => {
@@ -265,6 +271,121 @@ export function GraphView({ meta, driverValues }: Props) {
     [dbGraph, meta.slug],
   );
 
+  // Node mutations (M12).
+  const handleCommitNode = useCallback(
+    async (input: {
+      node_key: string;
+      kind: "driver" | "intermediate" | "output" | "equity";
+      label: string;
+      group?: string;
+      unit?: string | null;
+      description?: string | null;
+    }) => {
+      if (!dbGraph) return;
+      // Optimistic: patch local state.
+      setDbGraph((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev, nodes: [...prev.nodes] };
+        const idx = next.nodes.findIndex((n) => n.node_key === input.node_key);
+        if (idx >= 0) {
+          next.nodes[idx] = {
+            ...next.nodes[idx]!,
+            label: input.label,
+            group: input.group ?? next.nodes[idx]!.group,
+            unit: input.unit ?? null,
+            description: input.description ?? null,
+          };
+        }
+        return next;
+      });
+      try {
+        const updated = await upsertGraphNode({
+          sector_slug: meta.slug,
+          node_key: input.node_key,
+          kind: input.kind,
+          label: input.label,
+          group: input.group,
+          unit: input.unit,
+          description: input.description,
+        });
+        setSelection((s) =>
+          s?.kind === "node" && s.node.node_key === input.node_key
+            ? { kind: "node", node: updated }
+            : s,
+        );
+        // If the node was newly created (add modal flow), it won't be
+        // in the local graph yet — merge it in.
+        setDbGraph((prev) => {
+          if (!prev) return prev;
+          if (prev.nodes.some((n) => n.node_key === updated.node_key)) return prev;
+          return { ...prev, nodes: [...prev.nodes, updated] };
+        });
+        setMutationError(null);
+      } catch (e) {
+        setMutationError(e instanceof Error ? e.message : String(e));
+        const fresh = await fetchDbGraph(meta.slug);
+        setDbGraph(fresh);
+        throw e;
+      }
+    },
+    [dbGraph, meta.slug],
+  );
+
+  const handleDeleteNode = useCallback(
+    async (input: { node_key: string }) => {
+      if (!dbGraph) return;
+      // Optimistic: remove from local state (the server-side guard
+      // will reject if attached edges exist; we re-fetch on error).
+      setDbGraph((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          nodes: prev.nodes.filter((n) => n.node_key !== input.node_key),
+        };
+      });
+      setSelection(null);
+      try {
+        await deleteGraphNode({ sector_slug: meta.slug, node_key: input.node_key });
+        setMutationError(null);
+      } catch (e) {
+        setMutationError(e instanceof Error ? e.message : String(e));
+        const fresh = await fetchDbGraph(meta.slug);
+        setDbGraph(fresh);
+        throw e;
+      }
+    },
+    [dbGraph, meta.slug],
+  );
+
+  const handleReset = useCallback(async () => {
+    if (!confirm(
+      "이 섹터의 graph 를 Python SimGraph + SectorEquity.driver_links 로 초기화합니다.\n" +
+      "그동안의 edge weight / magnitude / label / 사용자 추가 노드 변경은 사라집니다.\n\n계속할까요?",
+    )) {
+      return;
+    }
+    setResetStatus("running");
+    setResetSummary(null);
+    setSelection(null);
+    try {
+      const result = await resetGraphToDefaults(meta.slug);
+      const fresh = await fetchDbGraph(meta.slug);
+      setDbGraph(fresh);
+      setLegacyGraph(null);
+      setMutationError(null);
+      setResetSummary(
+        `재구성 완료 — ${result.nodes} 노드 · ${result.edges} edges + ${result.equity_nodes} 종목 · ${result.equity_edges} driver→equity` +
+          (result.skipped_driver_misses > 0
+            ? ` (${result.skipped_driver_misses} edges skipped — driver mismatch)`
+            : "."),
+      );
+    } catch (e) {
+      setMutationError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setResetStatus("idle");
+    }
+  }, [meta.slug]);
+
   // Click handlers.
   const handleEdgeClick = useCallback(
     (_: unknown, edge: Edge) => {
@@ -333,15 +454,37 @@ export function GraphView({ meta, driverValues }: Props) {
               label={`equities (${counts.equity ?? 0})`}
             />
           ) : null}
-          <span
-            className={`ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
-              editable
-                ? "bg-cyan-950/60 text-cyan-300"
-                : "bg-neutral-800/60 text-neutral-500"
-            }`}
-          >
-            {editable ? "Editable" : "Read-only (seed pending)"}
-          </span>
+          <div className="ml-auto flex items-center gap-2">
+            {editable ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setAddNodeOpen(true)}
+                  className="rounded border border-cyan-700 bg-cyan-950/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-200 hover:bg-cyan-900/60"
+                >
+                  + Add node
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  disabled={resetStatus === "running"}
+                  className="rounded border border-amber-700/70 bg-amber-950/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200 hover:bg-amber-900/60 disabled:cursor-not-allowed disabled:opacity-40"
+                  title="Wipe & re-bootstrap from Python SimGraph + SectorEquity.driver_links"
+                >
+                  {resetStatus === "running" ? "Resetting…" : "↻ Reset"}
+                </button>
+              </>
+            ) : null}
+            <span
+              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                editable
+                  ? "bg-cyan-950/60 text-cyan-300"
+                  : "bg-neutral-800/60 text-neutral-500"
+              }`}
+            >
+              {editable ? "Editable" : "Read-only (seed pending)"}
+            </span>
+          </div>
         </div>
         <p>
           {editable ? (
@@ -361,6 +504,11 @@ export function GraphView({ meta, driverValues }: Props) {
         {mutationError ? (
           <p className="mt-2 rounded border border-rose-900/60 bg-rose-950/30 px-2 py-1 text-[11px] text-rose-300">
             저장 실패: {mutationError}
+          </p>
+        ) : null}
+        {resetSummary ? (
+          <p className="mt-2 rounded border border-emerald-900/60 bg-emerald-950/30 px-2 py-1 text-[11px] text-emerald-300">
+            {resetSummary}
           </p>
         ) : null}
       </div>
@@ -403,9 +551,19 @@ export function GraphView({ meta, driverValues }: Props) {
           onClose={() => setSelection(null)}
           onCommitEdge={handleCommitEdge}
           onDeleteEdge={handleDeleteEdge}
+          onCommitNode={handleCommitNode}
+          onDeleteNode={handleDeleteNode}
           nodeLabels={nodeLabels}
         />
       </div>
+      <GraphAddNodeModal
+        open={addNodeOpen}
+        onClose={() => setAddNodeOpen(false)}
+        onCreate={async (n) => {
+          await handleCommitNode(n);
+        }}
+        existingKeys={new Set(dbGraph?.nodes.map((n) => n.node_key) ?? [])}
+      />
     </div>
   );
 }

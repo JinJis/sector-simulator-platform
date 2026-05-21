@@ -34,8 +34,16 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from data_pipeline.adapters.base import DataSource
+from data_pipeline.adapters.dart_source import DartSource
+from data_pipeline.adapters.edgar_source import EdgarSource
 from data_pipeline.adapters.fake import FakeSource
+from data_pipeline.adapters.fake_financials import FakeFinancialsSource
+from data_pipeline.adapters.financials_base import FinancialsSource
 from data_pipeline.adapters.yfinance_source import YFinanceSource
+from data_pipeline.jobs.refresh_financials import (
+    RefreshFinancialsResult,
+    refresh_financials,
+)
 from data_pipeline.jobs.refresh_quote_history import (
     RefreshHistoryResult,
     refresh_quote_history,
@@ -47,6 +55,9 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 log = logging.getLogger("data_pipeline")
 
 _DEFAULT_CRON = "30 8 * * *"  # 08:30 UTC = 17:30 KST
+# Default financials cron: weekly Sun 04:00 UTC. Quarterly cadence
+# upstream means daily would burn rate limits with no value.
+_DEFAULT_FINANCIALS_CRON = "0 4 * * 0"
 
 
 def _build_source() -> DataSource:
@@ -57,6 +68,33 @@ def _build_source() -> DataSource:
     return YFinanceSource()
 
 
+def _build_financials_sources() -> tuple[FinancialsSource, FinancialsSource | None]:
+    """Return (us_source, kr_source). KR is optional — without DART_API_KEY
+    we skip KR equities at refresh time. INGEST_SOURCE=fake routes both
+    countries through FakeFinancialsSource for smoke tests."""
+    name = os.environ.get("INGEST_SOURCE", "yfinance").lower()
+    if name == "fake":
+        log.warning("data-pipeline: using FakeFinancialsSource — only smoke-test data!")
+        fake = FakeFinancialsSource()
+        return fake, fake
+
+    edgar_ua = os.environ.get(
+        "EDGAR_USER_AGENT",
+        "sector-simulator-platform info@example.com",
+    )
+    edgar = EdgarSource(user_agent=edgar_ua)
+
+    dart_key = os.environ.get("DART_API_KEY", "").strip()
+    kr_source: FinancialsSource | None = None
+    if dart_key:
+        kr_source = DartSource(api_key=dart_key)
+    else:
+        log.warning(
+            "data-pipeline: DART_API_KEY unset — KR equities will be skipped on financials refresh.",
+        )
+    return edgar, kr_source
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ANN201
     # Allow tests to pre-wire these.
@@ -65,8 +103,14 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         app.state.repo = repo
     if not hasattr(app.state, "source"):
         app.state.source = _build_source()
+    if not hasattr(app.state, "us_financials") or not hasattr(app.state, "kr_financials"):
+        us_fs, kr_fs = _build_financials_sources()
+        app.state.us_financials = us_fs
+        app.state.kr_financials = kr_fs
     if not hasattr(app.state, "last_result"):
         app.state.last_result = None
+    if not hasattr(app.state, "last_financials_result"):
+        app.state.last_financials_result = None
     app.state.throttle_ms = int(os.environ.get("INGEST_THROTTLE_MS", "200"))
 
     scheduler: AsyncIOScheduler | None = None
@@ -189,6 +233,44 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status_code=404,
                 detail="no quote-history refresh has run since the process started",
+            )
+        return last
+
+    @app.post(
+        "/jobs/refresh-financials",
+        response_model=RefreshFinancialsResult,
+    )
+    async def trigger_refresh_financials(quarters: int = 8) -> RefreshFinancialsResult:
+        log.info(
+            "data-pipeline: manual /jobs/refresh-financials triggered (quarters=%d)",
+            quarters,
+        )
+        repo: EquityRepository = app.state.repo
+        us: FinancialsSource = app.state.us_financials
+        kr: FinancialsSource | None = app.state.kr_financials
+        throttle = int(app.state.throttle_ms)
+        result = await refresh_financials(
+            us_source=us,
+            kr_source=kr,
+            repo=repo,
+            quarters=quarters,
+            throttle_ms=throttle,
+        )
+        app.state.last_financials_result = result
+        return result
+
+    @app.get(
+        "/jobs/refresh-financials/last",
+        response_model=RefreshFinancialsResult,
+    )
+    async def last_financials_refresh() -> RefreshFinancialsResult:
+        last: RefreshFinancialsResult | None = getattr(
+            app.state, "last_financials_result", None
+        )
+        if last is None:
+            raise HTTPException(
+                status_code=404,
+                detail="no financials refresh has run since the process started",
             )
         return last
 

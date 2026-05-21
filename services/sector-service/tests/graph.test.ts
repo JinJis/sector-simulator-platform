@@ -295,14 +295,19 @@ describe("graph.get", () => {
   });
 });
 
-describe("graph.resetToDefaults", () => {
+describe("graph.wipe", () => {
   it("wipes all nodes and edges for the sector", async () => {
     await seedTriangle();
     const c = caller();
-    const res = await c.graph.resetToDefaults({ sector_slug: SEEDED_SECTOR });
+    const res = await c.graph.wipe({ sector_slug: SEEDED_SECTOR });
     expect(res.nodes_deleted).toBe(3);
     expect(res.edges_deleted).toBe(2);
     const left = await prisma.graphNode.count({ where: { sector_slug: SEEDED_SECTOR } });
     expect(left).toBe(0);
   });
 });
+
+// graph.resetToDefaults integration test is omitted here because it
+// requires a reachable simulation-service (it calls GET /sims/{slug}/graph
+// to re-bootstrap). The mutation is exercised manually + via the M13
+// "Reset graph" button on /sectors/[slug]/graph.

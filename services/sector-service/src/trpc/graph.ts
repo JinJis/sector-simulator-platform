@@ -20,8 +20,176 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { simFetch } from "../lib/sim-proxy.js";
 import type { Context } from "./context.js";
 import { publicProcedure, router } from "./init.js";
+
+const MAGNITUDE_WEIGHT = { low: 0.5, med: 1.0, high: 2.0 } as const;
+
+interface UpstreamNode {
+  id: string;
+  label: string;
+  kind: string;
+  group: string;
+  unit: string;
+  description: string;
+}
+
+interface UpstreamEdge {
+  source: string;
+  target: string;
+  label: string;
+}
+
+interface UpstreamGraph {
+  nodes: UpstreamNode[];
+  edges: UpstreamEdge[];
+}
+
+interface SeedDriverLink {
+  driver: string;
+  sign: "+" | "-";
+  magnitude: "low" | "med" | "high";
+  note?: string;
+}
+
+function equityNodeKey(ticker: string, exchange: string): string {
+  return `equity_${ticker.replace(/[^A-Za-z0-9]/g, "_")}_${exchange}`.toUpperCase();
+}
+
+/**
+ * Rebuild a sector's graph from its authoritative sources:
+ *   1. The Python `SimGraph` literal (via simulation-service)
+ *   2. SectorEquity rows + their `driver_links` JSONB
+ *
+ * Inlines the logic from `packages/db/prisma/seed-graph.ts` and
+ * `seed-graph-equities.ts` so the user can hit "Reset" from the UI
+ * without shelling out to a `pnpm db:seed:graph*` command.
+ */
+async function rebootstrapGraph(
+  ctx: Context,
+  sector_slug: string,
+): Promise<{ nodes: number; edges: number; equity_nodes: number; equity_edges: number; skipped_driver_misses: number }> {
+  // 1. Wipe everything first so we don't end up with orphan edges
+  // pointing at nodes that no longer exist.
+  await ctx.prisma.$transaction([
+    ctx.prisma.graphEdge.deleteMany({ where: { sector_slug } }),
+    ctx.prisma.graphNode.deleteMany({ where: { sector_slug } }),
+  ]);
+
+  // 2. Fetch the Python SimGraph and upsert nodes + edges.
+  const upstream = await simFetch<UpstreamGraph>(`/sims/${sector_slug}/graph`, {
+    context: `graph.rebootstrap:${sector_slug}`,
+  });
+
+  let nodeCount = 0;
+  for (const n of upstream.nodes) {
+    await ctx.prisma.graphNode.create({
+      data: {
+        sector_slug,
+        node_key: n.id,
+        kind: n.kind,
+        label: n.label,
+        group: n.group,
+        unit: n.unit || null,
+        description: n.description || null,
+      },
+    });
+    nodeCount += 1;
+  }
+
+  let edgeCount = 0;
+  for (const e of upstream.edges) {
+    await ctx.prisma.graphEdge.create({
+      data: {
+        sector_slug,
+        source_key: e.source,
+        target_key: e.target,
+        label: e.label || null,
+        weight: 1.0,
+        magnitude: "med",
+        origin: "seed",
+      },
+    });
+    edgeCount += 1;
+  }
+
+  // 3. Promote SectorEquity rows to graph nodes + driver-link edges.
+  const equities = await ctx.prisma.sectorEquity.findMany({
+    where: { sector_slug },
+    select: {
+      id: true,
+      ticker: true,
+      exchange: true,
+      company_name: true,
+      company_name_local: true,
+      iso_country: true,
+      driver_links: true,
+    },
+    orderBy: { display_order: "asc" },
+  });
+
+  // Pre-fetch driver node keys so we can skip dangling driver_links.
+  const driverNodes = await ctx.prisma.graphNode.findMany({
+    where: { sector_slug, kind: "driver" },
+    select: { node_key: true },
+  });
+  const driverKeys = new Set(driverNodes.map((n) => n.node_key));
+
+  let equityNodes = 0;
+  let equityEdges = 0;
+  let skippedDriverMisses = 0;
+  for (const eq of equities) {
+    const nodeKey = equityNodeKey(eq.ticker, eq.exchange);
+    const label = eq.company_name_local
+      ? `${eq.ticker} · ${eq.company_name_local}`
+      : `${eq.ticker} · ${eq.company_name}`;
+
+    await ctx.prisma.graphNode.create({
+      data: {
+        sector_slug,
+        node_key: nodeKey,
+        kind: "equity",
+        label,
+        group: "Equities",
+        unit: null,
+        description: `${eq.company_name} (${eq.iso_country})`,
+        equity_id: eq.id,
+      },
+    });
+    equityNodes += 1;
+
+    const links = (eq.driver_links ?? []) as unknown as SeedDriverLink[];
+    for (const link of links) {
+      if (!driverKeys.has(link.driver)) {
+        skippedDriverMisses += 1;
+        continue;
+      }
+      const sign = link.sign === "-" ? -1 : 1;
+      const weight = sign * MAGNITUDE_WEIGHT[link.magnitude];
+      await ctx.prisma.graphEdge.create({
+        data: {
+          sector_slug,
+          source_key: link.driver,
+          target_key: nodeKey,
+          label: link.note ?? null,
+          weight,
+          magnitude: link.magnitude,
+          origin: "seed",
+        },
+      });
+      equityEdges += 1;
+    }
+  }
+
+  return {
+    nodes: nodeCount,
+    edges: edgeCount,
+    equity_nodes: equityNodes,
+    equity_edges: equityEdges,
+    skipped_driver_misses: skippedDriverMisses,
+  };
+}
 
 // ---------- Schemas ----------
 
@@ -317,19 +485,53 @@ export const graphRouter = router({
 
   resetToDefaults: publicProcedure
     .input(ResetInput)
+    .output(
+      z.object({
+        sector_slug: z.string(),
+        nodes: z.number(),
+        edges: z.number(),
+        equity_nodes: z.number(),
+        equity_edges: z.number(),
+        skipped_driver_misses: z.number(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      // M13: full reset = wipe + re-bootstrap from authoritative sources.
+      // 1. simulation-service GET /sims/{slug}/graph (Python SimGraph
+      //    literal) → driver/intermediate/output nodes + neutral edges
+      // 2. SectorEquity rows + driver_links JSONB → equity nodes +
+      //    driver→equity edges with sign × magnitude weights
+      // Single tRPC mutation so the UI can offer a "Reset graph" button.
+      const stats = await rebootstrapGraph(ctx, input.sector_slug);
+      await logAudit(
+        ctx,
+        "graph.resetToDefaults",
+        input.sector_slug,
+        stats,
+        input.author_label,
+      );
+      return {
+        sector_slug: input.sector_slug,
+        ...stats,
+      };
+    }),
+
+  /**
+   * Convenience wipe — leaves the sector with 0 nodes + edges. The user
+   * has to re-run reset (or `pnpm db:seed:graph`) to get back to a
+   * populated state. Mostly here for tests + admin operations.
+   */
+  wipe: publicProcedure
+    .input(ResetInput)
     .output(z.object({ sector_slug: z.string(), nodes_deleted: z.number(), edges_deleted: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      // Wipe all graph state for this sector. The caller is expected to
-      // re-run `pnpm db:seed:graph <slug>` after this; we don't fetch
-      // from simulation-service here to keep the API surface
-      // dependency-free (the seed script handles that).
       const [edges, nodes] = await ctx.prisma.$transaction([
         ctx.prisma.graphEdge.deleteMany({ where: { sector_slug: input.sector_slug } }),
         ctx.prisma.graphNode.deleteMany({ where: { sector_slug: input.sector_slug } }),
       ]);
       await logAudit(
         ctx,
-        "graph.resetToDefaults",
+        "graph.wipe",
         input.sector_slug,
         { nodes_deleted: nodes.count, edges_deleted: edges.count },
         input.author_label,

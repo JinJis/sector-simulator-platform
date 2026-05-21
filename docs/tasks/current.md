@@ -1408,6 +1408,169 @@ them.
   visible instantly; explicit cache invalidation isn't needed
   unless the sim grows hot caching later)
 
+#### Equities Milestone 12 — Node CRUD UI (2026-05-21)
+
+Completes the graph editor: nodes are now editable in the side
+panel + creatable via an "Add node" modal. Removal already worked at
+the backend; M12 wires it through the UI.
+
+**Side panel — Node mode now editable** (`graph-side-panel.tsx`):
+
+- Label / Group / Unit / Description text inputs (commit on blur)
+- Warning chip when the node is driver- or equity-kind: "Python sim /
+  SectorEquity row 과 연결됨 — 재부트스트랩 시 덮어쓰일 수 있음"
+- "Delete node" button (server-side guard refuses if attached edges
+  exist; the panel surfaces the BAD_REQUEST message)
+
+**Add-node modal** (`GraphAddNodeModal`):
+
+- Triggered by "+ Add node" toolbar button (editable mode only)
+- Node key input with a-z / 0-9 / _ filter + collision check against
+  existing node_keys
+- Kind picker: intermediate or output (driver / equity come from
+  upstream sources)
+- Label (required), group, unit, description fields
+- Disabled "Create" button until key + label are valid
+- Posts via `graph.upsertNode` mutation → optimistic local insert
+
+**Graph view** wiring:
+
+- New `handleCommitNode` + `handleDeleteNode` callbacks with optimistic
+  patches + rollback on error (same pattern as M11 edge handlers)
+- Newly-created nodes are merged into local state in the same patch
+  cycle so the toolbar button gives instant feedback even before
+  React Flow re-renders
+
+#### Equities Milestone 13 — Reset graph via re-bootstrap (2026-05-21)
+
+The `graph.resetToDefaults` tRPC mutation now does an end-to-end
+re-bootstrap instead of just wiping. Inlines the logic from
+`seed-graph.ts` + `seed-graph-equities.ts` so the user can hit a
+"Reset" button without dropping to a shell.
+
+**Sector-service** (`services/sector-service/src/trpc/graph.ts`):
+
+- New helper `rebootstrapGraph(ctx, sector_slug)`:
+  1. Wipes `graph_nodes` + `graph_edges` for the sector
+  2. Fetches the Python `SimGraph` from
+     `GET /sims/{slug}/graph` and re-creates driver / intermediate /
+     output nodes + their neutral (`weight=1.0`) edges
+  3. Reads `sector_equities` for the sector and promotes each row to
+     a `GraphNode(kind="equity")` plus driver→equity edges with
+     `weight = sign × magnitude_weight` (matches M8 seed exactly)
+- `graph.resetToDefaults` returns the full stat tuple
+  (`{nodes, edges, equity_nodes, equity_edges, skipped_driver_misses}`)
+- New `graph.wipe` mutation preserves the *old* destructive-only
+  behavior for tests and admin operations
+
+**Web** (`graph-view.tsx`):
+
+- "↻ Reset" amber button next to "+ Add node" in the editor toolbar
+- `confirm()` dialog before firing — wiping pending user edits is
+  destructive
+- On success: success banner with the rebuild stats
+  (`재구성 완료 — N 노드 · M edges + K 종목 · L driver→equity edges`)
+- On failure: existing mutation-error banner picks it up
+
+**Test surface**:
+
+- The graph integration test that previously asserted wipe-only
+  behavior now calls `graph.wipe` instead. The full rebootstrap path
+  needs a reachable simulation-service so it's exercised manually
+  via the UI button + per-slice docker smoke.
+
+#### Equities Milestone 10b — DART + EDGAR real financials adapters (2026-05-21)
+
+Replaces the M10 mock fundamentals with real upstream data. The
+adapters drop in alongside M10's mock; toggle by setting `INGEST_SOURCE`
+in `data-pipeline`.
+
+**New adapter layer** (`services/data-pipeline/data_pipeline/adapters/`):
+
+- `financials_base.py` — `FinancialQuarter` pydantic model +
+  `FinancialsSource` Protocol. USD-normalized at the adapter layer.
+- `fake_financials.py` — `FakeFinancialsSource` (deterministic mulberry-
+  style walk per ticker) for tests and `INGEST_SOURCE=fake` smoke
+- `edgar_source.py` — SEC EDGAR XBRL Facts adapter:
+  - Caches `sec.gov/files/company_tickers.json` for ticker → CIK
+  - Hits `data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json`
+  - Walks fallback chains per concept (Revenues /
+    RevenueFromContractWith…, CostOfRevenue / CostOfGoodsAndServicesSold,
+    OperatingIncomeLoss, NetIncomeLoss, PaymentsToAcquirePPE)
+  - Filters to `qtrs=1` rows so we get true quarterly slices
+  - Aggregates into `FinancialQuarter` (gross profit / opex derived)
+  - Requires `EDGAR_USER_AGENT` env var (`"Project name email@host"`)
+    per SEC fair-access policy
+- `dart_source.py` — OPEN DART (한국 금융감독원) adapter:
+  - Hand-curated ticker → corp_code map for the 16 KR equities in
+    `seed-equities.ts`
+  - Hits `opendart.fss.or.kr/api/fnlttSinglAcnt.json` per (corp,
+    year, reprt_code)
+  - Matches K-IFRS line items by substring (매출액 / 영업이익 /
+    당기순이익 / 매출원가)
+  - Comma-delimited number parser + "-" sentinel handling
+  - FX-converts to USD via `DEFAULT_KRW_PER_USD = 1380` (override
+    via constructor for tests)
+  - Requires `DART_API_KEY` env var; without it the adapter is
+    not constructed and KR equities are silently skipped
+
+**Repository extension** (`data_pipeline/repo.py`):
+
+- New `FinancialRow` pydantic model (matches the schema)
+- `EquityRepository.bulk_upsert_financials(equity_id, rows)` on both
+  the Protocol, the in-memory implementation, and the asyncpg
+  Postgres implementation
+- SQL: `ON CONFLICT (equity_id, fiscal_year, fiscal_quarter) DO UPDATE`
+
+**Job** (`data_pipeline/jobs/refresh_financials.py`):
+
+- Routes per-equity by `iso_country` (US → EDGAR, KR → DART,
+  others → skip)
+- Failure-isolated per ticker; same `failure_reasons` map pattern
+  as `refresh_quote_history`
+- Returns `RefreshFinancialsResult(updated, rows_written, empty,
+  errors, ...)`
+
+**FastAPI surface** (`data_pipeline/main.py`):
+
+- `POST /jobs/refresh-financials?quarters=8` — manual trigger
+- `GET /jobs/refresh-financials/last` — last run's result
+- Wires env: `EDGAR_USER_AGENT` + `DART_API_KEY` + `INGEST_SOURCE`
+- Background scheduler hook + cron env var (`REFRESH_FINANCIALS_CRON`
+  default weekly Sun 04:00 UTC) deferred to M10c — the manual
+  endpoint is enough for now
+
+**Tests** (`services/data-pipeline/tests/`):
+
+- `test_financials_adapters.py` — 17 cases covering: fake source
+  determinism / accounting identities / sort order, calendar quarter
+  inference, EDGAR concept fallback chain, quarterly facts filter,
+  aggregation math (gross / opex / capex sign flip), EDGAR + DART
+  constructor validation, DART line-item matching + comma parsing +
+  missing-field handling
+- `test_refresh_financials.py` — 4 cases covering: routing (US +
+  KR + unsupported country), KR skip when DART key missing,
+  failure isolation per equity, empty-upstream is `empty` not `errors`
+
+**Verification:**
+
+- TS typecheck (5 workspaces) clean
+- @platform/db vitest: 32/32 pass
+- sector-service vitest: 45 pass / 26 skipped
+- simulation-service pytest: 61 pass
+- **data-pipeline pytest: 48 pass** (+21 from baseline of 27)
+- **Cumulative: 229 + 17 skipped** (+29 from M11)
+
+**Out of scope (lands in M10c+):**
+
+- Quarterly cron scheduler (manual endpoint only for now)
+- Full DART `fnlttSinglAcntAll` adapter for capex + balance sheet
+- EDGAR Depreciation+Amortization for true EBITDA (currently uses
+  operating income as proxy)
+- DART corp_code auto-discovery from `corpCode.xml`
+- Historical FX (current implementation applies a single FX constant
+  to every KR quarter — fine for charts, wrong for YoY analysis)
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14
