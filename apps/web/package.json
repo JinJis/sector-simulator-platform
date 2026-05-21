@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
     "@platform/sector-service": "workspace:*",
     "@platform/ui": "workspace:*",
     "@trpc/client": "^11.0.0-rc.638",

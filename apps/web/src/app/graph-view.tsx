@@ -1,5 +1,6 @@
 "use client";
 
+import dagre from "@dagrejs/dagre";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Background,
@@ -486,7 +487,8 @@ export function GraphView({ meta, driverValues }: Props) {
             </span>
           </div>
         </div>
-        <p>
+        <EdgeLegend />
+        <p className="mt-2">
           {editable ? (
             <>
               Edge 클릭 → 우측 패널에서 weight / magnitude / label 수정. 노드 우측 핸들에서
@@ -621,29 +623,64 @@ function colorFor(kind: string): KindStyle {
   return KIND_COLORS.intermediate;
 }
 
+/**
+ * Kind-tone color reference for edges (must match the node accent
+ * palette so an edge entering an amber output node looks unmistakably
+ * "headed into output land"). Hex/rgb because React Flow inline styles
+ * don't speak Tailwind class names.
+ */
+const KIND_STROKE: Record<string, string> = {
+  driver: "rgb(34 211 238)", // cyan-400 — drivers rarely receive, but harmless
+  intermediate: "rgb(34 211 238)", // cyan-400
+  output: "rgb(245 158 11)", // amber-500
+  equity: "rgb(234 179 8)", // yellow-500 — gold, distinct from output amber
+};
+
+const KIND_BG_BAND: Record<string, string> = {
+  driver: "bg-cyan-400",
+  intermediate: "bg-neutral-500",
+  output: "bg-amber-400",
+  equity: "bg-yellow-400",
+};
+
 function GraphFlowNode({ data }: NodeProps<DriverNodeData>) {
   const c = colorFor(data.kind);
   return (
     <div
-      className={`rounded-md border ${c.border} ${c.bg} px-2.5 py-1.5 shadow-sm`}
-      style={{ minWidth: 140, maxWidth: 200 }}
+      className={`relative overflow-hidden rounded-md border ${c.border} ${c.bg} px-2.5 py-1.5 shadow-sm`}
+      style={{ width: NODE_W, minHeight: NODE_H }}
       title={data.description || undefined}
     >
+      {/* Left color band — semantic key for kind. */}
+      <span
+        aria-hidden
+        className={`absolute left-0 top-0 h-full w-1 ${KIND_BG_BAND[data.kind] ?? KIND_BG_BAND.intermediate}`}
+      />
       <Handle type="target" position={Position.Left} className="!h-2 !w-2 !bg-neutral-700" />
-      <div className="flex items-baseline justify-between gap-1.5">
-        <span className={`text-[11px] font-semibold ${c.accent}`}>{data.label}</span>
+      <div className="ml-1.5 flex items-baseline justify-between gap-1.5">
+        <span className={`truncate text-[11px] font-semibold ${c.accent}`}>
+          {data.label}
+        </span>
         {data.unit && (
-          <span className="text-[9px] text-neutral-500">{data.unit}</span>
+          <span className="shrink-0 text-[9px] text-neutral-500">{data.unit}</span>
+        )}
+      </div>
+      <div className="ml-1.5 mt-0.5 flex items-center gap-1.5">
+        <span
+          className={`rounded px-1 py-px text-[8px] font-semibold uppercase tracking-wider ${c.bg} ${c.accent}`}
+          style={{ borderWidth: 0.5 }}
+        >
+          {data.kind}
+        </span>
+        {data.group && (
+          <span className="truncate text-[9px] uppercase tracking-wider text-neutral-600">
+            {data.group}
+          </span>
         )}
       </div>
       {data.value !== undefined && (
-        <div className="mt-0.5 text-[10px] tabular-nums text-neutral-200">
+        <div className="ml-1.5 mt-0.5 text-[10px] tabular-nums text-neutral-200">
           {formatDriverValue(data.value, data.unit)}
-        </div>
-      )}
-      {data.group && data.kind !== "driver" && (
-        <div className="mt-0.5 text-[9px] uppercase tracking-wider text-neutral-600">
-          {data.group}
         </div>
       )}
       <Handle type="source" position={Position.Right} className="!h-2 !w-2 !bg-neutral-700" />
@@ -653,97 +690,148 @@ function GraphFlowNode({ data }: NodeProps<DriverNodeData>) {
 
 const NODE_TYPES = { sim: GraphFlowNode };
 
+/** Dagre needs to know node dimensions before layout — keep these in
+ *  sync with the values used in `GraphFlowNode`. */
+const NODE_W = 180;
+const NODE_H = 64;
+
 /**
- * Map a `(weight, magnitude)` pair to React Flow stroke styling. The
- * weight controls color (positive = neutral grey, large positive =
- * cyan amplify, negative = rose inverse, near-zero = faded). The
- * magnitude controls thickness (low/med/high → 0.75/1.25/2.0).
+ * Map an edge's (weight, magnitude, origin, targetKind) into React Flow
+ * styling along four orthogonal visual axes:
+ *
+ *   - COLOR    by target kind     (cyan / amber / gold)
+ *   - WIDTH    continuous by |weight|  (clamp 0.7 .. 4)
+ *   - DASH     by origin          (seed: solid · edit: dashed · agent: dotted)
+ *   - ARROW    by sign            (filled if w≥0, open if w<0)
+ *
+ * Opacity dims neutral seeded edges (weight=1, magnitude=med) so the
+ * eye gravitates to edges that someone has actually tuned.
  */
 function edgeStyleFor(
   weight: number | null,
   magnitude: string | null,
-): { stroke: string; strokeWidth: number; strokeOpacity: number } {
+  origin: string | null,
+  targetKind: string,
+): {
+  stroke: string;
+  strokeWidth: number;
+  strokeOpacity: number;
+  strokeDasharray: string | undefined;
+  markerType: MarkerType;
+} {
+  const baseColor = KIND_STROKE[targetKind] ?? "rgb(115 115 115)";
+  const w = weight ?? 1.0;
+  const absW = Math.abs(w);
+
+  // Width: continuous mapping of |weight| → stroke px. Magnitude is
+  // now presentation-only ornament (low → −0.3, high → +0.6) so the
+  // legacy `magnitude` field still nudges the eye, but |weight| does
+  // most of the visual work.
   const mag = magnitude ?? "med";
-  const baseWidth = mag === "high" ? 2.0 : mag === "low" ? 0.75 : 1.25;
-  if (weight == null) {
-    return { stroke: "#525252", strokeWidth: baseWidth, strokeOpacity: 1 };
-  }
-  let stroke = "#525252";
-  let opacity = 1;
-  if (weight < 0) {
-    stroke = "rgb(244 63 94)"; // rose-500
-    opacity = Math.min(1, Math.abs(weight) / 2 + 0.5);
-  } else if (weight > 1.05) {
-    stroke = "rgb(34 211 238)"; // cyan-400
-    opacity = Math.min(1, weight / 2 + 0.5);
-  } else if (weight < 0.95) {
-    stroke = "rgb(115 115 115)"; // neutral-500
-    opacity = Math.max(0.3, weight);
-  }
-  return { stroke, strokeWidth: baseWidth, strokeOpacity: opacity };
+  const magBoost = mag === "high" ? 0.6 : mag === "low" ? -0.3 : 0;
+  const strokeWidth = clamp(0.7 + absW * 1.1 + magBoost, 0.5, 4.0);
+
+  // Dash by origin.
+  let strokeDasharray: string | undefined;
+  if (origin === "edit") strokeDasharray = "5 3";
+  else if (origin === "agent") strokeDasharray = "1 3";
+
+  // Arrow head shape encodes sign.
+  const markerType = w < 0 ? MarkerType.Arrow : MarkerType.ArrowClosed;
+
+  // Opacity: untouched neutral edges fade; tuned edges saturate. Negative
+  // weight bumps opacity a notch so inverse edges read at a glance.
+  const isUntouched =
+    weight === null ||
+    (Math.abs(w - 1.0) < 1e-3 && (origin === "seed" || origin === null));
+  let strokeOpacity = isUntouched ? 0.35 : Math.min(1, 0.55 + absW * 0.2);
+  if (w < 0) strokeOpacity = Math.max(strokeOpacity, 0.85);
+
+  return {
+    stroke: baseColor,
+    strokeWidth,
+    strokeOpacity,
+    strokeDasharray,
+    markerType,
+  };
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
 }
 
 /**
- * Hand-rolled layout: stack nodes by kind into four columns
- * (driver / intermediate / output / equity), within each column stack
- * vertically by group, then by id.
+ * Auto-layout with dagre. Edges are routed orthogonally; node
+ * coordinates emerge from the layered DAG layout so no two edges
+ * cross unnecessarily and no two nodes overlap (which the old
+ * hand-rolled column layout sometimes did once equity nodes joined
+ * the right side).
+ *
+ * Note that we feed dagre an LR (left-to-right) graph and let kind
+ * fall out of the topology: drivers usually have no incoming edges,
+ * so dagre places them on the left rank; equity nodes usually have
+ * many incoming edges and none outgoing, so they land on the right.
+ * No `setRank()` hacks needed.
  */
 function buildFlow(
   g: SimGraphResponse,
   driverValues: Record<string, number>,
   db: DbGraph | null,
 ): { nodes: Node<DriverNodeData>[]; edges: Edge[] } {
-  const COLS = { driver: 0, intermediate: 1, output: 2, equity: 3 } as const;
-  const COL_X = [40, 480, 980, 1280];
-  const ROW_HEIGHT = 78;
-  const EQUITY_ROW_HEIGHT = 56;
-  const GROUP_GAP = 28;
+  const dag = new dagre.graphlib.Graph();
+  dag.setDefaultEdgeLabel(() => ({}));
+  dag.setGraph({
+    rankdir: "LR",
+    ranker: "tight-tree",
+    // Sizing tuned for ~50-node graphs (memory-semi after equity nodes).
+    nodesep: 18, // px between nodes in the same rank
+    ranksep: 70, // px between ranks
+    edgesep: 8,
+    marginx: 24,
+    marginy: 24,
+  });
 
-  const byCol: Record<string, GraphNode[]> = {
-    driver: [],
-    intermediate: [],
-    output: [],
-    equity: [],
-  };
   for (const n of g.nodes) {
-    const col = (n.kind in COLS ? n.kind : "intermediate") as keyof typeof COLS;
-    byCol[col]!.push(n);
+    dag.setNode(n.id, { width: NODE_W, height: NODE_H });
   }
-  for (const col of Object.keys(byCol)) {
-    byCol[col]!.sort((a, b) => {
-      if (a.group !== b.group) return a.group.localeCompare(b.group);
-      return a.id.localeCompare(b.id);
-    });
+  for (const e of g.edges) {
+    // dagre tolerates duplicate addEdge calls (overwrite); guard
+    // against missing endpoints for graphs that drift before the seed
+    // re-runs.
+    if (!dag.hasNode(e.source) || !dag.hasNode(e.target)) continue;
+    dag.setEdge(e.source, e.target);
   }
 
-  const nodes: Node<DriverNodeData>[] = [];
-  for (const col of Object.keys(byCol) as (keyof typeof COLS)[]) {
-    let y = 30;
-    let lastGroup: string | null = null;
-    const rowHeight = col === "equity" ? EQUITY_ROW_HEIGHT : ROW_HEIGHT;
-    for (const n of byCol[col]!) {
-      if (lastGroup !== null && n.group !== lastGroup) y += GROUP_GAP;
-      lastGroup = n.group;
-      nodes.push({
-        id: n.id,
-        type: "sim",
-        position: { x: COL_X[COLS[col]]!, y },
-        data: {
-          label: n.label || prettyName(n.id),
-          kind: n.kind,
-          unit: n.unit,
-          group: n.group,
-          description: n.description,
-          value: n.kind === "driver" ? driverValues[n.id] : undefined,
-        },
-      });
-      y += rowHeight;
-    }
-  }
+  dagre.layout(dag);
+
+  // Index node lookups so we can know each target's kind for edge
+  // coloring (M19: color by target kind).
+  const kindByKey = new Map<string, string>();
+  for (const n of g.nodes) kindByKey.set(n.id, n.kind);
+
+  const nodes: Node<DriverNodeData>[] = g.nodes.map((n) => {
+    const dn = dag.node(n.id);
+    // dagre returns center coordinates; React Flow expects top-left.
+    const x = (dn?.x ?? 0) - NODE_W / 2;
+    const y = (dn?.y ?? 0) - NODE_H / 2;
+    return {
+      id: n.id,
+      type: "sim",
+      position: { x, y },
+      data: {
+        label: n.label || prettyName(n.id),
+        kind: n.kind,
+        unit: n.unit,
+        group: n.group,
+        description: n.description,
+        value: n.kind === "driver" ? driverValues[n.id] : undefined,
+      },
+    };
+  });
 
   // Build a lookup from the DB edges (when available) so we can
-  // style each rendered edge by weight + magnitude AND attach the
-  // canonical row to the React Flow edge's `data` field for click
+  // style each rendered edge by (weight, magnitude, origin) AND attach
+  // the canonical row to the React Flow edge's `data` field for click
   // handlers.
   const dbByPair = new Map<string, DbGraphEdge>();
   if (db) {
@@ -752,19 +840,45 @@ function buildFlow(
 
   const edges: Edge[] = g.edges.map((e, i) => {
     const dbEdge = dbByPair.get(`${e.source}->${e.target}`);
-    const style = edgeStyleFor(dbEdge?.weight ?? null, dbEdge?.magnitude ?? null);
-    const weightSuffix =
-      dbEdge && Math.abs(dbEdge.weight - 1.0) > 1e-3
-        ? ` · w=${dbEdge.weight.toFixed(2)}`
-        : "";
+    const targetKind = kindByKey.get(e.target) ?? "intermediate";
+    const style = edgeStyleFor(
+      dbEdge?.weight ?? null,
+      dbEdge?.magnitude ?? null,
+      dbEdge?.origin ?? null,
+      targetKind,
+    );
+
+    // Label policy (M19): only show a label when there's a user
+    // signal — a non-neutral weight, an explicit edit label, or both.
+    // Routine seeded math labels (`× duty`, `÷ η`) stay visible since
+    // they describe the math; but the auto-appended `w=1.00` suffix
+    // for neutral edges is dropped.
+    const hasCustomLabel = !!(e.label && e.label.trim());
+    const showWeight = !!(dbEdge && Math.abs(dbEdge.weight - 1.0) > 1e-3);
+    const labelStr = showWeight
+      ? hasCustomLabel
+        ? `${e.label} · w=${dbEdge!.weight.toFixed(2)}`
+        : `w=${dbEdge!.weight.toFixed(2)}`
+      : hasCustomLabel
+        ? e.label
+        : undefined;
+
     return {
       id: `${e.source}->${e.target}-${i}`,
       source: e.source,
       target: e.target,
-      label: (e.label || "") + weightSuffix || undefined,
-      style: { stroke: style.stroke, strokeWidth: style.strokeWidth, strokeOpacity: style.strokeOpacity },
+      label: labelStr,
+      labelStyle: { fontSize: 10, fill: "rgb(163 163 163)" },
+      labelBgStyle: { fill: "rgb(10 10 10)", fillOpacity: 0.7 },
+      labelBgPadding: [3, 1],
+      style: {
+        stroke: style.stroke,
+        strokeWidth: style.strokeWidth,
+        strokeOpacity: style.strokeOpacity,
+        strokeDasharray: style.strokeDasharray,
+      },
       markerEnd: {
-        type: MarkerType.ArrowClosed,
+        type: style.markerType,
         color: style.stroke,
         width: 14,
         height: 14,
@@ -789,6 +903,139 @@ function LegendDot({ color, label }: { color: KindStyle; label: string }) {
         className={`inline-block h-2.5 w-2.5 rounded-sm border ${color.border} ${color.bg}`}
       />
       {label}
+    </span>
+  );
+}
+
+/**
+ * Compact edge-encoding legend. Walks 4 axes — color / thickness /
+ * dash / arrow head — using inline SVG so the swatches match what
+ * React Flow actually draws.
+ */
+function EdgeLegend() {
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-neutral-800 pt-2 text-[10px] text-neutral-500">
+      <span className="font-semibold uppercase tracking-wider text-neutral-600">
+        Edge:
+      </span>
+      <EdgeSample
+        label="→ intermediate"
+        stroke="rgb(34 211 238)"
+        width={1.5}
+        marker="filled"
+      />
+      <EdgeSample
+        label="→ output"
+        stroke="rgb(245 158 11)"
+        width={1.5}
+        marker="filled"
+      />
+      <EdgeSample
+        label="→ equity"
+        stroke="rgb(234 179 8)"
+        width={1.5}
+        marker="filled"
+      />
+      <span className="text-neutral-700">|</span>
+      <EdgeSample
+        label="amplify (|w| 큼)"
+        stroke="rgb(115 115 115)"
+        width={3.0}
+        marker="filled"
+      />
+      <EdgeSample
+        label="neutral (untouched)"
+        stroke="rgb(115 115 115)"
+        width={1.0}
+        marker="filled"
+        opacity={0.4}
+      />
+      <EdgeSample
+        label="inverse (w<0)"
+        stroke="rgb(115 115 115)"
+        width={1.5}
+        marker="open"
+      />
+      <span className="text-neutral-700">|</span>
+      <EdgeSample
+        label="seed"
+        stroke="rgb(115 115 115)"
+        width={1.5}
+        marker="filled"
+      />
+      <EdgeSample
+        label="edit"
+        stroke="rgb(115 115 115)"
+        width={1.5}
+        marker="filled"
+        dash="5 3"
+      />
+      <EdgeSample
+        label="agent"
+        stroke="rgb(115 115 115)"
+        width={1.5}
+        marker="filled"
+        dash="1 3"
+      />
+    </div>
+  );
+}
+
+function EdgeSample({
+  label,
+  stroke,
+  width,
+  marker,
+  dash,
+  opacity = 1,
+}: {
+  label: string;
+  stroke: string;
+  width: number;
+  marker: "filled" | "open";
+  dash?: string;
+  opacity?: number;
+}) {
+  // Generate a unique marker id per swatch so React Flow's globally-
+  // shared arrow markers don't get in the way at component scale.
+  const id = `edge-leg-${marker}-${stroke.replace(/[^a-z0-9]/gi, "")}-${width}`;
+  return (
+    <span className="flex items-center gap-1.5">
+      <svg width="38" height="10" viewBox="0 0 38 10">
+        <defs>
+          <marker
+            id={id}
+            markerWidth="6"
+            markerHeight="6"
+            refX="5"
+            refY="3"
+            orient="auto"
+          >
+            {marker === "filled" ? (
+              <path d="M0,0 L6,3 L0,6 Z" fill={stroke} />
+            ) : (
+              <path
+                d="M0,0 L6,3 L0,6"
+                fill="none"
+                stroke={stroke}
+                strokeWidth="1"
+              />
+            )}
+          </marker>
+        </defs>
+        <line
+          x1="0"
+          y1="5"
+          x2="30"
+          y2="5"
+          stroke={stroke}
+          strokeWidth={width}
+          strokeOpacity={opacity}
+          strokeDasharray={dash}
+          markerEnd={`url(#${id})`}
+        />
+      </svg>
+      <span>{label}</span>
     </span>
   );
 }

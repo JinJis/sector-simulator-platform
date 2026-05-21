@@ -85,10 +85,11 @@ export const SECTOR_PAGE_INTENTS: Record<string, PageIntent> = {
       "종목 노드(우측 컬럼)를 보고 어떤 드라이버 묶음이 그 종목의 EPS를 끄는지 추적.",
     ],
     lookFor: [
-      "Edge 색깔 — 청록(증폭) / 회색(중립) / 적색(역상관) / 흐림(약화).",
-      "굵기 — magnitude (low / med / high).",
-      "Edge 더블클릭 → 우측 패널에서 weight 슬라이더로 즉시 편집.",
-      "\"+ Add node\"로 새 intermediate / output을 만들거나, \"↻ Reset\"으로 Python sim 정의로 되돌리기.",
+      "Edge **색**은 target 노드 kind 기준 — cyan(중간 계산) / amber(산출) / gold(종목).",
+      "Edge **굵기**는 |weight| 연속 — 더 굵을수록 모델 영향력 큼.",
+      "**점선 패턴**은 origin — 실선(seed) / 긴 dash(edit) / 점 dash(agent).",
+      "**화살촉**은 sign — 채워짐(양의 weight) / 빈 삼각형(음의 weight, 역상관).",
+      "Edge 클릭 → 우측 패널에서 weight 슬라이더 즉시 편집. \"+ Add node\" / \"↻ Reset\" 으로 토폴로지 변경.",
     ],
   },
 

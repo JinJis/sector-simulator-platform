@@ -2084,28 +2084,91 @@ reach it in containerized dev.
   enough info to support it, but the inverse action math is its own
   slice
 
-### M19 — Graph UI quality polish — *quality, do alongside*
+### M19 — Graph UI quality polish (shipped 2026-05-21)
 
-**Why last (but parallelizable)**: M11 shipped a functional editor;
-M19 is visual polish. Can interleave with M17 if a frontend pair has
-bandwidth.
+Closes the backlog. M11 shipped a functional editor; M19 swaps the
+hand-rolled 4-column layout for **dagre auto-layout** and gives every
+edge four orthogonal visual axes so the renderer says more without
+the user having to hover.
 
-- **No-overlap edge routing**: swap the hand-rolled column layout
-  for **dagre** (DAG auto-layout); fall back to **elk** if dagre's
-  output is too cramped at 50+ nodes. Edges become orthogonal
-  routes that re-flow when nodes are dragged.
-- **Visual differentiation by axis**:
-  - **Color** by `kind` of target (driver → intermediate: cyan;
-    → output: amber; → equity: gold; cross-kind: gradient)
-  - **Thickness** by `|weight|` (continuous, not just low/med/high)
-  - **Dash pattern** by `origin` (seed: solid; edit: dashed;
-    agent: dotted) so user edits are visually separable
-  - **Arrow head** by sign (filled for positive weights, hollow
-    for negative)
-- **Node visual**: kind chips + group color band; equity nodes get
-  a ticker pill + sparkline thumbnail inline (uses M3 sparkline).
-- **Edge labels**: only show at hover or zoom > 0.7 to avoid
-  clutter on overview view.
+**Layout** (`apps/web/src/app/graph-view.tsx`):
+
+- New `@dagrejs/dagre` dependency. `buildFlow(...)` constructs a
+  dagre graph (`rankdir: LR`, `ranker: tight-tree`, nodesep=18,
+  ranksep=70), seeds it with every node at `(NODE_W=180, NODE_H=64)`,
+  adds every edge with endpoint guarding (drift-tolerant),
+  and `dagre.layout(...)` resolves positions.
+- The kind columns (drivers ← intermediates ← outputs ← equities)
+  emerge from topology naturally — drivers have no inbound edges so
+  they land on rank 0; equity nodes have no outbound so they're
+  rightmost. No `setRank()` hacks.
+- Crossings drop dramatically on the 50-node memory-semi graph
+  (manual + visual inspection).
+
+**Edge visual axes**:
+
+| Axis | Encoding |
+|---|---|
+| **Color** | target node's `kind` — cyan (→intermediate), amber (→output), gold (→equity) |
+| **Width** | continuous `clamp(0.7 + \|weight\| × 1.1 + magBoost, 0.5, 4)` — magnitude `low/med/high` is now a small ornament; \|weight\| drives the read |
+| **Dash** | `origin` — solid (seed), `5 3` (edit), `1 3` (agent) — user touches become instantly identifiable |
+| **Arrow head** | sign — `MarkerType.ArrowClosed` filled triangle for `w≥0`; `MarkerType.Arrow` open chevron for `w<0` (inverse) |
+| **Opacity** | untouched neutral seeded edges fade to ~0.35; tuned edges saturate to >0.6; negative weights bump to ≥0.85 |
+
+**Node visual**:
+
+- Left color band (4px wide) keyed to kind — semantic stripe stays
+  readable even at low zoom.
+- `kind` chip on a new line below the label (e.g. `INTERMEDIATE` /
+  `EQUITY`).
+- Group string remains as muted secondary chip when present.
+- Driver value preserved (live from the workspace sliders).
+- Fixed `width=180px, minHeight=64px` so dagre's layout doesn't
+  drift between layout calc and actual render.
+
+**Label policy**:
+
+- Routine seeded math labels (`× duty`, `÷ η`) stay (they explain
+  the math).
+- The auto-appended `· w=1.00` suffix is **dropped** for neutral
+  edges — labels only appear when there's actual signal (edited
+  weight OR custom label).
+- Smaller 10px labels with semi-transparent dark background so
+  they read at any zoom without occluding lines.
+
+**Legend** (`<EdgeLegend>`):
+
+- 9 inline SVG samples on a second row under the kind dots:
+  3 target-color samples + 3 weight/sign samples (amplify thick /
+  neutral faint / inverse open-arrow) + 3 origin-dash samples
+  (seed/edit/agent). Each sample renders an actual `<line>` with
+  marker so the legend matches what React Flow draws.
+
+**Page intent** updated — `SECTOR_PAGE_INTENTS.graph` now teaches
+the new visual encoding instead of the old "cyan/grey/rose/faded"
+collapse.
+
+**Verification**:
+
+- TS typecheck across web / admin / sector-service / ui / db — clean
+- sector-service vitest: 50 pass / 26 skipped (no test code touched)
+- @platform/db vitest: 35 pass (unchanged)
+- **Cumulative: 269 + 17 skipped** — no test code added (pure
+  presentation slice; the underlying math hasn't moved since M9)
+
+**Out of scope (defer)**:
+
+- **Equity ticker pills + inline sparklines** on equity nodes — the
+  spec called for them, but rendering 17+ sparklines per graph
+  paint hurts scroll perf on a 50-node graph. Equity detail page
+  (M17) already has sparklines; rebuild this as an opt-in zoom
+  feature later if anyone asks.
+- **Zoom-conditional label visibility** — would require subscribing
+  to React Flow's viewport hook + a custom edge component; the
+  smaller font + dropped neutral suffix is enough for now.
+- **Edge bundling** — dagre doesn't bundle; if memory-semi hits
+  100+ edges and re-clutters, elk's `layered.spacing.edgeNode` mode
+  is the next step.
 
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
