@@ -151,12 +151,13 @@ pnpm db:migrate:deploy       # prisma migrate deploy — production-safe variant
 pnpm db:migrate:reset        # drop + recreate (DEV ONLY)
 pnpm db:seed                 # upsert 3 sectors
 pnpm db:seed:equities        # upsert 49 equity rows
+pnpm db:seed:equity-quotes   # generate 49 × 90 = 4,410 mock daily bars (deterministic)
 pnpm db:studio               # Prisma Studio at :5555
 pnpm db:logs                 # tail postgres logs
 pnpm db:down                 # stop postgres (data persists in named volume)
 ```
 
-In docker-compose, the `db-migrate` one-shot service runs `migrate:deploy && seed` automatically before sector-service / agent-orchestration / data-pipeline boot.
+In docker-compose, the `db-migrate` one-shot service runs `migrate:deploy && seed && seed:equities && seed:equity-quotes` automatically before sector-service / agent-orchestration / data-pipeline boot — so a fresh `up` produces fully populated equity tables without an external network call.
 
 ---
 
@@ -231,17 +232,23 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **Equities M3** | `EquityQuote` time-series + 90d sparkline ingest + inline sparkline column |
 | **Equities M4** | Per-equity β / α / σ / max DD vs equal-weighted sector basket + dual sparkline overlay in expand view |
 | **Equities M5** | Slider → projected price — every equity's sparkline grows a dashed forward-30d line driven by `impliedImpact` × 0.3 |
+| **Equities M6** | Mock `EquityQuote` seed — deterministic 90d random walks anchored at each equity's snapshot close. Fresh `docker compose up` now ships ~4,410 quote rows; sparklines render without yfinance reachability. |
 
 ### In progress
 
 | | Scope |
 |---|---|
-| _next pick TBD — see options at the end of `docs/tasks/current.md`_ ||
+| **M7** | Graph topology in DB (`GraphNode` + `GraphEdge` Prisma models + `graph.*` tRPC + migration that backfills Python sim graphs into DB) |
+| **M8** | Equity nodes inside the causal graph — each `SectorEquity` becomes a `GraphNode(kind="equity")` with edges from drivers ⇒ four-column graph layout |
+| **M9** | Hybrid sim weights — Python `simulate()` multiplies by DB edge weights at choke points so graph edits move outputs in real time; equity `impliedImpact` becomes server-side graph traversal |
+| **M10** | `EquityFinancial` domain (mock-seeded, 8 quarters × 49 equities). DART/EDGAR adapters split to M10b. |
+
+(Approved plan: `.claude/plans/fluffy-plotting-hanrahan.md`.)
 
 ### Deferred (Phase 3+)
 
 - Full agent business workflow: Research → Decomposition → Driver Inference → Edge Inference → Code Gen → Code Review → Sandbox validation → Deploy
-- DART (한국 공시) + EDGAR (US 10-K) adapters → `EquityFinancial`
+- **DART (한국 공시) + EDGAR (US 10-K) adapters** → `EquityFinancial` (lands as M10b after the mock-seeded M10)
 - MarketFactor / MarketFactorObservation (macro / policy / event)
 - Backtest: counterfactual "if I'd held HBM premium at X 90 days ago"
 - Modal / E2B sandboxed code execution

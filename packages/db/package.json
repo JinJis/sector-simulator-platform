@@ -14,8 +14,10 @@
     "migrate:reset": "prisma migrate reset",
     "seed": "tsx prisma/seed.ts",
     "seed:equities": "tsx prisma/seed-equities.ts",
+    "seed:equity-quotes": "tsx prisma/seed-equity-quotes.ts",
     "studio": "prisma studio",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0"
@@ -24,7 +26,8 @@
     "@types/node": "^22.9.0",
     "prisma": "^5.22.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

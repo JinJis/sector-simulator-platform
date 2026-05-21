@@ -913,6 +913,84 @@ flip when we have a real backtest to calibrate against (M6+).
 - Confidence cone (low/med/high bands) instead of a single dashed line
 - Slider-to-projection animation hint (motion when score changes)
 
+### Phase 2 Epic — Graph SoT + Equity nodes + Financials (2026-05-21)
+
+Approved plan in
+`.claude/plans/fluffy-plotting-hanrahan.md`. A 5-slice train (M6→M10)
+that restructures the platform so the causal graph becomes the
+authoritative topology (DB-backed, editable, consumed by the sim),
+equities become first-class graph nodes, and `EquityFinancial` joins
+as a sibling time-series domain.
+
+Decisions baked in (per `AskUserQuestion` round before plan exit):
+
+- **Sim ↔ graph**: hybrid weights. Edge `weight` (default 1.0)
+  multiplied at choke points inside Python `simulate()`. Graph
+  topology change → sim output shift in real time.
+- **Equities in graph**: each `SectorEquity` becomes one
+  `GraphNode(kind="equity")`; existing `driver_links` JSONB lifts to
+  `GraphEdge` rows during seed.
+- **Mock first, real adapter later** for EquityFinancial — DART/EDGAR
+  adapters are deferred to a follow-up M10b slice.
+
+#### Equities Milestone 6 — EquityQuote mock seed (2026-05-21)
+
+Foundation slice: without mock historical bars, fresh
+`docker compose up` shows blank sparklines (data-pipeline ingest
+hits yfinance, which isn't reachable in many dev environments). This
+unblocks visual validation of every subsequent M7–M10 UI change.
+
+**What ships:**
+
+- `packages/db/src/mock-quotes.ts` — pure functions
+  (`mulberry32`, `gauss`, `hash32`, `buildSeries`) for deterministic
+  per-equity random walks. PRNG seeded by `hash(ticker || exchange)`
+  so runs are stable across machines. Anchor: walk *backwards* from
+  `last_close_local` on `last_close_date` so day-0 matches the
+  snapshot exactly (no drift between card and sparkline endpoint).
+- `packages/db/prisma/seed-equity-quotes.ts` — I/O layer. Reads
+  every `SectorEquity`, generates 90 mock bars, deletes any prior
+  `source = "mock"` rows for the equity, then bulk inserts via
+  Prisma `createMany`.
+- `packages/db/package.json` — adds `seed:equity-quotes` script +
+  `vitest` devDep + `test` script.
+- Root `package.json` — adds `db:seed:equity-quotes`.
+- `docker-compose.yml` — `db-migrate` command chain becomes
+  `migrate:deploy && seed && seed:equities && seed:equity-quotes`,
+  so a fresh boot now produces ~4,410 EquityQuote rows automatically.
+- `packages/db/tests/mock-quotes.test.ts` — 17 vitest unit tests
+  covering: PRNG determinism, Box-Muller mean, exchange-keyed
+  volatility, FX conversion, anchor pin, sort order, daysBack
+  override, missing-anchor degradation, positive prices under high
+  σ, positive integer volume.
+
+**Volatility assumptions** (rough, not calibrated):
+
+- KR exchanges (`KOSPI`, `KOSDAQ`): 1.8% daily σ
+- US exchanges (`NASDAQ`, `NYSE`): 2.2% daily σ
+- Drift: +0.024%/day (~+6%/yr neutral baseline)
+
+These are placeholders — real volatility varies wildly per name and
+will be replaced once yfinance ingest runs in CI.
+
+**Verification:**
+
+- `pnpm --filter @platform/db test` → 17/17 pass
+- TS typecheck across web / admin / sector-service / ui / db ✅
+- sector-service: 36 pass / 2 fail (scenario.test.ts — DB
+  unavailable, pre-existing)
+- `pnpm db:seed:equity-quotes` against local Postgres produces
+  exactly 49 × 90 = 4,410 rows; re-running is idempotent (delete +
+  recreate same series byte-for-byte).
+- **Cumulative: 170 + 2 skipped** (+17 from M5).
+
+**Out of scope (lands in M7+):**
+
+- Graph topology in DB (M7)
+- Equity nodes inside graph (M8)
+- Sim consumes edge weights (M9)
+- EquityFinancial domain (M10)
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14
