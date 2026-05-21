@@ -193,6 +193,22 @@ function RecentPredictionsCard({ feed }: { feed: CommunityFeed }) {
                   {positive ? "+" : ""}
                   {p.predicted_pct.toFixed(1)}%
                 </span>
+                {p.has_scenario && (
+                  <span
+                    className="rounded bg-cyan-950/60 px-1 py-0.5 text-[9px] text-cyan-300"
+                    title="저장된 시나리오와 연결됨"
+                  >
+                    🛠
+                  </span>
+                )}
+                {p.has_analysis && (
+                  <span
+                    className="rounded bg-violet-950/60 px-1 py-0.5 text-[9px] text-violet-300"
+                    title={`AI 분석 (확신도 ${p.confidence ?? "?"})`}
+                  >
+                    🤖
+                  </span>
+                )}
                 <span className="ml-auto truncate text-[10px] text-neutral-500">
                   {p.user_label}
                 </span>

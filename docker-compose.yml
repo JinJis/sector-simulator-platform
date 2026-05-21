@@ -149,6 +149,10 @@ services:
       AGENT_ORCHESTRATION_URL: http://agent-orchestration:8002
       DATA_PIPELINE_URL: http://data-pipeline:8003
       DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
+      # M33 — sector-service uses ANTHROPIC_API_KEY for one-shot Claude
+      # Sonnet calls (rationale analysis). Inherits from the host env
+      # so it's the same key the agent-orchestration uses.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     depends_on:
       simulation-service:
         condition: service_started

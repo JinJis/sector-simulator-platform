@@ -30,6 +30,13 @@ export const communityRouter = router({
             target_date: z.date(),
             resolved: z.boolean(),
             score: z.number().nullable(),
+            // M33: badges so the hub card hints that the prediction
+            // is backed by a saved scenario + AI analysis. The full
+            // detail lives on the equity page where the card can be
+            // expanded.
+            has_scenario: z.boolean(),
+            has_analysis: z.boolean(),
+            confidence: z.enum(["low", "med", "high"]).nullable(),
             created_at: z.date(),
           }),
         ),
@@ -113,7 +120,11 @@ export const communityRouter = router({
         ]);
 
       return {
-        recent_predictions: preds.map((p) => ({
+        recent_predictions: preds.map((p) => {
+          const analysis = (p.rationale_analysis ?? null) as
+            | { confidence?: "low" | "med" | "high" }
+            | null;
+          return {
           id: p.id,
           user_label: p.user.name ?? p.user.email,
           ticker: p.equity.ticker,
@@ -125,9 +136,13 @@ export const communityRouter = router({
           anchor_close: p.anchor_close,
           target_date: p.target_date,
           resolved: p.resolved,
+          has_scenario: !!p.scenario_id,
+          has_analysis: !!p.rationale_analysis,
+          confidence: analysis?.confidence ?? null,
           score: p.result?.score ?? null,
           created_at: p.created_at,
-        })),
+        };
+        }),
         top_users: scores.map((s) => ({
           user_id: s.user_id,
           user_label: s.user.name ?? s.user.email,

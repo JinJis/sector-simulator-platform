@@ -6,12 +6,36 @@
  * write/read paths; resolved counts stay at 0 until the cron is up.
  */
 
+import Anthropic from "@anthropic-ai/sdk";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { env } from "../lib/env.js";
 import { publicProcedure, router } from "./init.js";
 
 const HORIZONS = ["1d", "1w", "1m"] as const;
+
+const RationaleAnalysisSchema = z.object({
+  thesis_summary: z.string(),
+  supporting_factors: z.array(
+    z.object({
+      title: z.string(),
+      detail: z.string(),
+    }),
+  ),
+  risk_factors: z.array(
+    z.object({
+      title: z.string(),
+      detail: z.string(),
+    }),
+  ),
+  confidence: z.enum(["low", "med", "high"]),
+  // True once the user has manually edited the LLM output. Persisted
+  // so the analysis card can show "✏️ 편집됨" when applicable.
+  edited_by_user: z.boolean().default(false),
+});
+
+export type RationaleAnalysis = z.infer<typeof RationaleAnalysisSchema>;
 
 const PredictionOut = z.object({
   id: z.string(),
@@ -31,6 +55,14 @@ const PredictionOut = z.object({
 
 const PredictionWithMetaOut = PredictionOut.extend({
   user_label: z.string(),
+  rationale_analysis: RationaleAnalysisSchema.nullable(),
+  scenario: z
+    .object({
+      id: z.string(),
+      name: z.string(),
+      override_count: z.number().int(),
+    })
+    .nullable(),
   equity: z.object({
     id: z.string(),
     ticker: z.string(),
@@ -76,6 +108,48 @@ function requireUser(ctx: import("./context.js").Context) {
   return ctx.user;
 }
 
+/**
+ * `Prediction.scenario_id` is a free-form FK-less string column (M33),
+ * so Prisma can't `include` it. Batch-fetch the matching Scenario rows
+ * in one query and build a lookup so each prediction row can carry a
+ * compact `{id, name, override_count}` summary.
+ */
+async function loadScenarios(
+  ctx: import("./context.js").Context,
+  ids: (string | null)[],
+): Promise<Map<string, { id: string; name: string; override_count: number }>> {
+  const unique = Array.from(new Set(ids.filter((x): x is string => !!x)));
+  if (unique.length === 0) return new Map();
+  const rows = await ctx.prisma.scenario.findMany({
+    where: { id: { in: unique } },
+    select: { id: true, name: true, driver_overrides: true },
+  });
+  return new Map(
+    rows.map((r) => [
+      r.id,
+      {
+        id: r.id,
+        name: r.name,
+        override_count: Object.keys(
+          (r.driver_overrides ?? {}) as Record<string, unknown>,
+        ).length,
+      },
+    ]),
+  );
+}
+
+/**
+ * Coerce the JSONB stored in `predictions.rationale_analysis` back
+ * into the validated TypeScript shape. Returns null on shape
+ * mismatch (legacy / corrupted rows) rather than throwing — the UI
+ * just hides the card in that case.
+ */
+function parseStoredAnalysis(raw: unknown): z.infer<typeof RationaleAnalysisSchema> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const parsed = RationaleAnalysisSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
 export const predictionRouter = router({
   create: publicProcedure
     .input(
@@ -83,8 +157,12 @@ export const predictionRouter = router({
         equity_id: z.string().min(1),
         horizon: z.enum(HORIZONS),
         predicted_pct: z.number().finite().min(-90).max(900),
-        rationale: z.string().max(2000).optional(),
+        rationale: z.string().max(4000).optional(),
         scenario_id: z.string().min(1).optional(),
+        // M33: optional LLM-generated analysis (or user-edited variant
+        // of it). Persisted as JSONB; the analyze procedure builds the
+        // initial value but the client can edit before submitting.
+        rationale_analysis: RationaleAnalysisSchema.optional(),
       }),
     )
     .output(PredictionOut)
@@ -123,6 +201,9 @@ export const predictionRouter = router({
           target_date: targetDate,
           scenario_id: input.scenario_id ?? null,
           rationale: input.rationale ?? null,
+          rationale_analysis: input.rationale_analysis
+            ? (input.rationale_analysis as object)
+            : undefined,
         },
       });
 
@@ -173,9 +254,15 @@ export const predictionRouter = router({
         orderBy: { created_at: "desc" },
         take: input.limit,
       });
+      const scenarioMap = await loadScenarios(
+        ctx,
+        rows.map((r) => r.scenario_id),
+      );
       return rows.map((r) => ({
         ...r,
         user_label: ctx.user!.label,
+        rationale_analysis: parseStoredAnalysis(r.rationale_analysis),
+        scenario: r.scenario_id ? scenarioMap.get(r.scenario_id) ?? null : null,
       })) as z.infer<typeof PredictionWithMetaOut>[];
     }),
 
@@ -208,9 +295,15 @@ export const predictionRouter = router({
         orderBy: { created_at: "desc" },
         take: input.limit,
       });
+      const scenarioMap = await loadScenarios(
+        ctx,
+        rows.map((r) => r.scenario_id),
+      );
       return rows.map((r) => ({
         ...r,
         user_label: r.user.name ?? r.user.email,
+        rationale_analysis: parseStoredAnalysis(r.rationale_analysis),
+        scenario: r.scenario_id ? scenarioMap.get(r.scenario_id) ?? null : null,
       })) as z.infer<typeof PredictionWithMetaOut>[];
     }),
 
@@ -237,9 +330,15 @@ export const predictionRouter = router({
         orderBy: { created_at: "desc" },
         take: input.limit,
       });
+      const scenarioMap = await loadScenarios(
+        ctx,
+        rows.map((r) => r.scenario_id),
+      );
       return rows.map((r) => ({
         ...r,
         user_label: r.user.name ?? r.user.email,
+        rationale_analysis: parseStoredAnalysis(r.rationale_analysis),
+        scenario: r.scenario_id ? scenarioMap.get(r.scenario_id) ?? null : null,
       })) as z.infer<typeof PredictionWithMetaOut>[];
     }),
 
@@ -283,5 +382,188 @@ export const predictionRouter = router({
         current_streak: score.current_streak,
         best_streak: score.best_streak,
       };
+    }),
+
+  /**
+   * M33: one-shot Claude Sonnet call. Reads the user's rationale +
+   * optionally a linked scenario's driver overrides, asks Claude to
+   * extract a structured analysis (thesis, supporting factors, risk
+   * factors, confidence). Returns the analysis; persistence happens
+   * later inside `prediction.create`.
+   *
+   * Auth-required so anonymous users can't burn tokens. Free-tier
+   * users currently get a cap of 5 analyses per day (enforced via
+   * audit_log scan to keep this slice simple); premium gets unlimited.
+   */
+  analyzeRationale: publicProcedure
+    .input(
+      z.object({
+        equity_id: z.string().min(1),
+        horizon: z.enum(HORIZONS),
+        predicted_pct: z.number().finite(),
+        rationale: z.string().max(4000),
+        scenario_id: z.string().min(1).optional(),
+      }),
+    )
+    .output(RationaleAnalysisSchema)
+    .mutation(async ({ ctx, input }) => {
+      const user = requireUser(ctx);
+      const apiKey = env().ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "AI 분석이 아직 구성되지 않았습니다. (ANTHROPIC_API_KEY 미설정 — 관리자에게 문의해 주세요.)",
+        });
+      }
+
+      // Soft per-user rate limit on this single endpoint.
+      const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const recent = await ctx.prisma.auditLog.count({
+        where: {
+          action: "prediction.analyzeRationale",
+          author_label: user.label,
+          created_at: { gte: dayAgo },
+        },
+      });
+      const dailyCap = user.id ? 30 : 0;
+      if (recent >= dailyCap) {
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message:
+            "오늘 AI 분석 한도에 도달했습니다 (24시간당 30회). 내일 다시 시도해 주세요.",
+        });
+      }
+
+      const equity = await ctx.prisma.sectorEquity.findUnique({
+        where: { id: input.equity_id },
+        select: {
+          id: true,
+          ticker: true,
+          company_name: true,
+          company_name_local: true,
+          sector_slug: true,
+          last_close_local: true,
+          currency: true,
+        },
+      });
+      if (!equity) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `equity ${input.equity_id}` });
+      }
+
+      let scenarioContext = "";
+      if (input.scenario_id) {
+        const scenario = await ctx.prisma.scenario.findUnique({
+          where: { id: input.scenario_id },
+          select: { name: true, sector_slug: true, driver_overrides: true, notes: true },
+        });
+        if (scenario && scenario.sector_slug === equity.sector_slug) {
+          const overrides = scenario.driver_overrides as Record<string, unknown>;
+          const formatted = Object.entries(overrides)
+            .filter(([, v]) => typeof v === "number" && Number.isFinite(v))
+            .slice(0, 30)
+            .map(([k, v]) => `- ${k} = ${v}`)
+            .join("\n");
+          scenarioContext = `## 연결된 시나리오: "${scenario.name}"\n드라이버 가정:\n${formatted || "(없음)"}\n${scenario.notes ? `노트: ${scenario.notes}\n` : ""}`;
+        }
+      }
+
+      const horizonKo =
+        input.horizon === "1d" ? "1일" : input.horizon === "1w" ? "1주" : "1달";
+      const userPrompt = `투자자의 예측 근거를 분석해 주세요.
+
+## 종목
+${equity.ticker} (${equity.company_name_local ?? equity.company_name}) · 섹터 ${equity.sector_slug}
+현재가 ${equity.last_close_local ?? "?"} ${equity.currency ?? ""}
+
+## 예측
+${horizonKo} 뒤 ${input.predicted_pct >= 0 ? "+" : ""}${input.predicted_pct.toFixed(1)}%
+
+${scenarioContext}
+
+## 사용자가 작성한 근거
+${input.rationale || "(비어 있음)"}
+
+위 정보를 토대로 다음 JSON 형식으로 응답해 주세요. 한국어로 작성하고, 각 필드는 1-2 문장으로 간결하게.
+
+{
+  "thesis_summary": "이 예측의 핵심 가설을 1-2문장으로 요약",
+  "supporting_factors": [
+    { "title": "짧은 제목", "detail": "왜 이 요인이 예측에 유리한지 1-2문장" },
+    ...최대 4개
+  ],
+  "risk_factors": [
+    { "title": "짧은 제목", "detail": "이 예측을 깰 수 있는 요인 1-2문장" },
+    ...최대 3개
+  ],
+  "confidence": "low" | "med" | "high",
+  "edited_by_user": false
+}
+
+JSON 만 출력해 주세요 (다른 텍스트 금지).`;
+
+      const client = new Anthropic({ apiKey });
+      let text: string;
+      try {
+        const resp = await client.messages.create({
+          model: "claude-sonnet-4-6",
+          max_tokens: 1024,
+          system: "You are an investment analyst. Respond ONLY with valid JSON. No markdown, no commentary, just the JSON object the user asks for.",
+          messages: [{ role: "user", content: userPrompt }],
+        });
+        const block = resp.content[0];
+        if (!block || block.type !== "text") {
+          throw new Error("empty response from Claude");
+        }
+        text = block.text.trim();
+      } catch (e) {
+        ctx.log.error({ err: e }, "analyzeRationale: Claude call failed");
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "AI 분석 중 오류가 발생했습니다. 다시 시도해 주세요.",
+        });
+      }
+
+      // Strip ```json fences if the model added them.
+      const cleaned = text
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```$/, "")
+        .trim();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        ctx.log.warn({ text: cleaned.slice(0, 200) }, "analyzeRationale: bad JSON");
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "AI 응답을 해석하지 못했습니다. 다시 시도해 주세요.",
+        });
+      }
+      const validated = RationaleAnalysisSchema.safeParse(parsed);
+      if (!validated.success) {
+        ctx.log.warn(
+          { issues: validated.error.issues, text: cleaned.slice(0, 200) },
+          "analyzeRationale: schema mismatch",
+        );
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "AI 응답 형식이 잘못되었습니다. 다시 시도해 주세요.",
+        });
+      }
+
+      await ctx.prisma.auditLog.create({
+        data: {
+          action: "prediction.analyzeRationale",
+          sector_slug: equity.sector_slug,
+          payload: {
+            equity_id: equity.id,
+            scenario_id: input.scenario_id ?? null,
+            confidence: validated.data.confidence,
+          },
+          author_label: user.label,
+        },
+      });
+
+      return { ...validated.data, edited_by_user: false };
     }),
 });

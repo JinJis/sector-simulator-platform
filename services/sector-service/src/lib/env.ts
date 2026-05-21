@@ -45,6 +45,10 @@ const Env = z.object({
   // agent procedures reads these.
   BUDGET_USD_MONTHLY_FREE: z.coerce.number().nonnegative().default(0),
   BUDGET_USD_MONTHLY_PREMIUM: z.coerce.number().nonnegative().default(20),
+  // M33 — direct synchronous Claude call from sector-service for
+  // prediction.analyzeRationale. Unset → analysis endpoint returns a
+  // friendly "not configured" error and the UI hides the AI button.
+  ANTHROPIC_API_KEY: z.string().optional(),
   DATABASE_URL: z.string().min(1),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),

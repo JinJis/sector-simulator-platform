@@ -8,6 +8,8 @@ import {
   type PredictionRow,
 } from "@/lib/sim-client";
 
+import { PredictionRationale } from "../prediction-rationale";
+
 export const dynamic = "force-dynamic";
 
 export default async function MyPredictionsPage() {
@@ -91,11 +93,12 @@ export default async function MyPredictionsPage() {
                     target {targetIso}
                   </span>
                 </div>
-                {p.rationale && (
-                  <p className="mt-2 text-[11px] leading-relaxed text-neutral-400">
-                    {p.rationale}
-                  </p>
-                )}
+                <PredictionRationale
+                  rationale={p.rationale}
+                  rationaleAnalysis={p.rationale_analysis}
+                  scenario={p.scenario}
+                  sectorSlug={p.equity.sector_slug}
+                />
                 <div className="mt-2 text-[10px] text-neutral-600">
                   {p.resolved && p.result
                     ? `채점 완료 · 점수 ${p.result.score.toFixed(0)} (실제 ${p.result.actual_pct >= 0 ? "+" : ""}${p.result.actual_pct.toFixed(1)}%, 오차 ${p.result.abs_error.toFixed(1)}pp)`

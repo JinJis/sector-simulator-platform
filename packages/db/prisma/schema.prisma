@@ -517,6 +517,13 @@ model Prediction {
   // back this prediction".
   scenario_id     String?  @map("scenario_id")
   rationale       String?
+  // M33: structured Claude-generated analysis of the rationale + the
+  // linked scenario's driver overrides. Shape:
+  //   { thesis_summary, supporting_factors[], risk_factors[],
+  //     confidence: "low"|"med"|"high", edited_by_user }
+  // Persisted alongside the prediction so the reviewer can see what
+  // the LLM extracted even months after creation.
+  rationale_analysis Json?  @map("rationale_analysis")
   // null until the prediction resolves at target_date.
   resolved        Boolean  @default(false)
   created_at      DateTime @default(now()) @map("created_at")

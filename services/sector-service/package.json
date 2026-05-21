@@ -17,6 +17,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.97.1",
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^10.0.1",
     "@platform/db": "workspace:*",

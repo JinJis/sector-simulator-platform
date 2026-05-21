@@ -18,13 +18,16 @@ import {
   fetchEquityFinancials,
   fetchEquityHistory,
   fetchEquityImpactBreakdown,
+  fetchPredictionsForEquity,
   type DriverContribution,
   type Equity,
   type EquityFinancialQuarter,
   type EquityHistoryBar,
   type EquityImpactBreakdownRow,
+  type PredictionRow,
 } from "@/lib/sim-client";
 
+import { PredictionRationale } from "../../../../community/prediction-rationale";
 import { PageIntent } from "../../../../page-intent";
 import { SECTOR_PAGE_INTENTS } from "../../../../page-intents";
 import { WatchButton } from "../../../../watchlist/watch-button";
@@ -45,6 +48,7 @@ export function EquityDetail({ ticker }: Props) {
   const [history, setHistory] = useState<EquityHistoryBar[] | null>(null);
   const [breakdown, setBreakdown] = useState<EquityImpactBreakdownRow | null>(null);
   const [financials, setFinancials] = useState<EquityFinancialQuarter[] | null>(null);
+  const [predictions, setPredictions] = useState<PredictionRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   // Resolve ticker → equity row. Refetch on slug/ticker change.
@@ -58,14 +62,16 @@ export function EquityDetail({ ticker }: Props) {
       .then((e) => {
         if (cancelled) return;
         setEquity(e);
-        // Now fan out to history + financials in parallel.
+        // Now fan out to history + financials + predictions in parallel.
         void Promise.all([
           fetchEquityHistory(e.id, 90).catch(() => [] as EquityHistoryBar[]),
           fetchEquityFinancials(e.id, 8).catch(() => [] as EquityFinancialQuarter[]),
-        ]).then(([hist, fin]) => {
+          fetchPredictionsForEquity(e.id, 10).catch(() => [] as PredictionRow[]),
+        ]).then(([hist, fin, preds]) => {
           if (cancelled) return;
           setHistory(hist);
           setFinancials(fin);
+          setPredictions(preds);
         });
       })
       .catch((err: unknown) => {
@@ -145,8 +151,86 @@ export function EquityDetail({ ticker }: Props) {
 
       <FinancialsBlock financials={financials} />
 
+      <EquityPredictionsBlock
+        predictions={predictions}
+        equity={equity}
+      />
+
       <Citations equity={equity} />
     </div>
+  );
+}
+
+function EquityPredictionsBlock({
+  predictions,
+  equity,
+}: {
+  predictions: PredictionRow[];
+  equity: Equity;
+}) {
+  return (
+    <section className="rounded-lg border border-violet-900/40 bg-violet-950/10 p-5">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-violet-300">
+          🎯 커뮤니티 예측
+        </h2>
+        <Link
+          href={`/community/predict?ticker=${encodeURIComponent(equity.ticker)}&sector=${encodeURIComponent(equity.sector_slug)}`}
+          className="rounded border border-violet-700 bg-violet-900/40 px-3 py-1 text-xs font-medium text-violet-100 hover:bg-violet-800/60"
+        >
+          + 내 예측 등록
+        </Link>
+      </div>
+      {predictions.length === 0 ? (
+        <p className="text-[12px] text-neutral-500">
+          이 종목에 대한 예측이 아직 없습니다. 첫 예측을 등록하면 시나리오와
+          AI 분석이 함께 기록됩니다.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {predictions.map((p) => {
+            const positive = p.predicted_pct >= 0;
+            const horizonKo =
+              p.horizon === "1d" ? "1일" : p.horizon === "1w" ? "1주" : "1달";
+            return (
+              <li
+                key={p.id}
+                className="rounded-lg border border-neutral-800 bg-neutral-950/40 p-3"
+              >
+                <div className="flex flex-wrap items-baseline gap-2 text-xs">
+                  <span className="font-medium text-neutral-100">
+                    {p.user_label}
+                  </span>
+                  <span className="rounded border border-neutral-800 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-neutral-500">
+                    {horizonKo}
+                  </span>
+                  <span
+                    className={`font-mono tabular-nums text-sm font-semibold ${positive ? "text-emerald-400" : "text-rose-400"}`}
+                  >
+                    {positive ? "+" : ""}
+                    {p.predicted_pct.toFixed(1)}%
+                  </span>
+                  <span className="ml-auto text-[10px] text-neutral-500">
+                    {new Date(p.created_at).toISOString().slice(0, 10)}
+                  </span>
+                  {p.resolved && p.result && (
+                    <span className="rounded bg-amber-950/60 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300">
+                      ✓ {p.result.score.toFixed(0)}점
+                    </span>
+                  )}
+                </div>
+                <PredictionRationale
+                  rationale={p.rationale}
+                  rationaleAnalysis={p.rationale_analysis}
+                  scenario={p.scenario}
+                  sectorSlug={p.equity.sector_slug}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 

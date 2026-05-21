@@ -468,16 +468,32 @@ export type PredictionRow = RouterOutput["prediction"]["recent"][number];
 export type LeaderboardRow = RouterOutput["prediction"]["leaderboard"][number];
 export type MyScore = RouterOutput["prediction"]["myScore"];
 
+export type RationaleAnalysis = RouterOutput["prediction"]["analyzeRationale"];
+
 export async function createPrediction(input: {
   equity_id: string;
   horizon: "1d" | "1w" | "1m";
   predicted_pct: number;
   rationale?: string;
   scenario_id?: string;
+  rationale_analysis?: RationaleAnalysis;
 }): Promise<RouterOutput["prediction"]["create"]> {
   return rethrow(
     () => trpc.prediction.create.mutate(input),
     `createPrediction(${input.equity_id})`,
+  );
+}
+
+export async function analyzeRationale(input: {
+  equity_id: string;
+  horizon: "1d" | "1w" | "1m";
+  predicted_pct: number;
+  rationale: string;
+  scenario_id?: string;
+}): Promise<RationaleAnalysis> {
+  return rethrow(
+    () => trpc.prediction.analyzeRationale.mutate(input),
+    "analyzeRationale",
   );
 }
 
