@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   fetchBasketStats,
   fetchEquityHistory,
+  fetchEquityImpactScores,
   type BasketStats,
   type BasketStatsEquity,
   type Equity,
@@ -133,6 +134,11 @@ export function EquitiesTable({ equities, defaults, driverValues, sectorSlug }: 
   // history; matches the per-equity history we fetch separately.
   const [basket, setBasket] = useState<BasketStats | null>(null);
 
+  // M9 server-side impliedImpact (graph-traversal). Falls back to the
+  // client-side `driver_links` formula when this map is empty (graph
+  // not seeded yet) so old behavior is preserved.
+  const [serverScores, setServerScores] = useState<Record<string, number>>({});
+
   useEffect(() => {
     let cancelled = false;
     // Reset so a sector-switch doesn't show the old basket's bars.
@@ -163,6 +169,23 @@ export function EquitiesTable({ equities, defaults, driverValues, sectorSlug }: 
     };
   }, [equities, sectorSlug]);
 
+  // Re-fetch server-side impact whenever the driver values change.
+  // Debounced indirectly by React batching; the call is cheap (no
+  // Python sim run, just Postgres + math).
+  useEffect(() => {
+    let cancelled = false;
+    void fetchEquityImpactScores(sectorSlug, driverValues)
+      .then((r) => {
+        if (!cancelled) setServerScores(r.scores);
+      })
+      .catch(() => {
+        // Leave previous scores in place; client-side fallback covers.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sectorSlug, driverValues]);
+
   // Index basket stats by equity_id for O(1) row lookup.
   const basketByEquity = useMemo(() => {
     const m = new Map<string, BasketStatsEquity>();
@@ -172,13 +195,22 @@ export function EquitiesTable({ equities, defaults, driverValues, sectorSlug }: 
   }, [basket]);
 
   // Pre-compute impact once per render — sorting + display both need it.
+  // M9: prefer the server-computed graph-traversal score when available
+  // (graph_edges seeded). Fall back to the M1 client-side formula
+  // (driver_links JSONB) when the server map is empty.
   const enriched = useMemo(
     () =>
-      equities.map((e) => ({
-        equity: e,
-        ...impliedImpactPct(e, defaults, driverValues),
-      })),
-    [equities, defaults, driverValues],
+      equities.map((e) => {
+        const fallback = impliedImpactPct(e, defaults, driverValues);
+        const serverScore = serverScores[e.id];
+        if (serverScore === undefined) return { equity: e, ...fallback };
+        return {
+          equity: e,
+          score: serverScore,
+          activeLinks: fallback.activeLinks,
+        };
+      }),
+    [equities, defaults, driverValues, serverScores],
   );
 
   const filtered = useMemo(

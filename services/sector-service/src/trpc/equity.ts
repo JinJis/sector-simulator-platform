@@ -10,6 +10,8 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { computeImpactScores, type ImpactEdge } from "../lib/graph-impact.js";
+import { simFetch } from "../lib/sim-proxy.js";
 import { computeBasketStats } from "../lib/stats.js";
 import { publicProcedure, router } from "./init.js";
 
@@ -206,5 +208,72 @@ export const equityRouter = router({
         },
       });
       return rows as z.infer<typeof HistoryBarOut>[];
+    }),
+
+  impactScores: publicProcedure
+    .input(
+      z.object({
+        sector_slug: z.string().min(1),
+        driver_values: z.record(z.number()),
+      }),
+    )
+    .output(
+      z.object({
+        sector_slug: z.string(),
+        // {equity_id: score ∈ [-100, +100]}
+        scores: z.record(z.number()),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      // M9 server-side impliedImpact — derived from the graph topology
+      // (driver → equity edges in `graph_edges`) rather than the
+      // legacy `driver_links` JSONB. Falls back to the M1 formula on
+      // the client if this returns an empty map (no graph seeded).
+      const [meta, edges, equityNodes] = await Promise.all([
+        simFetch<{
+          drivers: { name: string; default: number }[];
+        }>(`/sims/${input.sector_slug}`, { context: `sim:${input.sector_slug}` }),
+        ctx.prisma.graphEdge.findMany({
+          where: { sector_slug: input.sector_slug },
+          select: { source_key: true, target_key: true, weight: true },
+        }),
+        ctx.prisma.graphNode.findMany({
+          where: { sector_slug: input.sector_slug, kind: "equity" },
+          select: { node_key: true, equity_id: true },
+        }),
+      ]);
+
+      const driverDefaults: Record<string, number> = {};
+      for (const d of meta.drivers) {
+        driverDefaults[d.name] = d.default;
+      }
+
+      // Keep only edges that terminate at an equity node — we don't
+      // care about driver → intermediate edges for this score.
+      const equityKeys = new Set(equityNodes.map((n) => n.node_key));
+      const equityEdges: ImpactEdge[] = edges
+        .filter((e) => equityKeys.has(e.target_key))
+        .map((e) => ({
+          source_key: e.source_key,
+          target_key: e.target_key,
+          weight: e.weight,
+        }));
+
+      const byNodeKey = computeImpactScores({
+        driverValues: input.driver_values,
+        driverDefaults,
+        edges: equityEdges,
+      });
+
+      // Translate node_key → equity_id for client-side joins with
+      // the existing equities list.
+      const scoresById: Record<string, number> = {};
+      for (const n of equityNodes) {
+        if (n.equity_id && n.node_key in byNodeKey) {
+          scoresById[n.equity_id] = byNodeKey[n.node_key]!;
+        }
+      }
+
+      return { sector_slug: input.sector_slug, scores: scoresById };
     }),
 });

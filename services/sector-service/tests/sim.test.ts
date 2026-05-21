@@ -115,7 +115,13 @@ describe("sim.run", () => {
     });
     expect(captured?.url).toMatch(/\/sims\/memory-semi\/run$/);
     expect(captured?.init?.method).toBe("POST");
-    expect(JSON.parse(String(captured?.init?.body))).toEqual({ drivers: { hbm_premium_x: 7.0 } });
+    expect(JSON.parse(String(captured?.init?.body))).toEqual({
+      drivers: { hbm_premium_x: 7.0 },
+      // M9: sim.run now also forwards edge_weights pulled from
+      // graph_edges. In this test the DB isn't reachable so the catch
+      // block falls back to an empty array.
+      edge_weights: [],
+    });
     expect(result.drivers.hbm_premium_x).toBe(7.0);
   });
 

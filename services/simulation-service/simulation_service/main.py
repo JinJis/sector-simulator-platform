@@ -6,12 +6,13 @@ from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from platform_sdk import SimulationBase
+from platform_sdk import EdgeWeights, SimulationBase
 
 from simulation_service.registry import all_sims, get_sim
 from simulation_service.report import build_report
 from simulation_service.schemas import (
     DriverSchema,
+    EdgeWeightInput,
     GraphEdgeSchema,
     GraphNodeSchema,
     HistoryPointSchema,
@@ -28,6 +29,21 @@ from simulation_service.schemas import (
     SimRunResponse,
     SourceSchema,
 )
+
+
+def _to_edge_weights(items: list[EdgeWeightInput]) -> EdgeWeights:
+    """Translate the FastAPI request payload into an EdgeWeights dict.
+
+    Missing pairs default to 1.0 at lookup time; we only need to add
+    entries that diverge from neutral.
+    """
+    ew = EdgeWeights()
+    for item in items:
+        if abs(item.weight - 1.0) < 1e-12:
+            # Skip neutral edges so the lookup map stays small.
+            continue
+        ew[(item.source, item.target)] = item.weight
+    return ew
 
 app = FastAPI(title="simulation-service", version="0.3.0")
 
@@ -124,7 +140,8 @@ def run_sim(slug: str, req: SimRunRequest) -> SimRunResponse:
 
     try:
         resolved = sim_cls.resolve_drivers(req.drivers)
-        outputs = sim_cls().simulate(**resolved)
+        edge_weights = _to_edge_weights(req.edge_weights)
+        outputs = sim_cls(edge_weights=edge_weights).simulate(**resolved)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 

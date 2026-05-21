@@ -561,34 +561,67 @@ class MemorySemiSim(SimulationBase):
         hbm_asp = [a * hbm_x for a in commodity_asp]
         cost_per_gb = [cost_y0 * (1.0 - cost_drop) ** t for t in years]
 
+        # Edge-weight multipliers (default 1.0 — no-op when the graph
+        # editor hasn't touched the edge). Each one corresponds to a
+        # graph_edges row in the DB; M9 lets users dial these to
+        # explore "what if HBM premium → revenue impact were 2× as
+        # strong" without rewriting the sim.
+        w_hbm_rev = (
+            self.w("ai_pb_trajectory", "industry_hbm_revenue")
+            * self.w("hbm_mix_pct_of_ai_demand", "industry_hbm_revenue")
+            * self.w("hbm_asp_trajectory", "industry_hbm_revenue")
+        )
+        w_comm_rev = (
+            self.w("ai_pb_trajectory", "industry_comm_revenue")
+            * self.w("hbm_mix_pct_of_ai_demand", "industry_comm_revenue")
+            * self.w("co_pb_trajectory", "industry_comm_revenue")
+            * self.w("commodity_asp_trajectory", "industry_comm_revenue")
+        )
+        w_company_rev = (
+            self.w("industry_revenue_total", "company_revenue_intermediate")
+            * self.w("company_market_share_pct", "company_revenue_intermediate")
+        )
+        w_company_cogs = (
+            self.w("company_bits_gb", "company_cogs")
+            * self.w("cost_per_gb_trajectory", "company_cogs")
+        )
+        w_opex = (
+            self.w("company_revenue_intermediate", "opex_intermediate")
+            * self.w("opex_pct_of_revenue", "opex_intermediate")
+        )
+        w_capex = (
+            self.w("company_revenue_intermediate", "capex_intermediate")
+            * self.w("capex_intensity_pct", "capex_intermediate")
+        )
+
         # Industry revenue split: HBM bits priced at premium, rest at commodity.
         industry_hbm_revenue = [
-            ai_pb[t] * 1e6 * hbm_mix * hbm_asp[t] for t in years
+            ai_pb[t] * 1e6 * hbm_mix * hbm_asp[t] * w_hbm_rev for t in years
         ]
         industry_comm_revenue = [
-            (ai_pb[t] * 1e6 * (1.0 - hbm_mix) + co_pb[t] * 1e6) * commodity_asp[t]
+            (ai_pb[t] * 1e6 * (1.0 - hbm_mix) + co_pb[t] * 1e6) * commodity_asp[t] * w_comm_rev
             for t in years
         ]
         industry_revenue = [
             industry_hbm_revenue[t] + industry_comm_revenue[t] for t in years
         ]
 
-        company_revenue = [industry_revenue[t] * share for t in years]
-        company_hbm_revenue = [industry_hbm_revenue[t] * share for t in years]
+        company_revenue = [industry_revenue[t] * share * w_company_rev for t in years]
+        company_hbm_revenue = [industry_hbm_revenue[t] * share * w_company_rev for t in years]
 
         # Bits the company actually sells (its share of industry bits).
         company_bits_gb = [
             (ai_pb[t] * 1e6 + co_pb[t] * 1e6) * share for t in years
         ]
-        company_cogs = [company_bits_gb[t] * cost_per_gb[t] for t in years]
+        company_cogs = [company_bits_gb[t] * cost_per_gb[t] * w_company_cogs for t in years]
         gross_profit = [company_revenue[t] - company_cogs[t] for t in years]
         gross_margin_pct = [
             (gross_profit[t] / company_revenue[t] * 100.0) if company_revenue[t] > 1e-6 else 0.0
             for t in years
         ]
-        opex = [company_revenue[t] * opex_int for t in years]
+        opex = [company_revenue[t] * opex_int * w_opex for t in years]
         ebit = [gross_profit[t] - opex[t] for t in years]
-        capex = [company_revenue[t] * capex_int for t in years]
+        capex = [company_revenue[t] * capex_int * w_capex for t in years]
         fcf = [ebit[t] - capex[t] for t in years]
 
         hbm_revenue_share_pct = [

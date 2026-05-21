@@ -138,13 +138,37 @@ export const simRouter = router({
   run: publicProcedure
     .input(SlugInput.extend({ drivers: z.record(z.number()) }))
     .output(SimRunResponse)
-    .mutation(({ input }) =>
-      simFetch(`/sims/${input.slug}/run`, {
+    .mutation(async ({ ctx, input }) => {
+      // M9: load any non-neutral edge weights for this sector and forward
+      // them to simulation-service. The Python sim multiplies by these
+      // at named choke points; absent edges or weight==1.0 reproduce the
+      // legacy hand-coded math byte-for-byte.
+      //
+      // Failure mode: if Postgres is unreachable or the graph hasn't
+      // been seeded yet, we fall back to the empty-weights path (== the
+      // legacy behavior). The sim should still produce outputs — graph
+      // integration is additive, not gating.
+      let edge_weights: { source: string; target: string; weight: number }[] = [];
+      try {
+        const edgeRows = await ctx.prisma.graphEdge.findMany({
+          where: { sector_slug: input.slug },
+          select: { source_key: true, target_key: true, weight: true },
+        });
+        edge_weights = edgeRows
+          .filter((e) => Math.abs(e.weight - 1.0) > 1e-12)
+          .map((e) => ({ source: e.source_key, target: e.target_key, weight: e.weight }));
+      } catch (e) {
+        ctx.log.warn(
+          { err: e instanceof Error ? e.message : String(e), slug: input.slug },
+          "sim.run: graph_edges query failed; falling back to neutral weights",
+        );
+      }
+      return simFetch(`/sims/${input.slug}/run`, {
         method: "POST",
-        body: { drivers: input.drivers },
+        body: { drivers: input.drivers, edge_weights },
         context: `sim.run:${input.slug}`,
-      }),
-    ),
+      });
+    }),
 
   sensitivity: publicProcedure
     .input(SlugInput)

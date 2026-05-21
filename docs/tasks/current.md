@@ -1153,6 +1153,98 @@ skip, no-output for unreferenced equities, independent equities.
   `graph-impact.ts` server-side traversal
 - Cache invalidation contract (`/sims/{slug}/reload`)
 
+#### Equities Milestone 9 — Hybrid edge weights end-to-end (2026-05-21)
+
+The architecturally biggest slice — actually wires graph edits to
+simulation outputs and to per-equity projection scores. Default
+weight `1.0` on every edge means the legacy hand-coded math is
+byte-identical until a user (or agent) starts editing weights.
+
+**SDK** (`packages/sdk-python/platform_sdk/base.py`):
+
+```python
+class EdgeWeights(dict[tuple[str, str], float]):
+    def w(self, source: str, target: str) -> float:
+        return self.get((source, target), 1.0)
+
+class SimulationBase:
+    def __init__(self, edge_weights: EdgeWeights | None = None):
+        self.edge_weights = edge_weights or EdgeWeights()
+    def w(self, source: str, target: str) -> float:
+        return self.edge_weights.w(source, target)
+```
+
+The pattern in sims: `result_t = ... * self.w("src", "tgt")` at
+each choke point. Sims that haven't been refactored continue to
+work — they just ignore weights.
+
+**Refactored sim** (`simulation_service/sims/memory_semi.py`):
+14 choke points wired (HBM revenue triple, commodity revenue
+quadruple, company revenue pair, COGS pair, opex pair, capex pair).
+Snapshot regression confirms `simulate()` with empty weights ==
+legacy outputs exactly.
+
+space-data-center and sofc sims are left weight-naive in M9 — they
+work fine without the hooks; refactor lands as a follow-up cleanup
+when the editor surfaces them.
+
+**simulation-service wire**:
+- `SimRunRequest` gains `edge_weights: list[EdgeWeightInput]`
+- `main.py /sims/{slug}/run` translates list → `EdgeWeights` dict
+  (skipping neutral 1.0 entries to keep the map tiny) and passes
+  via `sim_cls(edge_weights=ew).simulate(**resolved)`.
+
+**sector-service wire**:
+- `sim.run` reads `graph_edges` for the sector, filters non-neutral,
+  forwards to simulation-service. Falls back to `[]` on DB error so
+  the sim still runs (graph is additive, not gating).
+- New `equity.impactScores({ sector_slug, driver_values })` query:
+  walks the same graph topology to compute per-equity impact
+  scores via the M8 `graph-impact.ts` lib. Returns `{equity_id:
+  score ∈ [-100, +100]}`. Hits `/sims/{slug}` once to get driver
+  defaults; the rest is in-process math.
+
+**Web wire** (`apps/web/src/app/sectors/[slug]/equities/equities-table.tsx`):
+- New `useEffect` re-fetches `equity.impactScores` whenever the
+  driver values change.
+- `enriched` prefers the server score when available; falls back
+  to M1's client-side `impliedImpact` formula when the map is
+  empty (graph not seeded).
+- The downstream M5 projection (slider → forward 30d dashed line)
+  now reads the server score — every equity's projection in
+  the sector responds to graph weight edits in real time.
+
+**Tests:**
+
+- `services/simulation-service/tests/test_edge_weights.py` —
+  6 regressions: neutral weights produce identical outputs to
+  legacy; all-ones map = no-op; 2× weight on industry→company
+  revenue exactly doubles peak revenue; weight=0 on capex edge
+  zeroes capex line + lifts FCF; negative weight inverts
+  contribution; `.w()` defaults to 1.0 for unset pairs.
+- Existing test `sim.test.ts > forwards driver overrides as POST
+  body` updated to expect `edge_weights: []` field.
+
+**Verification:**
+
+- TS typecheck (5 workspaces) clean
+- `@platform/db` vitest: 17/17 pass (no regression)
+- `sector-service` vitest: 45 pass / 26 skipped (same as M8)
+- `simulation-service` pytest: 61 pass (+6 from test_edge_weights)
+- agent-orchestration pytest: 35+2 skip (unchanged)
+- data-pipeline pytest: 27 (unchanged)
+- **Cumulative: 185 + 17 skipped** (+6 from M8 baseline).
+
+**Out of scope (lands in M10+):**
+
+- Edge editor side-panel UI with weight slider (the UI surface
+  exists in plan; M9 ships the backend plumbing first)
+- Cache invalidation `/sims/{slug}/reload` endpoint (sector-service
+  reads `graph_edges` on every `sim.run` already — single
+  Postgres lookup; we can add caching later)
+- space-data-center + sofc choke-point refactor (defer until the
+  editor exposes their edges to users — premature without UI demand)
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

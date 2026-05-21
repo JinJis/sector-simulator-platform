@@ -50,8 +50,21 @@ class SimMetadata(BaseModel):
     provenance: dict[str, ProvenanceSchema] = Field(default_factory=dict)
 
 
+class EdgeWeightInput(BaseModel):
+    """One edge-weight override. `weight = 1.0` is the neutral default;
+    sims read these at choke points to multiply intermediate values."""
+
+    source: str
+    target: str
+    weight: float
+
+
 class SimRunRequest(BaseModel):
     drivers: dict[str, float] = Field(default_factory=dict)
+    # Phase 2 epic milestone 9: optional per-edge multipliers. Empty list
+    # = legacy hand-coded math (every weight defaults to 1.0). Sector-
+    # service reads graph_edges from Postgres and passes them in.
+    edge_weights: list[EdgeWeightInput] = Field(default_factory=list)
 
 
 class SimRunResponse(BaseModel):

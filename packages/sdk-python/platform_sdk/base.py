@@ -93,6 +93,24 @@ class SimGraph:
     edges: tuple[GraphEdge, ...] = field(default_factory=tuple)
 
 
+class EdgeWeights(dict[tuple[str, str], float]):
+    """Mapping from `(source_key, target_key)` → runtime multiplier.
+
+    Phase 2 epic milestone 9: edges are no longer pure visualization
+    metadata — each one can carry a `weight` (default `1.0`) that the
+    simulation reads at named choke points. Default weight = 1.0 means
+    the math is identical to the legacy hand-coded path.
+
+    Constructed by `simulation-service` from the run request body —
+    sector-service (which has DB access) reads `graph_edges` and
+    passes them in.
+    """
+
+    def w(self, source: str, target: str) -> float:
+        """Return the multiplier for the edge, defaulting to 1.0."""
+        return self.get((source, target), 1.0)
+
+
 class SimulationBase:
     slug: ClassVar[str] = ""
     name: ClassVar[str] = ""
@@ -107,6 +125,17 @@ class SimulationBase:
     # Causal graph: how drivers fan into intermediates and on into outputs.
     # Authored by hand for now; agent-generated in Phase 2 later slices.
     graph: ClassVar[SimGraph] = SimGraph()
+
+    def __init__(self, edge_weights: EdgeWeights | None = None) -> None:
+        # Empty by default — `.w(source, target)` returns 1.0 so any sim
+        # that ignores `edge_weights` produces the same output it always
+        # has. Sub-classes opt in by calling `self.w("src", "tgt")` at
+        # choke points (see memory_semi.simulate() for the pattern).
+        self.edge_weights: EdgeWeights = edge_weights or EdgeWeights()
+
+    def w(self, source: str, target: str) -> float:
+        """Edge weight at a choke point — defaults to 1.0 (neutral)."""
+        return self.edge_weights.w(source, target)
 
     def simulate(self, **kwargs: float) -> dict[str, Output]:
         raise NotImplementedError

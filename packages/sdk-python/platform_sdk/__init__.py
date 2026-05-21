@@ -1,5 +1,6 @@
 from platform_sdk.base import (
     Driver,
+    EdgeWeights,
     GraphEdge,
     GraphNode,
     HistoryPoint,
@@ -12,6 +13,7 @@ from platform_sdk.base import (
 
 __all__ = [
     "Driver",
+    "EdgeWeights",
     "GraphEdge",
     "GraphNode",
     "HistoryPoint",

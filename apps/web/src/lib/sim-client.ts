@@ -292,6 +292,28 @@ export async function fetchBasketStats(
   );
 }
 
+export type EquityImpactScores = RouterOutput["equity"]["impactScores"];
+
+/**
+ * Server-computed impliedImpact via graph traversal (M9). Returns
+ * `{equity_id: score ∈ [-100, +100]}`. Map will be empty when the
+ * graph hasn't been seeded yet — callers should fall back to the
+ * client-side `driver_links`-based formula in that case.
+ */
+export async function fetchEquityImpactScores(
+  sectorSlug: string,
+  driverValues: Record<string, number>,
+): Promise<EquityImpactScores> {
+  return rethrow(
+    () =>
+      trpc.equity.impactScores.query({
+        sector_slug: sectorSlug,
+        driver_values: driverValues,
+      }),
+    `fetchEquityImpactScores(${sectorSlug})`,
+  );
+}
+
 // ---------- Error normalization ----------
 //
 // tRPC throws TRPCClientError, whose `message` is the upstream error body.
