@@ -648,6 +648,124 @@ off + fake source by default so local dev doesn't poll yfinance).
   6 months ago?"
 - DART / EDGAR scrapers, FRED, AlphaVantage paid backup
 
+### Equities Milestone 3 — quote-history time-series + sparklines (2026-05-21)
+
+Adds the time-series leg of the equities domain. After M2 refreshes the
+snapshot fields daily, M3 adds a per-equity daily-close history table
+and surfaces it as inline 90-day sparklines on the equities table.
+
+The price-driver regression piece (visually correlating slider state
+with historical returns) is **deferred to M4** — formal econometric
+overlays need more thought than a single slice can fit.
+
+**Schema** (`packages/db/prisma/schema.prisma`, migration
+`20260521030000_equity_quotes`):
+
+- `EquityQuote`: composite PK `(equity_id, trade_date)` — natural
+  unique key per daily bar. Columns: close_local, close_usd (FX
+  normalized, nullable), volume, source (default `yfinance`). Indexed
+  `(equity_id, trade_date DESC)` for the dominant read pattern
+  (last-N-days for one equity). CASCADE delete from sector_equities.
+- Decision: regular table not a Timescale hypertable. ~50 equities ×
+  ~90 bars = 4,500 rows initial; migration to a hypertable is a future
+  ops task once we cross ~1M rows.
+
+**data-pipeline additions**:
+
+- `DataSource.fetch_history(symbol, days)` — Protocol extension
+  returning a list of `HistoryBar { trade_date, close_local, volume }`,
+  ascending by date.
+- `YFinanceSource.fetch_history`: uses `yf.Ticker(symbol).history(period=...)`
+  via `_period_for(days)` (3mo / 6mo / 1y / 2y / 5y buckets, sliced
+  in Python to honor the exact `days` count). Auto-adjust off so we
+  see raw closes.
+- `FakeSource.fetch_history`: dict-backed; honors `raise_on` /
+  missing-symbol semantics; records `history_calls` for assertions.
+- `EquityRepository.bulk_upsert_quote_history(equity_id, bars)`:
+  Postgres impl uses `executemany` against `INSERT ... ON CONFLICT
+  (equity_id, trade_date) DO UPDATE` so re-runs overwrite cleanly.
+  InMemory impl mirrors via `dict[equity_id, dict[date, QuoteBar]]`.
+- `refresh_quote_history` job: same shape as `refresh_quotes` (per-
+  currency FX prefetch, failure isolation, throttle), but writes the
+  full series per equity. Result envelope:
+  `RefreshHistoryResult { total, updated, bars_written, empty, errors,
+  days, fx_rates, failure_reasons }`.
+- HTTP endpoints:
+  - `POST /jobs/refresh-quote-history?days=90` — manual trigger
+  - `GET  /jobs/refresh-quote-history/last` — last result or 404
+
+Note: the job applies the *current* FX to every historical bar (no
+true historical FX). Milestone 4 may backfill via FRED's
+exchange-rate series; for now this is a known approximation.
+
+**sector-service**:
+
+- New `equity.history({ id, days?: 90 })` tRPC procedure (read-only),
+  returns array of `{ trade_date, close_local, close_usd, volume }`.
+  404 on unknown id; empty array when ingest hasn't run yet.
+
+**`@platform/ui`**:
+
+- New `Sparkline` component — dependency-free SVG. Props:
+  `values[], width=96, height=28, stroke?, filled?, showLastDot?,
+  ariaLabel?`. Auto-colors green/red by first→last direction;
+  caller can override via `stroke`. RSC-safe (no client hooks).
+  Single-value / all-equal inputs render a flat dashed midline.
+
+**Web UI** (`apps/web/src/app/sectors/[slug]/equities/equities-table.tsx`):
+
+- Lazy-parallel history fetch on mount (`Promise.all` over all
+  equities at once). Each row's sparkline pops in as its history
+  arrives — initial render isn't blocked.
+- New "90d trend" column: Sparkline (88×26, filled, last-dot) +
+  period-return chip color-coded green/red. Renders `…` while
+  loading, `—` if no bars ingested.
+- Expand panel now lays out 2/3 + 1/3:
+  - left: 편입 사유 + driver linkage decomposition
+  - right: 280×60 sparkline + period-return / min / max / date-range
+    panel
+- Footnote updated to call out yfinance ingest as the bar source so
+  users see why the trend column may be empty before the
+  data-pipeline job runs.
+
+**Tests** (6 new in data-pipeline, 33 total in that service):
+
+- happy path: USD + KR equity, FX-converted close_usd
+- KOSDAQ `.KQ` suffix used
+- empty history counted as `empty` (not error), not fatal
+- raised exception isolated
+- missing FX nulls close_usd but writes local
+- idempotent upsert on repeat (overwrite-on-conflict)
+
+**Tally** (cumulative)
+- agent-orchestration: 35 pass + 2 skipped
+- simulation-service: 55
+- data-pipeline: 27 (was 18 in M2 + 3 tz regression + 6 history)
+- sector-service in-mem: 19
+- **total: 136 pass + 2 skipped**
+
+**End-to-end smoke** (when Postgres is running):
+
+```bash
+pnpm db:migrate                        # picks up equity_quotes migration
+pnpm db:seed                           # 3 sectors
+pnpm db:seed:equities                  # 49 equities
+curl -X POST http://localhost:8003/jobs/refresh-quotes        # snapshot
+curl -X POST http://localhost:8003/jobs/refresh-quote-history?days=90  # history
+# → open http://localhost:3000/sectors/memory-semi/equities — sparklines
+#   should appear next to each ticker within a second of load
+```
+
+**Out of scope (M4+)**:
+
+- Price-driver regression / backtest — "if I'd held HBM premium at X
+  90 days ago, where would NVDA be"
+- Historical FX time-series (FRED exchange-rate API)
+- Sparkline overlay showing the projected impliedImpact line vs the
+  actual price line on the expand chart
+- Quote refresh scheduler split (snapshot vs history can run on
+  different cadences)
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

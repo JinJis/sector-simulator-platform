@@ -14,7 +14,7 @@ in the seed script and aren't written here.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Protocol
 
 from pydantic import BaseModel
@@ -40,6 +40,18 @@ class EquityRecord(BaseModel):
     currency: str | None
 
 
+class QuoteBar(BaseModel):
+    """Single row destined for `equity_quotes`. The adapter's `HistoryBar`
+    has only `trade_date / close_local / volume` — the job fills in the
+    USD conversion + source label before handing rows to the repo."""
+
+    trade_date: date
+    close_local: float
+    close_usd: float | None = None
+    volume: float | None = None
+    source: str = "yfinance"
+
+
 class EquityRepository(Protocol):
     async def list_all(self) -> list[EquityRecord]: ...
 
@@ -53,6 +65,14 @@ class EquityRepository(Protocol):
         market_cap_usd: float | None,
         currency: str,
     ) -> None: ...
+
+    async def bulk_upsert_quote_history(
+        self, equity_id: str, bars: list[QuoteBar]
+    ) -> int:
+        """Insert (or overwrite on PK conflict) the given bars. Returns
+        the number of rows accepted by the database. Caller is expected
+        to chunk if it ever has thousands of bars per call."""
+        ...
 
     async def close(self) -> None: ...
 
@@ -68,6 +88,9 @@ class InMemoryEquityRepository:
         self._records: dict[str, EquityRecord] = {r.id: r for r in records}
         # Test-visible: latest write per equity id, in update order.
         self.writes: list[dict[str, Any]] = []
+        # equity_id → date → bar  — simulates the (equity_id, trade_date)
+        # composite PK with upsert-on-conflict semantics.
+        self.history: dict[str, dict[date, QuoteBar]] = {}
 
     async def list_all(self) -> list[EquityRecord]:
         return list(self._records.values())
@@ -95,6 +118,16 @@ class InMemoryEquityRepository:
             }
         )
 
+    async def bulk_upsert_quote_history(
+        self, equity_id: str, bars: list[QuoteBar]
+    ) -> int:
+        if equity_id not in self._records:
+            raise KeyError(f"unknown equity: {equity_id}")
+        store = self.history.setdefault(equity_id, {})
+        for bar in bars:
+            store[bar.trade_date] = bar
+        return len(bars)
+
     async def close(self) -> None:
         return None
 
@@ -118,6 +151,20 @@ SET
     currency = $6,
     updated_at = now()
 WHERE id = $1
+"""
+
+_UPSERT_QUOTE_HISTORY_SQL = """
+INSERT INTO equity_quotes
+    (equity_id, trade_date, close_local, close_usd, volume, source)
+VALUES
+    ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (equity_id, trade_date)
+DO UPDATE SET
+    close_local = EXCLUDED.close_local,
+    close_usd = EXCLUDED.close_usd,
+    volume = EXCLUDED.volume,
+    source = EXCLUDED.source,
+    inserted_at = now()
 """
 
 
@@ -167,6 +214,30 @@ class PostgresEquityRepository:
                 market_cap_usd,
                 currency,
             )
+
+    async def bulk_upsert_quote_history(
+        self, equity_id: str, bars: list[QuoteBar]
+    ) -> int:
+        if not bars:
+            return 0
+        rows = [
+            (
+                equity_id,
+                bar.trade_date,
+                bar.close_local,
+                bar.close_usd,
+                bar.volume,
+                bar.source,
+            )
+            for bar in bars
+        ]
+        async with self._pool.acquire() as conn:
+            # `executemany` runs the upsert per row but inside one
+            # connection round-trip + one prepared statement — fine for
+            # the ~90 bars × ~50 equities scale we're at. If this ever
+            # crosses ~10k rows per call, switch to COPY.
+            await conn.executemany(_UPSERT_QUOTE_HISTORY_SQL, rows)
+        return len(rows)
 
     async def close(self) -> None:
         await self._pool.close()

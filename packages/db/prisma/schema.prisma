@@ -94,10 +94,42 @@ model SectorEquity {
   created_at          DateTime @default(now()) @map("created_at")
   updated_at          DateTime @updatedAt        @map("updated_at")
 
+  quotes              EquityQuote[]
+
   @@unique([sector_slug, ticker, exchange])
   @@index([sector_slug])
   @@index([iso_country])
   @@map("sector_equities")
+}
+
+model EquityQuote {
+  // Daily close time-series per equity, refreshed by the data-pipeline
+  // `refresh_quote_history` job (yfinance daily bars, last 90 days by
+  // default). Used by the user-app sparkline column to give visual
+  // context next to the editorial driver_links + implied-impact score.
+  //
+  // Composite PK on (equity_id, trade_date) — natural unique key per
+  // bar. When this table crosses ~1M rows we'll migrate to a Timescale
+  // hypertable; until then a regular Postgres table with the DESC
+  // index covers the read pattern (last-N-days for one equity).
+
+  equity_id   String   @map("equity_id")
+  // The trading day. We deliberately store this as DATE (no time) — bars
+  // are by-day, and intraday is out of scope until a different milestone.
+  trade_date  DateTime @map("trade_date") @db.Date
+  close_local Float    @map("close_local")
+  // FX-normalized close in USD. Null when the FX rate for that day
+  // wasn't available — the UI surfaces the gap.
+  close_usd   Float?   @map("close_usd")
+  volume      Float?
+  source      String   @default("yfinance")
+  inserted_at DateTime @default(now()) @map("inserted_at")
+
+  equity SectorEquity @relation(fields: [equity_id], references: [id], onDelete: Cascade)
+
+  @@id([equity_id, trade_date])
+  @@index([equity_id, trade_date(sort: Desc)])
+  @@map("equity_quotes")
 }
 
 model AgentWorkflow {

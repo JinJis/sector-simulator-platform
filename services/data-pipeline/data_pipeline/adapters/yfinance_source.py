@@ -22,7 +22,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from data_pipeline.adapters.base import Quote
+from data_pipeline.adapters.base import HistoryBar, Quote
 
 log = logging.getLogger(__name__)
 
@@ -111,6 +111,44 @@ class YFinanceSource:
 
         return await _to_thread(_fetch)
 
+    async def fetch_history(self, symbol: str, *, days: int) -> list[HistoryBar]:
+        import yfinance as yf
+
+        # yfinance's `period` strings cap at common values; we ask for
+        # the next bucket up and slice in Python to honor `days` exactly.
+        # 90 days → "3mo", 180 → "6mo", 365 → "1y", default to "1y".
+        period = _period_for(days)
+
+        def _fetch() -> list[HistoryBar]:
+            try:
+                df = yf.Ticker(symbol).history(period=period, interval="1d", auto_adjust=False)
+            except Exception as e:  # noqa: BLE001
+                log.warning("yfinance history fetch failed for %s: %s", symbol, e)
+                return []
+            if df is None or df.empty:
+                return []
+            bars: list[HistoryBar] = []
+            for ts, row in df.iterrows():
+                close = _coerce_float(row.get("Close"))
+                if close is None:
+                    continue
+                vol = _coerce_float(row.get("Volume"))
+                # ts is a pandas Timestamp; ts.date() gives us a plain date.
+                bars.append(
+                    HistoryBar(
+                        trade_date=ts.date(),
+                        close_local=close,
+                        volume=vol if vol and vol > 0 else None,
+                    )
+                )
+            return bars[-days:] if days < len(bars) else bars
+
+        try:
+            return await _to_thread(_fetch)
+        except Exception as e:  # noqa: BLE001
+            log.warning("yfinance fetch_history raised for %s: %s", symbol, e)
+            return []
+
 
 def _coerce_float(v: Any) -> float | None:  # noqa: ANN401
     if v is None:
@@ -122,6 +160,22 @@ def _coerce_float(v: Any) -> float | None:  # noqa: ANN401
     if f != f:  # NaN guard — math.isnan would be cleaner, dep-free check is fine
         return None
     return f
+
+
+def _period_for(days: int) -> str:
+    """Map a days request to the nearest yfinance `period` string that
+    contains at least that many bars. yfinance returns calendar days but
+    skips weekends/holidays, so we always over-fetch and slice in
+    Python."""
+    if days <= 30:
+        return "3mo"
+    if days <= 90:
+        return "6mo"
+    if days <= 180:
+        return "1y"
+    if days <= 365:
+        return "2y"
+    return "5y"
 
 
 def exchange_to_symbol(exchange: str, ticker: str) -> str:

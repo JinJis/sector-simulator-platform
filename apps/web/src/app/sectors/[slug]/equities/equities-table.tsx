@@ -1,8 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Sparkline } from "@platform/ui";
+import { useEffect, useMemo, useState } from "react";
 
-import type { Equity, EquityDriverLink } from "@/lib/sim-client";
+import {
+  fetchEquityHistory,
+  type Equity,
+  type EquityDriverLink,
+  type EquityHistoryBar,
+} from "@/lib/sim-client";
 
 interface Props {
   equities: Equity[];
@@ -82,6 +88,36 @@ export function EquitiesTable({ equities, defaults, driverValues }: Props) {
   const [country, setCountry] = useState<CountryFilter>("all");
   const [sort, setSort] = useState<SortKey>("editorial");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Lazy-loaded 90-day history per equity. Null = pending, [] = no bars
+  // ingested (run `pnpm db:seed:equities` + the data-pipeline refresh-
+  // quote-history job). Fetched in parallel once after first render so
+  // the table renders immediately and sparklines pop in as they arrive.
+  const [histories, setHistories] = useState<
+    Record<string, EquityHistoryBar[] | null>
+  >({});
+
+  useEffect(() => {
+    let cancelled = false;
+    // Reset so a sector-switch doesn't show the old basket's bars.
+    setHistories({});
+    void Promise.all(
+      equities.map(async (e) => {
+        try {
+          const bars = await fetchEquityHistory(e.id, 90);
+          return [e.id, bars] as const;
+        } catch {
+          return [e.id, [] as EquityHistoryBar[]] as const;
+        }
+      }),
+    ).then((pairs) => {
+      if (cancelled) return;
+      setHistories(Object.fromEntries(pairs));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [equities]);
 
   // Pre-compute impact once per render — sorting + display both need it.
   const enriched = useMemo(
@@ -217,6 +253,7 @@ export function EquitiesTable({ equities, defaults, driverValues }: Props) {
               <th className="px-3 py-2 font-semibold">Company</th>
               <th className="px-3 py-2 text-right font-semibold">Last close</th>
               <th className="px-3 py-2 text-right font-semibold">Market cap</th>
+              <th className="px-3 py-2 font-semibold">90d trend</th>
               <th className="px-3 py-2 text-right font-semibold">Exposure</th>
               <th className="px-3 py-2 font-semibold">Key drivers</th>
               <th className="px-3 py-2 text-right font-semibold">Implied impact</th>
@@ -232,6 +269,7 @@ export function EquitiesTable({ equities, defaults, driverValues }: Props) {
                   equity={equity}
                   score={score}
                   activeLinks={activeLinks}
+                  history={histories[equity.id] ?? null}
                   expanded={expanded}
                   onToggle={() => setExpandedId(expanded ? null : equity.id)}
                   defaults={defaults}
@@ -245,8 +283,9 @@ export function EquitiesTable({ equities, defaults, driverValues }: Props) {
 
       <p className="mt-3 text-[11px] leading-relaxed text-neutral-600">
         Implied impact는 편집팀이 수기로 부여한 driver→equity 링크(부호 + magnitude)와 현재 슬라이더의
-        default 대비 편차로 계산한 방향성 점수입니다 (econometric 모델 아님, [-100,+100] 클램프). 가격
-        스냅샷은 2026-04-30 종가 기준 · FX 1,380 KRW/USD.
+        default 대비 편차로 계산한 방향성 점수입니다 (econometric 모델 아님, [-100,+100] 클램프). 90d
+        trend는 data-pipeline이 yfinance에서 받아온 일별 종가 시계열입니다 — 아직 ingest 안 됐으면
+        대시(—)로 표시.
       </p>
     </div>
   );
@@ -256,6 +295,7 @@ function Row({
   equity,
   score,
   activeLinks,
+  history,
   expanded,
   onToggle,
   defaults,
@@ -264,12 +304,20 @@ function Row({
   equity: Equity;
   score: number;
   activeLinks: number;
+  history: EquityHistoryBar[] | null;
   expanded: boolean;
   onToggle: () => void;
   defaults: Record<string, number>;
   driverValues: Record<string, number>;
 }) {
   const flag = equity.iso_country === "US" ? "🇺🇸" : "🇰🇷";
+  const periodReturnPct = useMemo(() => {
+    if (!history || history.length < 2) return null;
+    const first = history[0]!.close_local;
+    const last = history[history.length - 1]!.close_local;
+    if (!first) return null;
+    return ((last - first) / first) * 100;
+  }, [history]);
   const scoreVisible = activeLinks > 0;
   const scoreColor =
     !scoreVisible
@@ -325,6 +373,9 @@ function Row({
             {equity.market_cap_usd !== null ? compactUsd(equity.market_cap_usd) : "—"}
           </span>
         </td>
+        <td className="px-3 py-2.5 align-top">
+          <TrendCell history={history} returnPct={periodReturnPct} />
+        </td>
         <td className="px-3 py-2.5 text-right align-top tabular-nums">
           <ExposureBar pct={equity.sector_exposure_pct} />
         </td>
@@ -366,17 +417,15 @@ function Row({
 
       {expanded && (
         <tr className="border-b border-neutral-900 bg-neutral-950/40">
-          <td colSpan={8} className="px-4 py-4">
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div>
+          <td colSpan={9} className="px-4 py-4">
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div className="lg:col-span-2">
                 <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
                   편입 사유
                 </h4>
-                <p className="text-sm leading-relaxed text-neutral-300">
+                <p className="mb-4 text-sm leading-relaxed text-neutral-300">
                   {equity.rationale || "— 편입 메모 없음 —"}
                 </p>
-              </div>
-              <div>
                 <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
                   Driver linkage ({equity.driver_links.length})
                 </h4>
@@ -390,6 +439,16 @@ function Row({
                     />
                   ))}
                 </ul>
+              </div>
+              <div>
+                <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+                  Price history (90d)
+                </h4>
+                <ExpandedHistoryPanel
+                  history={history}
+                  currency={equity.currency}
+                  periodReturnPct={periodReturnPct}
+                />
               </div>
             </div>
           </td>
@@ -470,6 +529,149 @@ function DriverDetailRow({
       )}
     </li>
   );
+}
+
+function TrendCell({
+  history,
+  returnPct,
+}: {
+  history: EquityHistoryBar[] | null;
+  returnPct: number | null;
+}) {
+  if (history === null) {
+    return <span className="text-[11px] text-neutral-600">…</span>;
+  }
+  if (history.length < 2 || returnPct === null) {
+    return <span className="text-[11px] text-neutral-600">—</span>;
+  }
+  const values = history.map((b) => b.close_local);
+  const color =
+    returnPct > 0.5
+      ? "text-emerald-300"
+      : returnPct < -0.5
+        ? "text-rose-300"
+        : "text-neutral-400";
+  return (
+    <div className="flex items-center gap-2">
+      <Sparkline
+        values={values}
+        width={88}
+        height={26}
+        filled
+        ariaLabel={`90-day price trend, ${returnPct.toFixed(1)}%`}
+      />
+      <span className={`text-[11px] tabular-nums ${color}`}>
+        {returnPct > 0 ? "+" : ""}
+        {returnPct.toFixed(1)}%
+      </span>
+    </div>
+  );
+}
+
+function ExpandedHistoryPanel({
+  history,
+  currency,
+  periodReturnPct,
+}: {
+  history: EquityHistoryBar[] | null;
+  currency: string | null;
+  periodReturnPct: number | null;
+}) {
+  if (history === null) {
+    return (
+      <div className="rounded border border-neutral-900 bg-neutral-950/40 p-3 text-xs text-neutral-500">
+        불러오는 중…
+      </div>
+    );
+  }
+  if (history.length === 0) {
+    return (
+      <div className="rounded border border-neutral-900 bg-neutral-950/40 p-3 text-xs text-neutral-500">
+        ingest된 가격 시계열이 없습니다.
+        <p className="mt-1 text-[10px] text-neutral-600">
+          관리자:{" "}
+          <code className="rounded bg-neutral-900 px-1 py-0.5">
+            curl -X POST http://localhost:8003/jobs/refresh-quote-history
+          </code>
+        </p>
+      </div>
+    );
+  }
+
+  const values = history.map((b) => b.close_local);
+  const first = history[0]!;
+  const last = history[history.length - 1]!;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+
+  return (
+    <div className="rounded border border-neutral-900 bg-neutral-950/40 p-3">
+      <Sparkline
+        values={values}
+        width={280}
+        height={60}
+        filled
+        ariaLabel={`90-day price trend`}
+      />
+      <dl className="mt-2 grid grid-cols-3 gap-2 text-[10px] uppercase tracking-wider text-neutral-500">
+        <Stat
+          label="period return"
+          value={
+            periodReturnPct === null
+              ? "—"
+              : `${periodReturnPct > 0 ? "+" : ""}${periodReturnPct.toFixed(2)}%`
+          }
+          tone={
+            periodReturnPct === null
+              ? undefined
+              : periodReturnPct > 0
+                ? "pos"
+                : periodReturnPct < 0
+                  ? "neg"
+                  : undefined
+          }
+        />
+        <Stat label="min" value={formatLocalPrice(min, currency)} />
+        <Stat label="max" value={formatLocalPrice(max, currency)} />
+      </dl>
+      <p className="mt-2 text-[10px] text-neutral-600">
+        {fmtDate(first.trade_date)} → {fmtDate(last.trade_date)} · {history.length}
+        {" "}
+        bars
+      </p>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "pos" | "neg";
+}) {
+  const color =
+    tone === "pos"
+      ? "text-emerald-300"
+      : tone === "neg"
+        ? "text-rose-300"
+        : "text-neutral-100";
+  return (
+    <div>
+      <div>{label}</div>
+      <div className={`font-mono text-sm tabular-nums normal-case ${color}`}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function fmtDate(d: string | Date): string {
+  const x = typeof d === "string" ? new Date(d) : d;
+  if (isNaN(x.getTime())) return "—";
+  return x.toISOString().slice(0, 10);
 }
 
 function ExposureBar({ pct }: { pct: number }) {

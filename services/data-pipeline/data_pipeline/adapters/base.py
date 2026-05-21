@@ -17,7 +17,7 @@ swaps in yfinance, tests use the FakeSource.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Protocol
 
 from pydantic import BaseModel, Field
@@ -35,10 +35,27 @@ class Quote(BaseModel):
     market_cap_local: float | None = None
 
 
+class HistoryBar(BaseModel):
+    """One daily bar in the history series. `close_usd` is populated by
+    the job (not the adapter) because FX is fetched globally."""
+
+    trade_date: date
+    close_local: float
+    volume: float | None = None
+
+
 class DataSource(Protocol):
     async def fetch_quote(self, symbol: str) -> Quote | None: ...
 
     async def fetch_fx_to_usd(self, currency: str) -> float | None:
         """Return how many USD = 1 unit of `currency`. So for KRW this
         is ~0.00072 (since 1 KRW ≈ $0.00072 = $1/1,380)."""
+        ...
+
+    async def fetch_history(self, symbol: str, *, days: int) -> list[HistoryBar]:
+        """Last `days` of daily bars for `symbol`. Ascending by date —
+        the job iterates oldest → newest to keep upserts naturally
+        ordered. Returns [] (not None) when the upstream has no data
+        for the symbol so callers can treat empty as "no history" vs
+        "fetch failed" (errors raise)."""
         ...

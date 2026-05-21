@@ -10,9 +10,13 @@ Next milestones expand the surface to financial statements (EDGAR/DART),
 macro factors (FRED/TradingEconomics), and time-series quote history.
 """
 
-from data_pipeline.adapters.base import DataSource, Quote
+from data_pipeline.adapters.base import DataSource, HistoryBar, Quote
 from data_pipeline.adapters.fake import FakeSource
 from data_pipeline.adapters.yfinance_source import YFinanceSource
+from data_pipeline.jobs.refresh_quote_history import (
+    RefreshHistoryResult,
+    refresh_quote_history,
+)
 from data_pipeline.jobs.refresh_quotes import RefreshQuotesResult, refresh_quotes
 from data_pipeline.repo import EquityRecord, EquityRepository, InMemoryEquityRepository
 
@@ -21,9 +25,12 @@ __all__ = [
     "EquityRecord",
     "EquityRepository",
     "FakeSource",
+    "HistoryBar",
     "InMemoryEquityRepository",
     "Quote",
+    "RefreshHistoryResult",
     "RefreshQuotesResult",
     "YFinanceSource",
+    "refresh_quote_history",
     "refresh_quotes",
 ]

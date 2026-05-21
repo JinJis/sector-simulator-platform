@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./breadcrumbs": "./src/breadcrumbs.tsx",
+    "./sparkline": "./src/sparkline.tsx",
     "./sub-nav": "./src/sub-nav.tsx"
   },
   "scripts": {
