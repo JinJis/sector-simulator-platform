@@ -172,11 +172,40 @@ def test_aggregate_computes_gross_and_opex() -> None:
     assert r.cogs_usd == 600
     assert r.gross_profit_usd == 400  # 1000 - 600
     assert r.opex_usd == 200  # gross 400 - op_income 200
+    # Without D&A, ebitda falls back to operating income (M10b behavior).
     assert r.ebitda_usd == 200
     assert r.net_income_usd == 150
     # Capex is recorded as outflow in EDGAR (negative) — adapter
     # returns abs() for clean charting.
     assert r.capex_usd == 80
+
+
+def test_aggregate_adds_da_to_ebitda_when_present() -> None:
+    """M10c: ebitda = OpIncome + D&A when the adapter sees a
+    DepreciationAndAmortization fact for the same period."""
+    facts = {
+        "revenue": [{"end": "2025-03-31", "val": 1000, "qtrs": 1, "fy": 2025, "fp": "Q1"}],
+        "cogs": [{"end": "2025-03-31", "val": 600, "qtrs": 1, "fy": 2025, "fp": "Q1"}],
+        "op_income": [{"end": "2025-03-31", "val": 200, "qtrs": 1, "fy": 2025, "fp": "Q1"}],
+        "net_income": [{"end": "2025-03-31", "val": 150, "qtrs": 1, "fy": 2025, "fp": "Q1"}],
+        "capex": [{"end": "2025-03-31", "val": -80, "qtrs": 1, "fy": 2025, "fp": "Q1"}],
+        "d_and_a": [{"end": "2025-03-31", "val": 50, "qtrs": 1, "fy": 2025, "fp": "Q1"}],
+    }
+    out = _aggregate(facts, quarters=4)
+    r = out[0]
+    # ebitda = 200 (op_income) + 50 (D&A) = 250
+    assert r.ebitda_usd == 250
+
+
+def test_aggregate_falls_back_to_op_income_when_da_missing() -> None:
+    """No D&A facts → ebitda = OpIncome (matches M10b)."""
+    facts = {
+        "revenue": [{"end": "2025-03-31", "val": 1000, "qtrs": 1, "fy": 2025, "fp": "Q1"}],
+        "op_income": [{"end": "2025-03-31", "val": 200, "qtrs": 1, "fy": 2025, "fp": "Q1"}],
+        "d_and_a": [],
+    }
+    out = _aggregate(facts, quarters=4)
+    assert out[0].ebitda_usd == 200
 
 
 def test_edgar_constructor_validates_user_agent() -> None:
@@ -253,3 +282,155 @@ def test_dart_constructor_requires_api_key() -> None:
     # With a key the constructor succeeds.
     src = DartSource(api_key="x")
     assert src is not None
+
+
+def test_dart_matches_by_account_id_first() -> None:
+    """M10c: full-statements rows carry K-IFRS `account_id` codes.
+    Matching by account_id avoids ambiguity from localized names."""
+    rows = [
+        # account_id present — preferred path
+        {
+            "fs_div": "CFS",
+            "account_id": "ifrs-full_Revenue",
+            "account_nm": "수익(매출액)",  # different label than the simple endpoint uses
+            "thstrm_amount": "10,000,000,000",
+        },
+        {
+            "fs_div": "CFS",
+            "account_id": "ifrs-full_CostOfSales",
+            "account_nm": "매출원가",
+            "thstrm_amount": "6,000,000,000",
+        },
+        {
+            "fs_div": "CFS",
+            "account_id": "dart_OperatingIncomeLoss",
+            "account_nm": "영업이익(손실)",
+            "thstrm_amount": "1,500,000,000",
+        },
+        {
+            "fs_div": "CFS",
+            "account_id": "ifrs-full_ProfitLoss",
+            "account_nm": "당기순이익(손실)",
+            "thstrm_amount": "1,200,000,000",
+        },
+        {
+            "fs_div": "CFS",
+            "account_id": "ifrs-full_PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities",
+            "account_nm": "유형자산의 취득",
+            "thstrm_amount": "-500,000,000",
+        },
+        {
+            "fs_div": "CFS",
+            "account_id": "ifrs-full_DepreciationExpense",
+            "account_nm": "감가상각비",
+            "thstrm_amount": "300,000,000",
+        },
+    ]
+    q = _accounting_to_quarter(rows, fy=2025, reprt_code="11013", krw_per_usd=1380.0)
+    assert q is not None
+    assert q.revenue_usd == pytest.approx(10_000_000_000 / 1380, rel=1e-6)
+    assert q.cogs_usd == pytest.approx(6_000_000_000 / 1380, rel=1e-6)
+    # Capex is reported as outflow (negative); adapter uses abs().
+    assert q.capex_usd == pytest.approx(500_000_000 / 1380, rel=1e-6)
+    # ebitda = op_income + D&A
+    expected_ebitda = (1_500_000_000 + 300_000_000) / 1380
+    assert q.ebitda_usd == pytest.approx(expected_ebitda, rel=1e-6)
+    assert q.net_income_usd == pytest.approx(1_200_000_000 / 1380, rel=1e-6)
+
+
+def test_dart_account_id_takes_precedence_over_account_nm() -> None:
+    """When account_id is present we must NOT fall back to the
+    Korean substring match — the substring branch is for the simple
+    endpoint only."""
+    rows = [
+        {
+            "fs_div": "CFS",
+            "account_id": "some_unrelated_id",  # NOT in our id sets
+            "account_nm": "매출액",  # substring would match revenue
+            "thstrm_amount": "999,999,999",
+        },
+    ]
+    q = _accounting_to_quarter(rows, fy=2025, reprt_code="11013", krw_per_usd=1380.0)
+    # Neither account_id nor account_nm path matched → revenue None;
+    # but net_income also None → adapter returns None.
+    assert q is None
+
+
+def test_dart_legacy_substring_still_works_when_account_id_empty() -> None:
+    """Simple endpoint rows have account_id="". Substring fallback
+    keeps that path alive."""
+    rows = [
+        {
+            "fs_div": "CFS",
+            "account_id": "",
+            "account_nm": "매출액",
+            "thstrm_amount": "1,000,000,000",
+        },
+        {
+            "fs_div": "CFS",
+            "account_id": "",
+            "account_nm": "당기순이익",
+            "thstrm_amount": "100,000,000",
+        },
+    ]
+    q = _accounting_to_quarter(rows, fy=2025, reprt_code="11013", krw_per_usd=1380.0)
+    assert q is not None
+    assert q.revenue_usd == pytest.approx(1_000_000_000 / 1380, rel=1e-6)
+
+
+@pytest.mark.asyncio
+async def test_dart_resolve_fx_uses_lookup_when_available() -> None:
+    """M10c: historical FX via the fx_for callable. We don't make a
+    real network call here — just confirm the constructor wires the
+    callable through and that the fallback constant is used when the
+    lookup returns None."""
+    from datetime import date as _date
+
+    async def lookup(d: _date) -> float | None:
+        # Per-quarter override: pretend KRW weakened drastically in 2024 Q3.
+        if d == _date(2024, 9, 30):
+            return 1500.0
+        return None
+
+    src = DartSource(api_key="x", fx_for=lookup, krw_per_usd=1380.0)
+    rate_a = await src._resolve_fx(_date(2024, 9, 30))
+    rate_b = await src._resolve_fx(_date(2024, 12, 31))
+    assert rate_a == 1500.0  # historical
+    assert rate_b == 1380.0  # fallback to constructor constant
+
+
+@pytest.mark.asyncio
+async def test_dart_resolve_fx_ignores_non_positive_results() -> None:
+    """A negative or zero rate from the lookup is bogus — fall back."""
+    from datetime import date as _date
+
+    async def bad_lookup(d: _date) -> float | None:
+        return -1.0
+
+    src = DartSource(api_key="x", fx_for=bad_lookup, krw_per_usd=1380.0)
+    rate = await src._resolve_fx(_date(2025, 3, 31))
+    assert rate == 1380.0
+
+
+def test_dart_capex_taken_as_absolute_value() -> None:
+    """DART reports PP&E acquisitions as a negative cashflow.
+    Persisted capex must be positive (absolute amount spent)."""
+    rows = [
+        {
+            "fs_div": "CFS",
+            "account_id": "ifrs-full_Revenue",
+            "account_nm": "수익",
+            "thstrm_amount": "1,000,000,000",
+        },
+        {
+            "fs_div": "CFS",
+            "account_id": "dart_PurchaseOfPropertyPlantAndEquipment",
+            "account_nm": "유형자산의 취득",
+            "thstrm_amount": "-200,000,000",
+        },
+    ]
+    q = _accounting_to_quarter(rows, fy=2025, reprt_code="11013", krw_per_usd=1380.0)
+    assert q is not None
+    assert q.capex_usd is not None
+    assert q.capex_usd > 0
+    assert q.capex_usd == pytest.approx(200_000_000 / 1380, rel=1e-6)

@@ -1,23 +1,30 @@
 """data-pipeline FastAPI app.
 
 Endpoints:
-- GET  /health                 → liveness + last-run telemetry
-- POST /jobs/refresh-quotes    → manual trigger
-- GET  /jobs/refresh-quotes/last → last RefreshQuotesResult or 404
+- GET  /health                            → liveness + last-run telemetry
+- POST /jobs/refresh-quotes               → daily snapshot refresh
+- GET  /jobs/refresh-quotes/last
+- POST /jobs/refresh-quote-history        → daily-bar window refresh
+- GET  /jobs/refresh-quote-history/last
+- POST /jobs/refresh-financials           → quarterly fundamentals refresh
+- GET  /jobs/refresh-financials/last
 
-Scheduler:
-  APScheduler `AsyncIOScheduler` runs `refresh_quotes` daily at the cron
-  configured by `INGEST_CRON_QUOTES` (default `30 8 * * *` UTC — that's
-  17:30 KST, well after KOSPI close and a few hours after US close).
-  Disabled when `INGEST_SCHEDULE=off`.
+Scheduler (APScheduler AsyncIOScheduler, UTC):
+  refresh_quotes        — `INGEST_CRON_QUOTES` (default `30 8 * * *`)
+  refresh_financials    — `REFRESH_FINANCIALS_CRON` (default `0 4 * * 0`, weekly)
+  Disabled entirely when `INGEST_SCHEDULE=off`.
 
 Configuration (env):
-  DATABASE_URL             — required
-  INGEST_SOURCE            — `yfinance` (default) or `fake` for smoke
-  INGEST_THROTTLE_MS       — between-symbol sleep (default 200)
-  INGEST_CRON_QUOTES       — APScheduler cron (default `30 8 * * *`)
-  INGEST_SCHEDULE          — set to `off` to disable the scheduler
-  LOG_LEVEL                — default INFO
+  DATABASE_URL                  — required
+  INGEST_SOURCE                 — `yfinance` (default) or `fake` for smoke
+  INGEST_THROTTLE_MS            — between-symbol sleep (default 200)
+  INGEST_CRON_QUOTES            — quote-refresh cron
+  INGEST_SCHEDULE               — set to `off` to disable the scheduler
+  REFRESH_FINANCIALS_CRON       — financials-refresh cron
+  REFRESH_FINANCIALS_QUARTERS   — how many quarters to fetch per equity
+  EDGAR_USER_AGENT              — SEC fair-access policy contact string
+  DART_API_KEY                  — OPEN DART (KR) — required for KR refresh
+  LOG_LEVEL                     — default INFO
 """
 
 from __future__ import annotations
@@ -39,6 +46,7 @@ from data_pipeline.adapters.edgar_source import EdgarSource
 from data_pipeline.adapters.fake import FakeSource
 from data_pipeline.adapters.fake_financials import FakeFinancialsSource
 from data_pipeline.adapters.financials_base import FinancialsSource
+from data_pipeline.adapters.frankfurter_fx import FrankfurterFx
 from data_pipeline.adapters.yfinance_source import YFinanceSource
 from data_pipeline.jobs.refresh_financials import (
     RefreshFinancialsResult,
@@ -58,6 +66,7 @@ _DEFAULT_CRON = "30 8 * * *"  # 08:30 UTC = 17:30 KST
 # Default financials cron: weekly Sun 04:00 UTC. Quarterly cadence
 # upstream means daily would burn rate limits with no value.
 _DEFAULT_FINANCIALS_CRON = "0 4 * * 0"
+_DEFAULT_FINANCIALS_QUARTERS = 8
 
 
 def _build_source() -> DataSource:
@@ -68,10 +77,17 @@ def _build_source() -> DataSource:
     return YFinanceSource()
 
 
-def _build_financials_sources() -> tuple[FinancialsSource, FinancialsSource | None]:
+def _build_financials_sources(
+    *, fx: FrankfurterFx | None = None
+) -> tuple[FinancialsSource, FinancialsSource | None]:
     """Return (us_source, kr_source). KR is optional — without DART_API_KEY
     we skip KR equities at refresh time. INGEST_SOURCE=fake routes both
-    countries through FakeFinancialsSource for smoke tests."""
+    countries through FakeFinancialsSource for smoke tests.
+
+    M10c: when a `FrankfurterFx` instance is provided, the DART adapter
+    uses it for per-quarter historical FX. Without it the adapter
+    falls back to the constructor's `DEFAULT_KRW_PER_USD`.
+    """
     name = os.environ.get("INGEST_SOURCE", "yfinance").lower()
     if name == "fake":
         log.warning("data-pipeline: using FakeFinancialsSource — only smoke-test data!")
@@ -87,7 +103,8 @@ def _build_financials_sources() -> tuple[FinancialsSource, FinancialsSource | No
     dart_key = os.environ.get("DART_API_KEY", "").strip()
     kr_source: FinancialsSource | None = None
     if dart_key:
-        kr_source = DartSource(api_key=dart_key)
+        fx_for = fx.krw_per_usd if fx is not None else None
+        kr_source = DartSource(api_key=dart_key, fx_for=fx_for)
     else:
         log.warning(
             "data-pipeline: DART_API_KEY unset — KR equities will be skipped on financials refresh.",
@@ -103,8 +120,10 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         app.state.repo = repo
     if not hasattr(app.state, "source"):
         app.state.source = _build_source()
+    if not hasattr(app.state, "fx"):
+        app.state.fx = FrankfurterFx()
     if not hasattr(app.state, "us_financials") or not hasattr(app.state, "kr_financials"):
-        us_fs, kr_fs = _build_financials_sources()
+        us_fs, kr_fs = _build_financials_sources(fx=app.state.fx)
         app.state.us_financials = us_fs
         app.state.kr_financials = kr_fs
     if not hasattr(app.state, "last_result"):
@@ -112,16 +131,21 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
     if not hasattr(app.state, "last_financials_result"):
         app.state.last_financials_result = None
     app.state.throttle_ms = int(os.environ.get("INGEST_THROTTLE_MS", "200"))
+    app.state.financials_quarters = int(
+        os.environ.get("REFRESH_FINANCIALS_QUARTERS", str(_DEFAULT_FINANCIALS_QUARTERS))
+    )
 
     scheduler: AsyncIOScheduler | None = None
     if os.environ.get("INGEST_SCHEDULE", "on").lower() != "off":
+        scheduler = AsyncIOScheduler(timezone="UTC")
+
+        # Daily quote refresh.
         cron = os.environ.get("INGEST_CRON_QUOTES", _DEFAULT_CRON)
         try:
             trigger = CronTrigger.from_crontab(cron, timezone="UTC")
         except ValueError as e:
-            log.error("data-pipeline: bad INGEST_CRON_QUOTES=%r (%s) — scheduler off", cron, e)
+            log.error("data-pipeline: bad INGEST_CRON_QUOTES=%r (%s)", cron, e)
         else:
-            scheduler = AsyncIOScheduler(timezone="UTC")
             scheduler.add_job(
                 _run_refresh_job,
                 trigger=trigger,
@@ -129,8 +153,29 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
                 id="refresh_quotes_daily",
                 replace_existing=True,
             )
+            log.info("data-pipeline: quote-refresh armed (cron=%r UTC)", cron)
+
+        # Weekly financials refresh (M10c).
+        fin_cron = os.environ.get("REFRESH_FINANCIALS_CRON", _DEFAULT_FINANCIALS_CRON)
+        try:
+            fin_trigger = CronTrigger.from_crontab(fin_cron, timezone="UTC")
+        except ValueError as e:
+            log.error("data-pipeline: bad REFRESH_FINANCIALS_CRON=%r (%s)", fin_cron, e)
+        else:
+            scheduler.add_job(
+                _run_refresh_financials_job,
+                trigger=fin_trigger,
+                kwargs={"app": app},
+                id="refresh_financials_weekly",
+                replace_existing=True,
+            )
+            log.info("data-pipeline: financials-refresh armed (cron=%r UTC)", fin_cron)
+
+        if scheduler.get_jobs():
             scheduler.start()
-            log.info("data-pipeline: scheduler armed (cron=%r UTC)", cron)
+        else:
+            log.warning("data-pipeline: no scheduler jobs were registered")
+            scheduler = None
     else:
         log.info("data-pipeline: scheduler disabled by INGEST_SCHEDULE=off")
     app.state.scheduler = scheduler
@@ -155,6 +200,23 @@ async def _run_refresh_job(*, app: FastAPI) -> RefreshQuotesResult:
     return result
 
 
+async def _run_refresh_financials_job(*, app: FastAPI) -> RefreshFinancialsResult:
+    repo: EquityRepository = app.state.repo
+    us: FinancialsSource = app.state.us_financials
+    kr: FinancialsSource | None = app.state.kr_financials
+    throttle = int(app.state.throttle_ms)
+    quarters = int(app.state.financials_quarters)
+    result = await refresh_financials(
+        us_source=us,
+        kr_source=kr,
+        repo=repo,
+        quarters=quarters,
+        throttle_ms=throttle,
+    )
+    app.state.last_financials_result = result
+    return result
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="data-pipeline",
@@ -175,18 +237,23 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def health() -> dict[str, Any]:
         last: RefreshQuotesResult | None = getattr(app.state, "last_result", None)
+        last_fin: RefreshFinancialsResult | None = getattr(
+            app.state, "last_financials_result", None
+        )
         scheduler: AsyncIOScheduler | None = getattr(app.state, "scheduler", None)
-        next_run = None
+        next_runs: dict[str, str | None] = {}
         if scheduler is not None:
-            jobs = scheduler.get_jobs()
-            if jobs and jobs[0].next_run_time is not None:
-                next_run = jobs[0].next_run_time.isoformat()
+            for job in scheduler.get_jobs():
+                next_runs[job.id] = (
+                    job.next_run_time.isoformat() if job.next_run_time else None
+                )
         return {
             "status": "ok",
             "now": datetime.now(UTC).isoformat(),
             "scheduler_armed": scheduler is not None,
-            "next_refresh_at": next_run,
+            "next_runs": next_runs,
             "last_refresh": last.model_dump(mode="json") if last is not None else None,
+            "last_financials_refresh": last_fin.model_dump(mode="json") if last_fin is not None else None,
         }
 
     @app.post("/jobs/refresh-quotes", response_model=RefreshQuotesResult)
@@ -240,11 +307,13 @@ def create_app() -> FastAPI:
         "/jobs/refresh-financials",
         response_model=RefreshFinancialsResult,
     )
-    async def trigger_refresh_financials(quarters: int = 8) -> RefreshFinancialsResult:
+    async def trigger_refresh_financials(quarters: int = _DEFAULT_FINANCIALS_QUARTERS) -> RefreshFinancialsResult:
         log.info(
             "data-pipeline: manual /jobs/refresh-financials triggered (quarters=%d)",
             quarters,
         )
+        # Allow per-call override of the configured quarters via query
+        # string; routing + sources still come from app.state.
         repo: EquityRepository = app.state.repo
         us: FinancialsSource = app.state.us_financials
         kr: FinancialsSource | None = app.state.kr_financials

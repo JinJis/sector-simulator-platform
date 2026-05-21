@@ -1,4 +1,4 @@
-"""OPEN DART adapter — milestone 10b.
+"""OPEN DART adapter — milestone 10b + 10c.
 
 Pulls quarterly fundamentals from the Korea Financial Supervisory
 Service's public corporate filings API. Requires a free API key
@@ -6,14 +6,20 @@ Service's public corporate filings API. Requires a free API key
 
 API documentation: https://opendart.fss.or.kr/guide/main.do
 
-We use the 주요계정 endpoint `fnlttSinglAcnt.json` for one-shot per
-report fetches. Each call returns line items (revenue, operating
-profit, net profit etc.) for one corp_code × one report period.
+M10c switches from the 주요계정 endpoint (`fnlttSinglAcnt.json`, ~10
+line items) to 전체재무제표 (`fnlttSinglAcntAll.json`, full
+statements). The full endpoint gives us cashflow items — most
+importantly `ifrs-full_PurchaseOfPropertyPlantAndEquipmentClassifiedAs...`
+for capex — alongside the IS / BS items the simple endpoint already
+covered. The IS endpoint is kept as a fallback so old `corp_code`
+that don't file the full statement still produce data.
 
-DART reports KRW; the adapter FX-converts to USD before returning. FX
-source: simple per-call constant `KRW_PER_USD` injectable through the
-constructor (defaults to 1,380 — matching the seed). For real
-production use you'd want a daily FX feed; deferred to M10c.
+DART reports KRW; the adapter FX-converts to USD before returning.
+M10c plumbs in an optional `fx_for` callable that returns the
+quarter-end KRW/USD rate — wired in main.py to `FrankfurterFx` so
+historical quarters use historical FX. If `fx_for` is None or
+returns None for a given date we fall back to
+`DEFAULT_KRW_PER_USD = 1380` (matching the seed snapshot date).
 
 Ticker → corp_code mapping: DART exposes `corpCode.xml` (one-time
 download, ~20MB). For MVP convenience we ship a hand-curated map for
@@ -24,6 +30,7 @@ Unmapped tickers return `[]` rather than fail loudly.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import date
 
 from data_pipeline.adapters.financials_base import FinancialQuarter
@@ -31,6 +38,32 @@ from data_pipeline.adapters.financials_base import FinancialQuarter
 log = logging.getLogger(__name__)
 
 DART_ACCT_URL = "https://opendart.fss.or.kr/api/fnlttSinglAcnt.json"
+DART_ACCT_ALL_URL = "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json"
+
+# K-IFRS account_id values used by the full-statements endpoint.
+# These are stable across companies / years (whereas account_nm is
+# localized and varies). We match account_id first; account_nm
+# substring is the fallback used by the simple endpoint.
+ACCOUNT_ID_REVENUE = {"ifrs-full_Revenue", "ifrs_Revenue"}
+ACCOUNT_ID_COGS = {"ifrs-full_CostOfSales", "ifrs_CostOfSales"}
+ACCOUNT_ID_OP_INCOME = {"dart_OperatingIncomeLoss"}
+ACCOUNT_ID_NET_INCOME = {
+    "ifrs-full_ProfitLoss",
+    "ifrs-full_ProfitLossAttributableToOwnersOfParent",
+}
+# Cashflow items — capex (CF). DART uses multiple labels for "PP&E
+# acquisitions"; walking a set of known account_ids catches most.
+ACCOUNT_ID_CAPEX = {
+    "ifrs-full_PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities",
+    "dart_PurchaseOfPropertyPlantAndEquipment",
+    "dart_PaymentsToAcquireFixedAssetsTotalCFlow",
+}
+# D&A for true EBITDA.
+ACCOUNT_ID_DA = {
+    "ifrs-full_DepreciationExpense",
+    "ifrs-full_DepreciationAndAmortisationExpense",
+    "dart_DepreciationAndAmortizationExpense",
+}
 
 # DART quarter codes — the API surfaces reports under different
 # `reprt_code` values per filing type:
@@ -101,45 +134,71 @@ def _accounting_to_quarter(
     krw_per_usd: float,
 ) -> FinancialQuarter | None:
     """Aggregate one (fy, reprt) bundle of DART line items into a
-    FinancialQuarter. Returns None if revenue + net income are both
-    missing (the report likely failed to load or the company doesn't
-    file under K-IFRS labels we recognize).
-
-    The line-item names live in `account_nm` and are localized
-    (Korean). We match by substring against the standard K-IFRS labels.
+    FinancialQuarter. Used for both the simple `fnlttSinglAcnt`
+    endpoint (matches by Korean `account_nm` substring) and the
+    full-statement `fnlttSinglAcntAll` endpoint (matches first by
+    K-IFRS `account_id` — which is stable across companies — and
+    falls back to substring if account_id is empty).
     """
-    fields = {
+    fields: dict[str, float | None] = {
         "revenue": None,
         "op_income": None,
         "net_income": None,
         "cogs": None,
+        "capex": None,
+        "d_and_a": None,
     }
     for row in rows:
         if row.get("fs_div") not in ("CFS", "OFS"):
             continue
         # Consolidated (CFS) preferred — fall back to standalone (OFS).
+        account_id = (row.get("account_id") or "").strip()
         name = row.get("account_nm") or ""
         amount = _maybe_float(row, "thstrm_amount")
         if amount is None:
             continue
-        if "매출액" in name and fields["revenue"] is None:
+
+        if account_id in ACCOUNT_ID_REVENUE and fields["revenue"] is None:
             fields["revenue"] = amount
-        elif "영업이익" in name and fields["op_income"] is None:
-            fields["op_income"] = amount
-        elif ("당기순이익" in name or "분기순이익" in name) and fields["net_income"] is None:
-            fields["net_income"] = amount
-        elif "매출원가" in name and fields["cogs"] is None:
+        elif account_id in ACCOUNT_ID_COGS and fields["cogs"] is None:
             fields["cogs"] = amount
+        elif account_id in ACCOUNT_ID_OP_INCOME and fields["op_income"] is None:
+            fields["op_income"] = amount
+        elif account_id in ACCOUNT_ID_NET_INCOME and fields["net_income"] is None:
+            fields["net_income"] = amount
+        elif account_id in ACCOUNT_ID_CAPEX and fields["capex"] is None:
+            # Reported as outflow (negative or absolute). Take abs so
+            # the financials column always shows the cash amount spent.
+            fields["capex"] = abs(amount)
+        elif account_id in ACCOUNT_ID_DA and fields["d_and_a"] is None:
+            fields["d_and_a"] = amount
+        # Fallback: Korean name substring (covers the simple endpoint
+        # where account_id may be empty).
+        elif not account_id:
+            if "매출액" in name and fields["revenue"] is None:
+                fields["revenue"] = amount
+            elif "영업이익" in name and fields["op_income"] is None:
+                fields["op_income"] = amount
+            elif ("당기순이익" in name or "분기순이익" in name) and fields["net_income"] is None:
+                fields["net_income"] = amount
+            elif "매출원가" in name and fields["cogs"] is None:
+                fields["cogs"] = amount
 
     if fields["revenue"] is None and fields["net_income"] is None:
         return None
 
     q = REPORT_TO_QUARTER[reprt_code]
     fx = krw_per_usd or DEFAULT_KRW_PER_USD
-    revenue_usd = fields["revenue"] / fx if fields["revenue"] is not None else None
-    cogs_usd = fields["cogs"] / fx if fields["cogs"] is not None else None
-    op_income_usd = fields["op_income"] / fx if fields["op_income"] is not None else None
-    net_income_usd = fields["net_income"] / fx if fields["net_income"] is not None else None
+
+    def to_usd(v: float | None) -> float | None:
+        return v / fx if v is not None else None
+
+    revenue_usd = to_usd(fields["revenue"])
+    cogs_usd = to_usd(fields["cogs"])
+    op_income_usd = to_usd(fields["op_income"])
+    net_income_usd = to_usd(fields["net_income"])
+    capex_usd = to_usd(fields["capex"])
+    d_and_a_usd = to_usd(fields["d_and_a"])
     gross_usd = (
         revenue_usd - cogs_usd if revenue_usd is not None and cogs_usd is not None else None
     )
@@ -148,6 +207,12 @@ def _accounting_to_quarter(
         if gross_usd is not None and op_income_usd is not None
         else None
     )
+    # True EBITDA = OpIncome + D&A (M10c) when D&A is available;
+    # fall back to op_income alone otherwise.
+    if op_income_usd is not None and d_and_a_usd is not None:
+        ebitda_usd = op_income_usd + d_and_a_usd
+    else:
+        ebitda_usd = op_income_usd
     return FinancialQuarter(
         fiscal_year=fy,
         fiscal_quarter=q,
@@ -156,13 +221,14 @@ def _accounting_to_quarter(
         cogs_usd=cogs_usd,
         gross_profit_usd=gross_usd,
         opex_usd=opex_usd,
-        ebitda_usd=op_income_usd,
+        ebitda_usd=ebitda_usd,
         net_income_usd=net_income_usd,
-        # DART 주요계정 doesn't include capex. Pulled from the
-        # full statement (fnlttSinglAcntAll) in a later refinement.
-        capex_usd=None,
+        capex_usd=capex_usd,
         source="dart",
     )
+
+
+FxLookup = Callable[[date], Awaitable[float | None]]
 
 
 class DartSource:
@@ -172,12 +238,25 @@ class DartSource:
         api_key: str,
         krw_per_usd: float = DEFAULT_KRW_PER_USD,
         corp_code_map: dict[str, str] | None = None,
+        fx_for: FxLookup | None = None,
+        use_full_statements: bool = True,
     ) -> None:
         if not api_key:
             raise ValueError("DartSource requires DART_API_KEY")
         self._api_key = api_key
         self._krw_per_usd = krw_per_usd
         self._corp_code_map = corp_code_map or KR_CORP_CODES
+        self._fx_for = fx_for
+        self._use_full_statements = use_full_statements
+
+    async def _resolve_fx(self, period_end: date) -> float:
+        """Quarter-end KRW/USD. Falls back to the constructor's
+        constant when no historical FX lookup is wired in."""
+        if self._fx_for is not None:
+            rate = await self._fx_for(period_end)
+            if rate is not None and rate > 0:
+                return rate
+        return self._krw_per_usd
 
     async def fetch_financials(
         self,
@@ -209,24 +288,11 @@ class DartSource:
                 for reprt_code in REPORT_CODES:
                     if len(rows) >= quarters:
                         break
-                    params = {
-                        "crtfc_key": self._api_key,
-                        "corp_code": corp_code,
-                        "bsns_year": str(year),
-                        "reprt_code": reprt_code,
-                    }
-                    r = await client.get(DART_ACCT_URL, params=params)
-                    if r.status_code != 200:
-                        continue
-                    body = r.json()
-                    if body.get("status") != "000":
-                        # 013 = "no data" — common for unreleased periods.
-                        continue
-                    quarter = _accounting_to_quarter(
-                        body.get("list", []),
-                        fy=year,
+                    quarter = await self._fetch_one(
+                        client=client,
+                        corp_code=corp_code,
+                        year=year,
                         reprt_code=reprt_code,
-                        krw_per_usd=self._krw_per_usd,
                     )
                     if quarter is not None:
                         rows.append(quarter)
@@ -235,6 +301,61 @@ class DartSource:
 
         rows.sort(key=lambda r: r.period_end)
         return rows[-quarters:]
+
+    async def _fetch_one(
+        self,
+        *,
+        client: "httpx.AsyncClient",  # type: ignore[name-defined]  # noqa: F821
+        corp_code: str,
+        year: int,
+        reprt_code: str,
+    ) -> FinancialQuarter | None:
+        """Fetch one (corp, year, reprt) bundle. Tries the full-statement
+        endpoint first (covers IS + CF + BS in one call, gives us
+        capex + D&A). If `use_full_statements=False` or the full call
+        returns empty, falls back to the simple `fnlttSinglAcnt`."""
+        params = {
+            "crtfc_key": self._api_key,
+            "corp_code": corp_code,
+            "bsns_year": str(year),
+            "reprt_code": reprt_code,
+        }
+
+        # Resolve FX once per quarter using the historical date.
+        q_no = REPORT_TO_QUARTER[reprt_code]
+        period_end = _quarter_end(year, q_no)
+        krw_per_usd = await self._resolve_fx(period_end)
+
+        async def call(url: str, extra: dict | None = None) -> list[dict]:
+            full_params = {**params, **(extra or {})}
+            r = await client.get(url, params=full_params)
+            if r.status_code != 200:
+                return []
+            body = r.json()
+            if body.get("status") != "000":
+                return []
+            return body.get("list", []) or []
+
+        rows: list[dict] = []
+        if self._use_full_statements:
+            # fnlttSinglAcntAll requires fs_div. We try CFS (consolidated)
+            # first; if empty, fall back to OFS (separate).
+            rows = await call(DART_ACCT_ALL_URL, {"fs_div": "CFS"})
+            if not rows:
+                rows = await call(DART_ACCT_ALL_URL, {"fs_div": "OFS"})
+
+        if not rows:
+            rows = await call(DART_ACCT_URL)
+
+        if not rows:
+            return None
+
+        return _accounting_to_quarter(
+            rows,
+            fy=year,
+            reprt_code=reprt_code,
+            krw_per_usd=krw_per_usd,
+        )
 
 
 __all__ = [

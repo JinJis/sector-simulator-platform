@@ -182,6 +182,15 @@ Env:
   with your contact email before production use.
 - `DART_API_KEY` — required for KR equities. Skip KR silently when
   unset. Free registration: https://opendart.fss.or.kr/
+- `REFRESH_FINANCIALS_CRON` — weekly cron (default `0 4 * * 0` —
+  Sun 04:00 UTC). Set `INGEST_SCHEDULE=off` to disable all crons.
+- `REFRESH_FINANCIALS_QUARTERS` — window for the scheduled run
+  (default 8). Manual endpoint accepts `?quarters=` override.
+
+Historical FX (M10c): the DART adapter calls Frankfurter
+(public ECB-sourced, no key) to fetch the KRW/USD rate at each
+quarter's end-date, so YoY comparisons aren't distorted by today's
+FX. Falls back to the snapshot constant on lookup miss.
 
 ### Refresh equity prices (data-pipeline)
 
@@ -261,6 +270,7 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **Equities M12** | Node CRUD UI — editable node side panel (label / group / unit / description, blur-to-save). "+ Add node" toolbar button → modal with key collision check + kind picker. Delete-node button respects the server-side attached-edges guard. |
 | **Equities M13** | Reset graph — `graph.resetToDefaults` tRPC now wipes + re-bootstraps from Python SimGraph + SectorEquity.driver_links (inlines seed-graph + seed-graph-equities). New "↻ Reset" toolbar button with confirm + success banner. Convenience `graph.wipe` mutation preserved for tests. |
 | **Equities M10b** | Real DART + EDGAR adapters — `EdgarSource` (SEC XBRL Facts, no key) + `DartSource` (OPEN DART, KR ticker→corp_code map for 16 seed equities) + `FakeFinancialsSource`. New `refresh_financials` APScheduler-ready job with per-country routing. `POST /jobs/refresh-financials` endpoint. 21 new tests covering adapter math, fallback chains, failure isolation. |
+| **Equities M10c** | Financials refinement — EDGAR `DepreciationAndAmortization` → true EBITDA. DART switches to `fnlttSinglAcntAll` (full statements) so KR equities now have capex + true EBITDA. Historical FX via free `FrankfurterFx` (ECB-sourced) — DART converts each quarter at its quarter-end rate. Weekly cron via `REFRESH_FINANCIALS_CRON` (default Sun 04:00 UTC). 14 new tests. |
 
 ### In progress
 

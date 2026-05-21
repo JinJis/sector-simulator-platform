@@ -1571,6 +1571,93 @@ in `data-pipeline`.
 - Historical FX (current implementation applies a single FX constant
   to every KR quarter — fine for charts, wrong for YoY analysis)
 
+#### Equities Milestone 10c — Financials refinement (2026-05-21)
+
+Knocks down four items the M10b doc flagged as out-of-scope.
+
+**EDGAR true EBITDA via D&A** (`adapters/edgar_source.py`):
+
+- New `DA_CONCEPTS` fallback chain: `DepreciationAndAmortization` →
+  `DepreciationDepletionAndAmortization` →
+  `DepreciationAmortizationAndAccretionNet` → `Depreciation`
+- `_aggregate()` now computes `ebitda = OpIncome + D&A` when D&A is
+  available; falls back to OpIncome alone (M10b behavior) otherwise
+- New test cases cover both branches
+
+**DART full statements** (`adapters/dart_source.py`):
+
+- New `DART_ACCT_ALL_URL` (`fnlttSinglAcntAll.json`) — fetched
+  preferentially with `fs_div=CFS` → fallback `OFS` → fallback to
+  the simple `fnlttSinglAcnt` endpoint M10b shipped
+- Line-item matching now uses **K-IFRS `account_id`** as the
+  primary key (`ifrs-full_Revenue` etc.) so we don't depend on
+  localized Korean labels. The substring fallback path stays for
+  the simple-endpoint case where account_id is empty
+- New fields captured: **capex** (M10b returned None — now from
+  `ifrs-full_PurchaseOfPropertyPlantAndEquipment...`) and **D&A**
+  (`ifrs-full_DepreciationExpense`) → true EBITDA
+- Capex normalized to positive absolute (DART reports as negative
+  cashflow, like EDGAR)
+
+**Historical FX via Frankfurter** (`adapters/frankfurter_fx.py`):
+
+- New `FrankfurterFx` adapter — public ECB-sourced free API, no
+  key needed
+- Caches by `(date_iso, base, target)`; concurrent-safe behind an
+  asyncio lock
+- DART adapter accepts an optional `fx_for: Callable[[date],
+  Awaitable[float | None]]` and resolves per-quarter FX before
+  conversion. Falls back to the `DEFAULT_KRW_PER_USD = 1380`
+  constant on lookup miss
+- Wired in `main.py`: `app.state.fx = FrankfurterFx()` →
+  `_build_financials_sources(fx=...)` → `DartSource(fx_for=...)`
+
+**Cron scheduler** (`main.py`):
+
+- New `REFRESH_FINANCIALS_CRON` env (default `0 4 * * 0`, Sunday
+  04:00 UTC) wires the financials job into the same
+  `AsyncIOScheduler` as the daily quote refresh
+- `REFRESH_FINANCIALS_QUARTERS` env (default 8) controls the
+  scheduled run's window — the manual endpoint still accepts a
+  `?quarters=` override
+- `/health` now reports `next_runs: {job_id: iso}` for both jobs
+  + `last_financials_refresh`
+
+**`.env.example` updated** to surface every new env var with notes.
+
+**Tests:**
+
+- `test_frankfurter_fx.py` (6) — caching, distinct dates, HTTP
+  errors, network errors, missing target currency, monkey-patches
+  `httpx.AsyncClient` via `MockTransport` (offline)
+- `test_financials_adapters.py` (+8) — D&A added to EBITDA,
+  fallback when D&A missing, DART account_id matching, DART
+  account_id takes precedence over account_nm, legacy substring
+  still works when account_id is empty, capex as absolute value,
+  `_resolve_fx` uses lookup when present, ignores non-positive
+  results
+- All `test_dart_*` cases updated for the new field model
+
+**Verification:**
+
+- TS typecheck (5 workspaces) clean
+- @platform/db vitest: 32/32 pass
+- sector-service vitest: 45 pass / 26 skipped
+- simulation-service pytest: 61 pass
+- **data-pipeline pytest: 62 pass** (+14 from M10b)
+- **Cumulative: 243 + 17 skipped**
+
+**Out of scope (M10d+):**
+
+- DART `corpCode.xml` auto-discovery (currently 22 hand-mapped KR
+  tickers in `KR_CORP_CODES`)
+- DART balance sheet items (total assets / debt / equity) — easy
+  to add via the same full-statement endpoint when needed
+- Multiple-currency FX (Frankfurter supports it; only KRW/USD
+  wired for now)
+- Frankfurter rate-limit handling (free tier is generous; not a
+  problem at 50-equity scale)
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

@@ -53,6 +53,16 @@ COGS_CONCEPTS = [
 OPERATING_INCOME_CONCEPTS = ["OperatingIncomeLoss"]
 NET_INCOME_CONCEPTS = ["NetIncomeLoss"]
 CAPEX_CONCEPTS = ["PaymentsToAcquirePropertyPlantAndEquipment"]
+# Depreciation & amortization for true EBITDA = OperatingIncome + D&A.
+# Companies tag D&A under several concepts; walk the chain and use the
+# first non-empty list. When all are missing we fall back to operating
+# income as a proxy (matches M10b behavior).
+DA_CONCEPTS = [
+    "DepreciationAndAmortization",
+    "DepreciationDepletionAndAmortization",
+    "DepreciationAmortizationAndAccretionNet",
+    "Depreciation",
+]
 
 # Quarter mapping from fp (fiscal period) string.
 FP_TO_QUARTER = {"Q1": 1, "Q2": 2, "Q3": 3, "Q4": 4}
@@ -139,13 +149,17 @@ def _aggregate(
         op_income = m.get("op_income")
         net = m.get("net_income")
         capex = m.get("capex")
+        d_and_a = m.get("d_and_a")
         gross = revenue - cogs if revenue is not None and cogs is not None else None
         # Approximate opex from operating income: opex ≈ gross - op_income.
         opex = (gross - op_income) if gross is not None and op_income is not None else None
-        # EBITDA ≈ operating income + depreciation. We don't fetch D&A
-        # explicitly here, so we use operating income as a proxy. Real
-        # EBITDA needs us-gaap:DepreciationAndAmortization; M10c refinement.
-        ebitda = op_income
+        # True EBITDA = OperatingIncome + D&A (M10c). When D&A is
+        # unavailable we fall back to operating income — same proxy
+        # M10b used so the column is never empty.
+        if op_income is not None and d_and_a is not None:
+            ebitda = op_income + d_and_a
+        else:
+            ebitda = op_income
         rows.append(
             FinancialQuarter(
                 fiscal_year=fy,
@@ -242,6 +256,7 @@ class EdgarSource:
             "op_income": _pick_quarterly_facts(facts, OPERATING_INCOME_CONCEPTS),
             "net_income": _pick_quarterly_facts(facts, NET_INCOME_CONCEPTS),
             "capex": _pick_quarterly_facts(facts, CAPEX_CONCEPTS),
+            "d_and_a": _pick_quarterly_facts(facts, DA_CONCEPTS),
         }
         return _aggregate(facts_by_concept, quarters=quarters)
 
