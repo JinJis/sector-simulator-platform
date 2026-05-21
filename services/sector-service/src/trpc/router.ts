@@ -5,6 +5,7 @@
 
 import { agentRouter } from "./agent.js";
 import { auditRouter } from "./audit.js";
+import { authRouter } from "./auth.js";
 import { equityRouter } from "./equity.js";
 import { graphRouter } from "./graph.js";
 import { router } from "./init.js";
@@ -22,6 +23,7 @@ export const appRouter = router({
   audit: auditRouter,
   lifecycle: lifecycleRouter,
   monitoring: monitoringRouter,
+  auth: authRouter,
 });
 
 export type AppRouter = typeof appRouter;

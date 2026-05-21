@@ -356,7 +356,8 @@ export const lifecycleRouter = router({
             reason: input.reason,
             applied_change: appliedChange,
           },
-          author_label: input.author_label ?? "anonymous",
+          // M20: same fallback chain as graph/scenario.
+          author_label: input.author_label ?? ctx.user?.label ?? "anonymous",
         },
       });
 

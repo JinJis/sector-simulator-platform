@@ -292,7 +292,10 @@ async function logAudit(
       action,
       sector_slug,
       payload: payload as object,
-      author_label: author_label ?? "anonymous",
+      // M20: prefer the explicit author_label override (the legacy
+      // "I'm scripting this from a CLI" affordance), then the logged-in
+      // user's display label, then anonymous.
+      author_label: author_label ?? ctx.user?.label ?? "anonymous",
     },
   });
 }

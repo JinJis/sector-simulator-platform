@@ -2170,6 +2170,97 @@ collapse.
   100+ edges and re-clutters, elk's `layered.spacing.edgeNode` mode
   is the next step.
 
+### M20 — SaaS foundation: auth, header, settings, onboarding (shipped 2026-05-21)
+
+Closes the basic-SaaS gaps the user flagged: 최초 로그인 / 튜토리얼 /
+header user menu / settings. Browse stays open to anonymous users —
+mutations still work but record as "anonymous"; logged-in users get
+the mutation label flipped to their display name. No gated routes
+beyond `/settings`.
+
+**Schema** (`packages/db/prisma/schema.prisma` + migration
+`20260523000000_users_sessions`):
+
+- `users(id, email UNIQUE, password_hash, name?, locale?, theme?, ...)`
+- `sessions(id, user_id FK CASCADE, token UNIQUE, expires_at,
+  user_agent?, ip?, ...)` — opaque token == cookie value (rotating /
+  signed token design lands when session compromise is a real risk)
+
+**Backend** (`services/sector-service`):
+
+- New deps: `@fastify/cookie`, `bcryptjs` (+ `@types/bcryptjs`).
+- `lib/auth.ts` — `hashPassword` (bcrypt cost 10) / `verifyPassword`
+  / `generateSessionToken` (32-byte base64url) / `sessionExpiresAt`
+  (now + 30d) / `SESSION_COOKIE_NAME = "sss_session"`.
+- `auth.*` tRPC router with: `signUp` (CONFLICT on duplicate
+  email) / `signIn` (constant-ish-time bcrypt against scratch hash
+  when user missing) / `signOut` / `me` / `updateMe` (name / locale /
+  theme) / `changePassword` (revokes *other* sessions on success).
+- `createContext` now loads the current user from
+  `cookies[SESSION_COOKIE_NAME]` and exposes `ctx.user` +
+  `ctx.req` + `ctx.res`. Failure to look up a session degrades to
+  anonymous rather than 500.
+- Existing `author_label` fallback on graph / scenario / lifecycle
+  mutations: `input.author_label ?? ctx.user?.label ?? "anonymous"`
+  — explicit override still wins for CLI / script callers.
+- Cookie attributes: `httpOnly`, `sameSite=lax`, `secure` in
+  production, `path=/`, `maxAge=30d`.
+
+**Frontend** (`apps/web`):
+
+- `sim-client.ts` — `fetchWithSession` forwards browser cookies via
+  `credentials: "include"` *and* on the RSC side reads
+  `next/headers` cookies and forwards them as a `cookie` header so
+  `auth.me` resolves correctly during server render.
+- Client wrappers: `fetchMe` / `signUp` / `signIn` / `signOut` /
+  `updateMe` / `changePassword`.
+- `/login`, `/signup` — focused single-column forms with inline
+  validation, post-success `router.refresh()` so the header
+  user-menu re-hydrates without a hard reload.
+- Global `<SiteHeader>` (server component) — logo, primary nav
+  (Home / Sectors / Compare), `<UserMenu>` (client) with avatar
+  initials + dropdown (Settings / Sign out) or Sign in / Sign up
+  CTAs when anonymous. Click-outside and Escape close the menu.
+- `<OnboardingModal>` (client) — 5-step tour
+  (welcome → Sectors → Manual → Graph → Narrative) gated by
+  `localStorage.sss_onboard_v1`. Forced open via `?onboard=1` after
+  signup; replayable from `/settings`. Hidden on `/login`,
+  `/signup` so auth forms aren't crowded.
+- `/settings` (auth-required; anonymous → redirect to login):
+  profile (display name + locale + theme), password change,
+  onboarding replay, "위험 구역" placeholder for future self-delete.
+
+**Tests** (+6, all hermetic):
+
+- `tests/auth-lib.test.ts` — bcrypt round-trip + salt independence +
+  empty-input rejection + 32-byte base64url token + 30-day expiry
+  math + cookie name freeze.
+- `tests/stub-context.ts` — shared test helper that fills the new
+  `res` / `req` / `user` context slots so the existing 4 router
+  test files (sim / scenario / graph / agent) keep compiling
+  without ceremony.
+
+**Verification**:
+
+- TS typecheck across all 5 workspaces clean.
+- sector-service vitest: **56 pass / 26 skipped** (+6 auth-lib).
+- `@platform/db` vitest: 35 pass (unchanged).
+- **Cumulative: 275 + 17 skipped** (+6 from M19).
+
+**Out of scope (Phase 4+)**:
+
+- OAuth providers (Google / GitHub / Apple) + magic links — the
+  schema is friendly to layering these in
+- Email verification flow (sendgrid / resend wiring)
+- MFA / TOTP
+- Multi-tenant scoping (tenant_id FK on every table) + Postgres RLS
+- Active sessions list in Settings (data exists in `sessions`, UI
+  surface deferred)
+- Self-service account deletion
+- Audit-log-driven activity timeline per user
+- Rate limiting on signin / signup (no abuse vector at current scale,
+  but trivial to add via fastify-rate-limit)
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

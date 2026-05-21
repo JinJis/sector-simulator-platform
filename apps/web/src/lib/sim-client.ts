@@ -37,13 +37,49 @@ export const SECTOR_SERVICE_URL =
 
 // ---------- tRPC client ----------
 
+/**
+ * Forward the user's session cookie on every tRPC call.
+ *
+ * - Browser side: `credentials: "include"` is enough — the cookie is
+ *   already on the same-origin /api/sim/trpc path thanks to the Next
+ *   rewrite, and the browser sends it automatically.
+ * - RSC / route handler side: the Next process is not the user's
+ *   browser, so we have to read the incoming request's cookies via
+ *   `next/headers` and forward them to sector-service ourselves.
+ *
+ * `next/headers` is server-only and import-side-effect-free at module
+ * load, so we lazy-import it inside the fetch callback.
+ */
+async function fetchWithSession(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  let cookieHeader: string | undefined;
+  if (typeof window === "undefined") {
+    try {
+      const { cookies } = await import("next/headers");
+      const c = await cookies();
+      cookieHeader = c.toString();
+    } catch {
+      // outside a request scope (e.g. build step) — no cookies, no auth
+    }
+  }
+  return fetch(input, {
+    ...init,
+    cache: "no-store",
+    credentials: "include",
+    headers: {
+      ...init?.headers,
+      ...(cookieHeader ? { cookie: cookieHeader } : {}),
+    },
+  });
+}
+
 export const trpc = createTRPCClient<AppRouter>({
   links: [
     httpBatchLink({
       url: TRPC_URL,
-      // `/live` polls every 3s — Next's default fetch cache would happily
-      // serve a stale tick. Force no-store on every tRPC HTTP call.
-      fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
+      fetch: fetchWithSession,
     }),
   ],
 });
@@ -51,6 +87,59 @@ export const trpc = createTRPCClient<AppRouter>({
 // ---------- Inferred types (replace the previously hand-maintained interfaces) ----------
 
 type RouterOutput = inferRouterOutputs<AppRouter>;
+
+// ---------- Auth (M20) ----------
+
+export type CurrentUser = NonNullable<RouterOutput["auth"]["me"]>;
+
+export async function fetchMe(): Promise<CurrentUser | null> {
+  // Don't go through `rethrow` — anonymous (no session) is a normal
+  // state, not an error, and we don't want it logged as such.
+  try {
+    return await trpc.auth.me.query();
+  } catch {
+    return null;
+  }
+}
+
+export async function signUp(input: {
+  email: string;
+  password: string;
+  name?: string;
+}): Promise<CurrentUser> {
+  return rethrow(() => trpc.auth.signUp.mutate(input), "signUp");
+}
+
+export async function signIn(input: {
+  email: string;
+  password: string;
+}): Promise<CurrentUser> {
+  return rethrow(() => trpc.auth.signIn.mutate(input), "signIn");
+}
+
+export async function signOut(): Promise<{ ok: boolean }> {
+  return rethrow(() => trpc.auth.signOut.mutate(), "signOut");
+}
+
+export async function updateMe(input: {
+  name?: string | null;
+  locale?: "ko" | "en" | null;
+  theme?: "dark" | "light" | "system" | null;
+}): Promise<CurrentUser> {
+  return rethrow(() => trpc.auth.updateMe.mutate(input), "updateMe");
+}
+
+export async function changePassword(input: {
+  current_password: string;
+  new_password: string;
+}): Promise<{ ok: boolean }> {
+  return rethrow(
+    () => trpc.auth.changePassword.mutate(input),
+    "changePassword",
+  );
+}
+
+// ---------- Inferred sim types ----------
 
 export type SimMetadata = RouterOutput["sim"]["get"];
 export type SimRunResponse = RouterOutput["sim"]["run"];

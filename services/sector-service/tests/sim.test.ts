@@ -15,17 +15,12 @@ process.env.DATABASE_URL ??= "postgresql://stub:stub@localhost/stub";
 const { prisma } = await import("@platform/db");
 const { createCallerFactory } = await import("../src/trpc/init.js");
 const { appRouter } = await import("../src/trpc/router.js");
-const ctxModule = await import("../src/trpc/context.js");
-type Ctx = Awaited<ReturnType<typeof ctxModule.createContext>>;
+const { stubContext } = await import("./stub-context.js");
 
 const createCaller = createCallerFactory(appRouter);
 
 function caller() {
-  return createCaller({
-    log: console as unknown as Ctx["log"],
-    requestId: "test-req",
-    prisma,
-  });
+  return createCaller(stubContext({ prisma }));
 }
 
 function mockFetch(handler: (url: string, init?: RequestInit) => Response | Promise<Response>) {

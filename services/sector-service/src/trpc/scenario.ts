@@ -92,7 +92,10 @@ export const scenarioRouter = router({
           name: input.name,
           notes: input.notes,
           driver_overrides: input.driver_overrides,
-          author_label: input.author_label,
+          // M20: default to the logged-in user when the caller didn't
+          // pass an explicit label (which is the normal case from the
+          // web UI — the legacy CLI affordance keeps working).
+          author_label: input.author_label ?? ctx.user?.label ?? null,
         },
       });
       ctx.log.info({ scenario_id: created.id, sector_slug: input.sector_slug }, "scenario.created");

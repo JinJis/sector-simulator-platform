@@ -124,6 +124,8 @@ The platform answers, in one place: *"What's the upside on this stock if the sec
 | Route | What |
 |---|---|
 | `/` | **Investor home** — unified search + trending sectors + biggest movers + recent scenarios + audit feed |
+| `/login`, `/signup` | Email + password auth |
+| `/settings` | Profile + locale/theme preference + password change + onboarding replay |
 | `/sectors` | Registered sector grid (3 sectors) |
 | `/sectors/[slug]` | Overview hub — 6-card preview |
 | `/sectors/[slug]/narrative` | **Investment narrative** — growth thesis + key drivers/blockers + per-equity upside/downside grid |
@@ -337,12 +339,14 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **M17** | Investment narrative UI — `/sectors/[slug]/narrative` (thesis card + drivers/blockers + per-equity upside grid sorted by |Δ|) and `/sectors/[slug]/equities/[ticker]` (header stats + 90d+30d sparkline + "Why this number" driver × edge weight decomposition + financials + filings). New `equity.impactBreakdown` + `equity.getByTicker` tRPC. Editorial thesis content per sector in one file. |
 | **M18** | Lifecycle review + audit history + monitoring — admin `/lifecycle` detects 4 deprecate-candidate classes (stale equities / orphan nodes / neutral edges / cold sectors), filters by active deferrals from the audit log, accepts Keep/Defer/Approve per item. Admin `/audit` paginated viewer with action/sector/author facets. Admin `/monitoring` proxies data-pipeline `/health` + per-table freshness. New `audit.list` / `audit.facets` / `lifecycle.candidates` / `lifecycle.review` / `monitoring.health` tRPC. Hard rule: every action writes an `audit_logs` row; nothing auto-applies. |
 | **M19** | Graph UI quality polish — `@dagrejs/dagre` auto-layout (LR, tight-tree ranker, fixed 180×64 node box) replaces hand-rolled 4-column. Edges encode 4 orthogonal axes: color by target kind / width continuous on \|weight\| / dash by origin (seed solid · edit dashed · agent dotted) / arrow head by sign (filled positive, open negative). Untouched neutral edges fade to opacity ~0.35; tuned edges saturate. Nodes get kind chip + left color band. New `<EdgeLegend>` with 9 inline-SVG samples teaches the encoding. |
+| **M20** | SaaS foundation — `users` + `sessions` Prisma models + bcrypt-hashed password auth, cookie-bound opaque sessions (httpOnly, sameSite=lax, 30d). New `auth.*` tRPC (`signUp` / `signIn` / `signOut` / `me` / `updateMe` / `changePassword`). Global sticky header on `apps/web` with logo + nav + user-menu dropdown (avatar initials, profile / settings / sign out, or sign-in CTA when anonymous). New `/login`, `/signup`, `/settings` routes. First-visit onboarding modal (localStorage-gated, replayable from Settings). Existing `author_label` fallback chain on graph / scenario / lifecycle mutations now defaults to the current user's display label. |
 
 ### Planned next
 
-No backlog items remain on the M14-M19 track. Next direction TBD —
-candidates: agent-generated sectors, real-time data-pipeline plumbing,
-backtest harness (see `### Deferred (Phase 3+)` below).
+No backlog items remain on the M14-M20 track. Next direction TBD —
+candidates: OAuth providers / magic links, agent-generated sectors,
+real-time data-pipeline plumbing, backtest harness (see `### Deferred
+(Phase 3+)` below).
 
 ### In progress
 

@@ -9,6 +9,7 @@
 
 import { randomUUID } from "node:crypto";
 
+import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 import Fastify from "fastify";
@@ -38,6 +39,12 @@ async function main(): Promise<void> {
   await fastify.register(cors, {
     origin: cfg.NODE_ENV === "production" ? false : true,
     credentials: true,
+  });
+
+  await fastify.register(cookie, {
+    // No signed cookies (yet) — the session token IS the secret. When
+    // we move to signed/rotating tokens this gains a real secret from
+    // env or a secrets manager.
   });
 
   await fastify.register(fastifyTRPCPlugin, {

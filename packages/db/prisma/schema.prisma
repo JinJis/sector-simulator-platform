@@ -297,6 +297,48 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+model User {
+  // M20 auth foundation. Email + bcrypt password hash for now;
+  // OAuth providers / SSO arrive as a separate slice. tenant_id will
+  // join here when multi-tenant lands.
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password_hash String    @map("password_hash")
+  name          String?
+  // Future-friendly preference columns. The settings UI surfaces them
+  // even though the platform doesn't act on them yet — wiring is a
+  // follow-up slice.
+  locale        String?   // "ko" | "en"
+  theme         String?   // "dark" | "light" | "system"
+  created_at    DateTime  @default(now()) @map("created_at")
+  updated_at    DateTime  @updatedAt        @map("updated_at")
+
+  sessions      Session[]
+
+  @@map("users")
+}
+
+model Session {
+  // Opaque session token persisted directly (not hashed) so the cookie
+  // value is the lookup key. Rotating signed-token design lands when
+  // session compromise becomes a real concern; for prototype scale a
+  // 32-byte random token is enough.
+  id          String   @id @default(cuid())
+  user_id     String   @map("user_id")
+  user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  token       String   @unique
+  expires_at  DateTime @map("expires_at")
+  // Per-request niceties — populated on creation, useful for the
+  // settings "active sessions" surface when that ships.
+  user_agent  String?  @map("user_agent")
+  ip          String?  @map("ip")
+  created_at  DateTime @default(now()) @map("created_at")
+
+  @@index([token])
+  @@index([user_id])
+  @@map("sessions")
+}
+
 model Scenario {
   id                String   @id @default(cuid())
   sector_slug       String   @map("sector_slug")
