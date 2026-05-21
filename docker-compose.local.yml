@@ -50,6 +50,26 @@ services:
       - "8002:8002"
     restart: "no"
 
+  data-pipeline:
+    build:
+      target: dev
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /repo/services/data-pipeline
+      LOG_LEVEL: DEBUG
+      # In local mode default to fake source — keeps `pnpm dev` from
+      # hammering yfinance every restart. Flip to `yfinance` via the
+      # host env when you want a real refresh.
+      INGEST_SOURCE: ${INGEST_SOURCE:-fake}
+      # Scheduler off by default in local — manual /jobs/refresh-quotes
+      # only. Override with `INGEST_SCHEDULE=on docker compose up`.
+      INGEST_SCHEDULE: ${INGEST_SCHEDULE:-off}
+    volumes:
+      - ./services/data-pipeline:/repo/services/data-pipeline
+    ports:
+      - "8003:8003"
+    restart: "no"
+
   # Bind-mount packages/db so host edits to schema.prisma / migrations are
   # picked up without rebuilding the image. node_modules stays on a named
   # volume so the in-image linux-musl install isn't shadowed.

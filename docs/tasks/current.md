@@ -563,6 +563,91 @@ today and the pipeline service later.
 - MarketFactor + MarketFactorObservation tables (macro / policy / event)
 - EquityExposureModel SDK + per-equity revenue projection from driver state
 
+### Equities Milestone 2 — data-pipeline service + yfinance ingest (2026-05-21)
+
+Second slice of the Equities domain — a dedicated FastAPI service that
+refreshes the snapshot fields on `sector_equities` daily from yfinance.
+Read path (Milestone 1's tRPC `equity.*`) is unchanged.
+
+**Service** (`services/data-pipeline`, port **8003**, uv workspace member):
+
+```
+services/data-pipeline/
+├── pyproject.toml             # adds yfinance, apscheduler, asyncpg
+├── data_pipeline/
+│   ├── __init__.py
+│   ├── main.py                # FastAPI app + lifespan + APScheduler wiring
+│   ├── adapters/
+│   │   ├── base.py            # DataSource Protocol + Quote pydantic model
+│   │   ├── fake.py            # in-process source for tests
+│   │   └── yfinance_source.py # live; exchange→symbol mapping (.KS/.KQ)
+│   ├── jobs/
+│   │   ├── __init__.py        # no re-exports (avoids module/function name clash)
+│   │   └── refresh_quotes.py  # the actual job
+│   └── repo.py                # EquityRepository: Protocol + InMemory + Postgres
+└── tests/                     # FakeSource + InMemoryEquityRepository, 18 cases
+```
+
+**Adapter contract** (`DataSource`):
+```python
+async def fetch_quote(symbol: str) -> Quote | None      # one ticker
+async def fetch_fx_to_usd(currency: str) -> float | None # USD per 1 unit
+```
+
+`YFinanceSource.exchange_to_symbol`:
+- `NASDAQ` / `NYSE` → bare ticker (NVDA, MU, …)
+- `KOSPI` → `<6-digit>.KS` (005930 → 005930.KS)
+- `KOSDAQ` → `<6-digit>.KQ` (042700 → 042700.KQ)
+
+**`refresh_quotes` semantics**:
+- Pre-fetches every currency's FX rate once at job start (one upstream
+  call per currency, not one per equity).
+- Per equity: fetch quote → compute USD = local × fx[currency] → write
+  back via `repo.update_quote()`.
+- Failure modes are isolated: a single broken symbol counts in
+  `missing` / `errors` but never aborts the job. Up to 50 failure
+  reasons surface on the result for diagnosis.
+- Throttle: 200ms between symbols by default (configurable via
+  `INGEST_THROTTLE_MS`).
+- If FX for an equity's currency can't be fetched, local price still
+  writes but USD-converted fields are nulled so the UI shows the gap.
+
+**Scheduler**: `APScheduler.AsyncIOScheduler`, cron `30 8 * * *` UTC
+(17:30 KST, after KOSPI close + a few hours after US close). Disable
+via `INGEST_SCHEDULE=off`.
+
+**HTTP surface**:
+- `GET  /health` — liveness + `last_refresh` + `next_refresh_at`
+- `POST /jobs/refresh-quotes` — manual trigger; returns the result
+- `GET  /jobs/refresh-quotes/last` — last result or 404
+
+**Repository** (`repo.py`) — same asyncpg pattern as
+`agent-orchestration/repo.py`. `build_repository(database_url)` raises
+when `DATABASE_URL` is unset (unlike agent-orchestration's in-memory
+fallback, this service is useless without seeded equity rows to iterate).
+
+**Tests** (18 cases, all hermetic — no network, no Postgres):
+- adapter contract + exchange→symbol mapping (8)
+- refresh_quotes orchestration: happy path, missing symbol, raised
+  exception, missing FX, FX prefetched once per currency, KOSDAQ
+  suffix (6)
+- HTTP surface: /health initial state, manual trigger, /last 404
+  before any run, degraded-path 200 (4)
+
+**Docker/compose**: new `data-pipeline.Dockerfile` (multi-stage dev +
+prod, port 8003). Wired into `docker-compose.yml` (depends on postgres
++ db-migrate) and `docker-compose.local.yml` (bind-mount + scheduler
+off + fake source by default so local dev doesn't poll yfinance).
+
+**Out of scope (Milestone 3+)**:
+- EquityQuote time-series table (today: denormalized snapshot only)
+- EquityFinancial (revenue / EBITDA / capex segments)
+- MarketFactor + MarketFactorObservation (macro / policy / event)
+- Sparkline-driven UI updates
+- Backtest: "what would NVDA look like if I'd held HBM premium = X
+  6 months ago?"
+- DART / EDGAR scrapers, FRED, AlphaVantage paid backup
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

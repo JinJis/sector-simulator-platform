@@ -78,6 +78,30 @@ services:
     networks:
       - internal
 
+  data-pipeline:
+    image: tssp/data-pipeline:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: infra/docker/data-pipeline.Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
+      # `yfinance` (default) for live ingest; `fake` to short-circuit
+      # to a no-op source for local smoke tests.
+      INGEST_SOURCE: ${INGEST_SOURCE:-yfinance}
+      # Daily refresh cron — UTC. Default 08:30 UTC (17:30 KST, after
+      # KOSPI close + a few hours after US close).
+      INGEST_CRON_QUOTES: ${INGEST_CRON_QUOTES:-30 8 * * *}
+      # Set to `off` if you don't want the scheduler firing in CI/dev.
+      INGEST_SCHEDULE: ${INGEST_SCHEDULE:-on}
+      INGEST_THROTTLE_MS: ${INGEST_THROTTLE_MS:-200}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+    networks:
+      - internal
+
   sector-service:
     image: tssp/sector-service:${IMAGE_TAG:-latest}
     build:
