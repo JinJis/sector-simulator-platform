@@ -94,6 +94,70 @@ class WorkflowRecord(BaseModel):
     cost_usd: float = 0.0
 
 
+# ---- Domain: edge-inference output ---------------------------------------
+
+
+class EdgeSpec(BaseModel):
+    """One edge in the causal DAG. `label` is the math step the edge
+    represents (e.g. "× duty cycle", "÷ η") — surfaces on hover in the
+    Graph view and feeds the Code Gen Agent."""
+
+    source: str = Field(..., description="snake_case source node name")
+    target: str = Field(..., description="snake_case target node name")
+    label: str = Field("", description="Operation label, e.g. '× duty cycle'")
+
+
+class IntermediateFormula(BaseModel):
+    """Closed-form formula for an intermediate node, expressed against
+    drivers and earlier intermediates."""
+
+    name: str
+    formula: str
+    unit: str = ""
+    description: str = ""
+
+
+class OutputFormula(BaseModel):
+    """Final-output formula. `depends_on` lists the upstream node names
+    (drivers + intermediates) so a downstream graph can be drawn without
+    parsing the formula string."""
+
+    name: str
+    formula: str
+    kind: Literal["scalar", "series"]
+    depends_on: list[str] = Field(default_factory=list)
+
+
+class EdgeInferenceResult(BaseModel):
+    """Structured output of the Edge Inference Agent — the causal DAG
+    that connects drivers → intermediates → outputs, plus the math
+    formulas for each non-driver node, plus any modelling assumptions
+    the agent had to make to close ambiguities."""
+
+    edges: list[EdgeSpec] = Field(..., min_length=1)
+    intermediates: list[IntermediateFormula] = Field(default_factory=list)
+    outputs: list[OutputFormula] = Field(..., min_length=1)
+    assumptions: list[str] = Field(default_factory=list)
+
+
+# ---- Domain: propose-sector composite ------------------------------------
+
+
+class ProposeSectorResult(BaseModel):
+    """Composite output of the multi-step ProposeSectorWorkflow.
+
+    Stage 1 (`decomposition`) produces the sector's node schema.
+    Stage 2 (`edge_inference`) produces the causal edges + formulas.
+
+    Persisting both stages on one workflow record means the admin
+    `proposeFromAgent` mutation has a single source of truth — no
+    cross-workflow joins.
+    """
+
+    decomposition: Decomposition
+    edge_inference: EdgeInferenceResult
+
+
 # ---- Workflow inputs -----------------------------------------------------
 
 
@@ -103,6 +167,23 @@ class DecompositionRequest(BaseModel):
     Reference data is optional — when present, the orchestrator interpolates
     it into the user turn so the agent can compare against existing sectors.
     """
+
+    description: str = Field(..., min_length=10, max_length=4000)
+    reference_data: str | None = Field(default=None, max_length=20000)
+
+
+class EdgeInferenceRequest(BaseModel):
+    """Input to the EdgeInferenceWorkflow. The orchestrator passes the
+    full Decomposition so the agent can cross-check driver units +
+    intermediate / output names."""
+
+    decomposition: Decomposition
+
+
+class ProposeSectorRequest(BaseModel):
+    """Multi-step entry point — same surface as DecompositionRequest
+    plus the same reference_data passthrough. The orchestrator chains
+    Decomposition → EdgeInference internally."""
 
     description: str = Field(..., min_length=10, max_length=4000)
     reference_data: str | None = Field(default=None, max_length=20000)

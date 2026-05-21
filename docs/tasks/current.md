@@ -2347,6 +2347,98 @@ an audit row, never auto.
 - Sandbox (Modal / E2B) execution of agent-generated Python code.
 - Multi-tenant scoping on `sectors.tenant_id`.
 
+### M22a — ProposeSectorWorkflow chain (shipped 2026-05-21)
+
+Adds the second stage of the agent pipeline. The Decomposition agent
+gave us the *node schema*; M22a's EdgeInference agent fills in the
+*causal DAG* that connects drivers → intermediates → outputs with
+math formulas + assumptions. Both stages chain into a single
+`ProposeSectorWorkflow` whose composite output drops straight into
+M21's `sector.proposeFromAgent` mutation — promoting now creates
+both graph_nodes AND graph_edges from agent output, all in one
+transaction.
+
+**agent-orchestration** (`services/agent-orchestration/`):
+
+- New Pydantic schemas: `EdgeSpec`, `IntermediateFormula`,
+  `OutputFormula`, `EdgeInferenceResult`, `ProposeSectorResult`
+  (composite), `EdgeInferenceRequest`, `ProposeSectorRequest`.
+- New `EdgeInferenceWorkflow` (kind = `edge_inference`):
+  - Loads `prompts/edge-inference.md`
+  - Calls Claude Opus 4.7 with adaptive thinking
+  - Serializes the input `Decomposition` into a plain-Markdown user
+    turn (better prompt cache hits than JSON, every node name
+    surfaces verbatim for the prompt's cross-check requirement)
+- New `ProposeSectorWorkflow` (kind = `propose_sector`):
+  - Two-stage chain: Decomposition (Opus) → EdgeInference (Opus)
+  - Shares one `CostMeter` across both stages so the workflow record's
+    `cost_usd` rolls up properly
+  - Short-circuits cleanly if Decomposition fails (chain doesn't
+    waste tokens on a doomed EdgeInference call)
+- New HTTP endpoint: `POST /workflows/propose-sector`.
+- Tests: 5 new in `tests/test_propose_sector.py` covering
+  EdgeInferenceWorkflow happy + serialization + agent-parse-failure
+  paths, plus ProposeSectorWorkflow chain success + early-fail
+  short-circuit. Multi-stage parsed_factory dispatches on
+  `kwargs["output_format"]` so one FakeAnthropic answers both stages.
+
+**sector-service**:
+
+- `agent.startProposeSector` tRPC mutation proxies to the new
+  endpoint with the same shape as `startDecomposition`.
+- `sector.proposeFromAgent` now branches on `workflow.kind`:
+  - `decomposition` → nodes only (M21 path, unchanged)
+  - `propose_sector` → nodes **and** edges in a single transaction
+- Agent-inferred edges land with `weight = 1.0`, `magnitude = "med"`,
+  `origin = "agent"` — the M19 graph view picks up the agent-dash
+  pattern automatically.
+- Drift safety: edges whose source/target isn't in the Decomposition's
+  node set get skipped + counted as `skipped_endpoint_misses` on the
+  audit log payload (agents occasionally drift; we log + count
+  rather than reject the whole promotion).
+- Audit payload gains `workflow_kind`, `edge_count`,
+  `skipped_endpoint_misses`.
+
+**Admin UI**:
+
+- `/agent-runs/new` form gets a pipeline picker — "Propose sector
+  (full)" (default) vs "Decomposition only". Submitting routes to
+  the right endpoint.
+- `/agent-runs/[id]` watcher resolves both kinds:
+  - decomposition output → existing decomposition section
+  - propose_sector output → decomposition section PLUS a new
+    `<EdgeInferenceSection>` (edges table + intermediate formulas
+    + output formulas + assumptions list)
+- `<PromoteToDraftButton>` accepts an `edgeCount` prop, surfaces it
+  in the confirmation copy ("graph_edges 에 N개 agent-inferred edges
+  (weight=1.0 / origin=agent)"), and shows the edge count in the
+  success message.
+- New `AgentEdgeInference` + `AgentProposeSectorResult` TS types on
+  the admin sim-client.
+
+**Verification**:
+
+- TS typecheck across all 5 workspaces clean.
+- agent-orchestration pytest: **40 pass / 2 skipped** (+5 new).
+- sector-service vitest: 56 pass / 26 skipped (unchanged — new
+  sector.proposeFromAgent branch is DB-required, exercised via UI).
+- **Cumulative: 280 + 17 skipped** (+5 from M21).
+
+**Out of scope (M22b+)**:
+
+- **GenericDagSim** in simulation-service so a draft sector can
+  actually `simulate()` once activated — agent-inferred edges +
+  formulas give us the topology, but executing them as math
+  requires either a generic linear-DAG evaluator or sandboxed
+  Python code-gen. The formulas are persisted (in audit_logs +
+  workflow output) but currently not parsed.
+- The 3 remaining prompts (research / driver-inference / code-gen
+  + code-review). Research could enrich the decomposition input.
+  Driver-inference could re-calibrate ranges before edge-inference.
+  Code-gen + code-review would close the loop to a runnable Python
+  class.
+- Sandboxed (Modal / E2B) execution of agent-generated Python.
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

@@ -34,6 +34,30 @@ export type ProvenanceSchema = SimMetadata["provenance"][string];
 export type SourceSchema = ProvenanceSchema["sources"][number];
 export type Scenario = RouterOutput["scenario"]["get"];
 export type AgentWorkflow = RouterOutput["agent"]["getWorkflow"];
+/** M22a EdgeInferenceResult shape — used by ProposeSectorWorkflow output. */
+export type AgentEdgeInference = {
+  edges: { source: string; target: string; label: string }[];
+  intermediates: {
+    name: string;
+    formula: string;
+    unit: string;
+    description: string;
+  }[];
+  outputs: {
+    name: string;
+    formula: string;
+    kind: "scalar" | "series";
+    depends_on: string[];
+  }[];
+  assumptions: string[];
+};
+
+/** Composite output of ProposeSectorWorkflow. */
+export type AgentProposeSectorResult = {
+  decomposition: AgentDecomposition;
+  edge_inference: AgentEdgeInference;
+};
+
 export type AgentDecomposition = {
   // Mirror of the orchestration Decomposition shape; the upstream
   // procedure types this as `Record<string, unknown>` because the
@@ -94,6 +118,16 @@ export async function startDecomposition(input: {
   return rethrow(
     () => trpc.agent.startDecomposition.mutate(input),
     "startDecomposition",
+  );
+}
+
+export async function startProposeSector(input: {
+  description: string;
+  reference_data?: string;
+}): Promise<AgentWorkflow> {
+  return rethrow(
+    () => trpc.agent.startProposeSector.mutate(input),
+    "startProposeSector",
   );
 }
 

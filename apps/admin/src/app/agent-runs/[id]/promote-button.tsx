@@ -8,9 +8,11 @@ import { proposeSectorFromAgent, type AgentDecomposition } from "@/lib/sim-clien
 interface Props {
   workflowId: string;
   decomp: AgentDecomposition;
+  /** From M22a propose_sector workflows; 0 for decomposition-only kind. */
+  edgeCount?: number;
 }
 
-export function PromoteToDraftButton({ workflowId, decomp }: Props) {
+export function PromoteToDraftButton({ workflowId, decomp, edgeCount = 0 }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [slug, setSlug] = useState(decomp.slug);
@@ -18,7 +20,7 @@ export function PromoteToDraftButton({ workflowId, decomp }: Props) {
   const [description, setDescription] = useState(decomp.description);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ slug: string } | null>(null);
+  const [done, setDone] = useState<{ slug: string; edges: number } | null>(null);
 
   async function onConfirm() {
     setSubmitting(true);
@@ -30,7 +32,7 @@ export function PromoteToDraftButton({ workflowId, decomp }: Props) {
         name: name.trim() || undefined,
         description: description.trim() || undefined,
       });
-      setDone({ slug: result.sector.slug });
+      setDone({ slug: result.sector.slug, edges: result.edge_count });
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "promote failed");
@@ -44,7 +46,7 @@ export function PromoteToDraftButton({ workflowId, decomp }: Props) {
       <div className="rounded-lg border border-emerald-900/60 bg-emerald-950/30 p-4">
         <p className="text-sm text-emerald-200">
           ✓ Draft sector <code className="font-mono text-emerald-300">{done.slug}</code>{" "}
-          등록됨. 검토 후 활성화하세요.
+          등록됨{done.edges > 0 ? ` (${done.edges} edges 포함)` : ""}. 검토 후 활성화하세요.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
           <a
@@ -75,7 +77,11 @@ export function PromoteToDraftButton({ workflowId, decomp }: Props) {
             <p className="mt-1 text-[11px] text-cyan-300/80">
               `sectors.status = "draft"` 로 저장되며 user app 의 카탈로그에는 보이지 않습니다.
               graph_nodes에 {decomp.drivers.length} drivers + {decomp.intermediates.length}{" "}
-              intermediates + {decomp.outputs.length} outputs 가 생성됩니다.
+              intermediates + {decomp.outputs.length} outputs
+              {edgeCount > 0
+                ? `, graph_edges 에 ${edgeCount}개 agent-inferred edges (weight=1.0 / origin=agent)`
+                : ""}
+              가 생성됩니다.
             </p>
           </div>
           <button

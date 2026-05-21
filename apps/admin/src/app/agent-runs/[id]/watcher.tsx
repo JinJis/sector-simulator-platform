@@ -6,6 +6,7 @@ import {
   cancelAgentWorkflow,
   getAgentWorkflow,
   type AgentDecomposition,
+  type AgentEdgeInference,
   type AgentWorkflow,
 } from "@/lib/sim-client";
 
@@ -63,8 +64,8 @@ export function RunWatcher({ id, initial }: Props) {
     }
   }
 
-  const decomp = useMemo(
-    () => extractDecomposition(record),
+  const { decomp, edges } = useMemo(
+    () => extractResult(record),
     [record],
   );
   const inputDescription = String(
@@ -118,8 +119,13 @@ export function RunWatcher({ id, initial }: Props) {
       {record.status === "succeeded" && decomp && (
         <>
           <DecompositionResult decomp={decomp} />
+          {edges && <EdgeInferenceSection edges={edges} />}
           <div className="mt-6">
-            <PromoteToDraftButton workflowId={record.id} decomp={decomp} />
+            <PromoteToDraftButton
+              workflowId={record.id}
+              decomp={decomp}
+              edgeCount={edges?.edges.length ?? 0}
+            />
           </div>
         </>
       )}
@@ -134,12 +140,115 @@ export function RunWatcher({ id, initial }: Props) {
   );
 }
 
-function extractDecomposition(record: AgentWorkflow): AgentDecomposition | null {
-  if (record.kind !== "decomposition") return null;
-  if (record.status !== "succeeded") return null;
+function extractResult(record: AgentWorkflow): {
+  decomp: AgentDecomposition | null;
+  edges: AgentEdgeInference | null;
+} {
+  if (record.status !== "succeeded") return { decomp: null, edges: null };
   const out = record.output;
-  if (!out || typeof out !== "object") return null;
-  return out as unknown as AgentDecomposition;
+  if (!out || typeof out !== "object") return { decomp: null, edges: null };
+  if (record.kind === "decomposition") {
+    return { decomp: out as unknown as AgentDecomposition, edges: null };
+  }
+  if (record.kind === "propose_sector") {
+    const composite = out as unknown as {
+      decomposition?: AgentDecomposition;
+      edge_inference?: AgentEdgeInference;
+    };
+    return {
+      decomp: composite.decomposition ?? null,
+      edges: composite.edge_inference ?? null,
+    };
+  }
+  return { decomp: null, edges: null };
+}
+
+function EdgeInferenceSection({ edges }: { edges: AgentEdgeInference }) {
+  return (
+    <section className="mt-6 space-y-4">
+      <div>
+        <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+          Causal edges ({edges.edges.length})
+        </h3>
+        <div className="overflow-hidden rounded border border-neutral-800">
+          <table className="w-full text-[11px]">
+            <thead className="bg-neutral-900/60 text-left text-[9px] uppercase tracking-wider text-neutral-500">
+              <tr>
+                <th className="px-3 py-1.5 font-medium">Source</th>
+                <th className="px-3 py-1.5 font-medium">Target</th>
+                <th className="px-3 py-1.5 font-medium">Label</th>
+              </tr>
+            </thead>
+            <tbody className="text-neutral-200">
+              {edges.edges.map((e, i) => (
+                <tr key={i} className="border-t border-neutral-800/60">
+                  <td className="px-3 py-1.5 font-mono text-[10px] text-cyan-300">
+                    {e.source}
+                  </td>
+                  <td className="px-3 py-1.5 font-mono text-[10px] text-amber-300">
+                    {e.target}
+                  </td>
+                  <td className="px-3 py-1.5 text-neutral-400">
+                    {e.label || <em className="text-neutral-600">(no label)</em>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {edges.intermediates.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+            Intermediate formulas ({edges.intermediates.length})
+          </h3>
+          <ul className="space-y-1.5 rounded border border-neutral-800 bg-neutral-900/30 p-3 text-[11px]">
+            {edges.intermediates.map((i) => (
+              <li key={i.name}>
+                <span className="font-mono text-cyan-300">{i.name}</span>
+                <span className="text-neutral-600"> = </span>
+                <code className="font-mono text-neutral-200">{i.formula}</code>
+                {i.unit && (
+                  <span className="ml-1 text-[10px] text-neutral-600">[{i.unit}]</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {edges.outputs.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+            Output formulas ({edges.outputs.length})
+          </h3>
+          <ul className="space-y-1.5 rounded border border-neutral-800 bg-neutral-900/30 p-3 text-[11px]">
+            {edges.outputs.map((o) => (
+              <li key={o.name}>
+                <span className="font-mono text-amber-300">{o.name}</span>
+                <span className="text-neutral-600"> = </span>
+                <code className="font-mono text-neutral-200">{o.formula}</code>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {edges.assumptions.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-amber-400">
+            Assumptions ({edges.assumptions.length})
+          </h3>
+          <ul className="space-y-1 rounded border border-amber-900/40 bg-amber-950/20 p-3 text-[11px] text-amber-200">
+            {edges.assumptions.map((a, i) => (
+              <li key={i}>· {a}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
 }
 
 function DecompositionResult({ decomp }: { decomp: AgentDecomposition }) {

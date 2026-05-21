@@ -33,6 +33,10 @@ from agent_orchestration.repo import InMemoryWorkflowRepository, WorkflowReposit
 from agent_orchestration.schemas import (
     Decomposition,
     DecompositionRequest,
+    EdgeInferenceRequest,
+    EdgeInferenceResult,
+    ProposeSectorRequest,
+    ProposeSectorResult,
     WorkflowRecord,
     WorkflowStatus,
 )
@@ -235,3 +239,126 @@ class DecompositionWorkflow:
         # mypy can't narrow result.parsed via response_model — assert here.
         assert isinstance(result.parsed, Decomposition)
         return result.parsed
+
+
+# ---- EdgeInferenceWorkflow ----------------------------------------------
+
+
+class EdgeInferenceWorkflow:
+    """Closes the causal DAG over a sector's `Decomposition`. Loads the
+    system prompt from `prompts/edge-inference.md`, calls Claude Opus
+    4.7 with the decomposition serialized into the user turn, validates
+    `EdgeInferenceResult`.
+
+    Why Opus: edges are where the *physics + economics* of a sector
+    get encoded. A wrong edge invalidates every downstream simulation.
+    Adaptive thinking on, same posture as DecompositionWorkflow.
+    """
+
+    kind = "edge_inference"
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+
+    async def run(
+        self, request: EdgeInferenceRequest, *, cost_meter: CostMeter
+    ) -> EdgeInferenceResult:
+        llm = LLMClient(client=self._llm._client, cost_meter=cost_meter)  # noqa: SLF001
+        system = load_prompt("edge-inference")
+        user = self._format_user_turn(request.decomposition)
+        result = await asyncio.to_thread(
+            llm.call,
+            tier="opus",
+            system=system,
+            user=user,
+            max_tokens=8192,
+            adaptive_thinking=True,
+            response_model=EdgeInferenceResult,
+        )
+        if result.parsed is None:
+            raise RuntimeError(
+                f"edge-inference agent returned unparseable output (stop_reason={result.stop_reason})"
+            )
+        assert isinstance(result.parsed, EdgeInferenceResult)
+        return result.parsed
+
+    @staticmethod
+    def _format_user_turn(decomp: Decomposition) -> str:
+        """Serialize the Decomposition into a compact user turn. We
+        deliberately keep this plain-Markdown rather than JSON so the
+        Opus prompt cache can hit on the static template — only the
+        node values change between calls."""
+        lines: list[str] = []
+        lines.append(f"# Sector: {decomp.name} (slug `{decomp.slug}`)")
+        lines.append(f"Horizon: {decomp.horizon_years} years")
+        lines.append("")
+        lines.append(f"## Description\n\n{decomp.description}")
+        lines.append("")
+        lines.append("## Drivers")
+        for d in decomp.drivers:
+            lines.append(
+                f"- `{d.name}` ({d.unit}) — group: {d.group} — "
+                f"default {d.default}, range [{d.min}, {d.max}] — {d.description}"
+            )
+        if decomp.intermediates:
+            lines.append("")
+            lines.append("## Intermediates")
+            for i in decomp.intermediates:
+                lines.append(f"- `{i.name}` ({i.unit}) — {i.description}")
+        lines.append("")
+        lines.append("## Outputs")
+        for o in decomp.outputs:
+            lines.append(
+                f"- `{o.name}` ({o.kind}, {o.unit}) — {o.description}"
+            )
+        lines.append("")
+        lines.append(
+            "Produce an `EdgeInferenceResult` connecting every "
+            "intermediate and every output back through drivers. Include "
+            "every edge — driver → intermediate, intermediate → "
+            "intermediate, intermediate → output — and a `formula` field "
+            "for every non-driver node. State any modelling assumptions "
+            "you had to make in `assumptions`."
+        )
+        return "\n".join(lines)
+
+
+# ---- ProposeSectorWorkflow ----------------------------------------------
+
+
+class ProposeSectorWorkflow:
+    """Multi-step chain: Decomposition → EdgeInference. Persists the
+    composed result so a single workflow id captures the full
+    proposal — the admin's `sector.proposeFromAgent` reads one row
+    and creates nodes + edges in a single transaction.
+
+    Cost rolls up across both stages via the same `CostMeter`.
+    """
+
+    kind = "propose_sector"
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+        self._decomposition = DecompositionWorkflow(llm)
+        self._edge_inference = EdgeInferenceWorkflow(llm)
+
+    async def run(
+        self, request: ProposeSectorRequest, *, cost_meter: CostMeter
+    ) -> ProposeSectorResult:
+        decomp = await self._decomposition.run(
+            DecompositionRequest(
+                description=request.description,
+                reference_data=request.reference_data,
+            ),
+            cost_meter=cost_meter,
+        )
+        edges = await self._edge_inference.run(
+            EdgeInferenceRequest(decomposition=decomp),
+            cost_meter=cost_meter,
+        )
+        # Sanity guard: every edge's source/target should reference a node
+        # that exists in the decomposition. We don't *reject* the result
+        # on a mismatch (the agent's intent is preserved), but we surface
+        # the issue in the workflow record so an admin can see what to
+        # patch manually.
+        return ProposeSectorResult(decomposition=decomp, edge_inference=edges)

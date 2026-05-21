@@ -3,12 +3,18 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { startDecomposition } from "@/lib/sim-client";
+import {
+  startDecomposition,
+  startProposeSector,
+} from "@/lib/sim-client";
+
+type Pipeline = "propose_sector" | "decomposition";
 
 export function NewDecompositionForm() {
   const router = useRouter();
   const [description, setDescription] = useState("");
   const [referenceData, setReferenceData] = useState("");
+  const [pipeline, setPipeline] = useState<Pipeline>("propose_sector");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,10 +23,14 @@ export function NewDecompositionForm() {
     setError(null);
     setBusy(true);
     try {
-      const record = await startDecomposition({
+      const payload = {
         description: description.trim(),
         reference_data: referenceData.trim() || undefined,
-      });
+      };
+      const record =
+        pipeline === "propose_sector"
+          ? await startProposeSector(payload)
+          : await startDecomposition(payload);
       router.push(`/agent-runs/${encodeURIComponent(record.id)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -35,6 +45,30 @@ export function NewDecompositionForm() {
       onSubmit={handleSubmit}
       className="space-y-5 rounded-lg border border-neutral-800 bg-neutral-900/40 p-5"
     >
+      <fieldset>
+        <legend className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+          Pipeline
+        </legend>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <PipelineOption
+            value="propose_sector"
+            current={pipeline}
+            onSelect={setPipeline}
+            title="Propose sector (full)"
+            subtitle="Decomposition → EdgeInference"
+            blurb="Two-stage chain. Returns drivers + intermediates + outputs AND a causal DAG with formulas + assumptions. Both Opus stages — typical cost $0.20–$0.60."
+          />
+          <PipelineOption
+            value="decomposition"
+            current={pipeline}
+            onSelect={setPipeline}
+            title="Decomposition only"
+            subtitle="Single-stage"
+            blurb="Just the node schema (drivers / intermediates / outputs). Faster + cheaper but you'll add edges manually in the Graph view. Typical cost $0.10–$0.30."
+          />
+        </div>
+      </fieldset>
+
       <div>
         <label
           htmlFor="description"
@@ -95,9 +129,60 @@ export function NewDecompositionForm() {
           disabled={tooShort || busy}
           className="rounded border border-rose-700 bg-rose-900/40 px-4 py-1.5 text-xs font-medium text-rose-200 hover:bg-rose-800/60 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {busy ? "Submitting…" : "Run decomposition"}
+          {busy
+            ? "Submitting…"
+            : pipeline === "propose_sector"
+              ? "Run propose-sector"
+              : "Run decomposition"}
         </button>
       </div>
     </form>
+  );
+}
+
+function PipelineOption({
+  value,
+  current,
+  onSelect,
+  title,
+  subtitle,
+  blurb,
+}: {
+  value: Pipeline;
+  current: Pipeline;
+  onSelect: (p: Pipeline) => void;
+  title: string;
+  subtitle: string;
+  blurb: string;
+}) {
+  const active = value === current;
+  return (
+    <label
+      className={`flex cursor-pointer flex-col gap-1 rounded-lg border p-3 transition ${
+        active
+          ? "border-cyan-700 bg-cyan-950/40"
+          : "border-neutral-800 bg-neutral-950/40 hover:border-neutral-700"
+      }`}
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <span
+          className={`text-sm font-medium ${active ? "text-cyan-200" : "text-neutral-200"}`}
+        >
+          {title}
+        </span>
+        <input
+          type="radio"
+          name="pipeline"
+          value={value}
+          checked={active}
+          onChange={() => onSelect(value)}
+          className="accent-cyan-500"
+        />
+      </div>
+      <span className="text-[10px] uppercase tracking-wider text-neutral-500">
+        {subtitle}
+      </span>
+      <p className="text-[11px] leading-relaxed text-neutral-400">{blurb}</p>
+    </label>
   );
 }

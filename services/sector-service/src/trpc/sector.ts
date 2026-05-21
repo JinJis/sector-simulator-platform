@@ -96,6 +96,44 @@ const Decomposition = z.object({
   ),
 });
 
+// EdgeInferenceResult shape from M22a.
+const EdgeInferenceResult = z.object({
+  edges: z.array(
+    z.object({
+      source: z.string(),
+      target: z.string(),
+      label: z.string().default(""),
+    }),
+  ),
+  intermediates: z
+    .array(
+      z.object({
+        name: z.string(),
+        formula: z.string(),
+        unit: z.string().default(""),
+        description: z.string().default(""),
+      }),
+    )
+    .default([]),
+  outputs: z
+    .array(
+      z.object({
+        name: z.string(),
+        formula: z.string(),
+        kind: z.enum(["scalar", "series"]),
+        depends_on: z.array(z.string()).default([]),
+      }),
+    )
+    .default([]),
+  assumptions: z.array(z.string()).default([]),
+});
+
+// Composite output of ProposeSectorWorkflow.
+const ProposeSectorResult = z.object({
+  decomposition: Decomposition,
+  edge_inference: EdgeInferenceResult,
+});
+
 // ---------- Helpers ----------
 
 async function findUniqueSlug(
@@ -155,6 +193,7 @@ export const sectorRouter = router({
           intermediate: z.number().int(),
           output: z.number().int(),
         }),
+        edge_count: z.number().int(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -174,22 +213,37 @@ export const sectorRouter = router({
           message: `workflow ${input.workflow_id} status is "${wf.status}" — only succeeded workflows can be promoted`,
         });
       }
-      if (wf.kind !== "decomposition") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `workflow kind "${wf.kind}" — only "decomposition" is supported in M21`,
-        });
-      }
 
-      // 2. Validate the JSONB output against the Decomposition shape.
-      const parsed = Decomposition.safeParse(wf.output);
-      if (!parsed.success) {
+      // 2. Branch on workflow kind:
+      //    - decomposition: nodes only (no edges)
+      //    - propose_sector: nodes + agent-inferred edges (M22a)
+      let decomp: z.infer<typeof Decomposition>;
+      let edgeInference: z.infer<typeof EdgeInferenceResult> | null = null;
+      if (wf.kind === "decomposition") {
+        const parsed = Decomposition.safeParse(wf.output);
+        if (!parsed.success) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `workflow output does not match Decomposition schema: ${parsed.error.message}`,
+          });
+        }
+        decomp = parsed.data;
+      } else if (wf.kind === "propose_sector") {
+        const parsed = ProposeSectorResult.safeParse(wf.output);
+        if (!parsed.success) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `workflow output does not match ProposeSectorResult schema: ${parsed.error.message}`,
+          });
+        }
+        decomp = parsed.data.decomposition;
+        edgeInference = parsed.data.edge_inference;
+      } else {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: `workflow output does not match Decomposition schema: ${parsed.error.message}`,
+          message: `workflow kind "${wf.kind}" not supported — expected "decomposition" or "propose_sector"`,
         });
       }
-      const decomp = parsed.data;
 
       // 3. Resolve final slug / name / description (caller overrides win).
       const preferredSlug = (input.slug ?? decomp.slug)
@@ -267,33 +321,73 @@ export const sectorRouter = router({
           });
         }
 
+        // M22a: edges from EdgeInferenceResult, if present. Weight
+        // defaults to 1.0 (neutral) — the agent's inference is structural,
+        // not quantitative. `origin = "agent"` so the M19 graph legend
+        // can render these with the agent-specific dash pattern.
+        // Skip any edge whose endpoint isn't in the decomposition (the
+        // agent occasionally drifts; we log + count rather than fail).
+        let edge_count = 0;
+        let skipped_endpoint_misses = 0;
+        if (edgeInference) {
+          const knownNodeKeys = new Set<string>([
+            ...decomp.drivers.map((d) => d.name),
+            ...decomp.intermediates.map((i) => i.name),
+            ...decomp.outputs.map((o) => o.name),
+          ]);
+          for (const e of edgeInference.edges) {
+            if (!knownNodeKeys.has(e.source) || !knownNodeKeys.has(e.target)) {
+              skipped_endpoint_misses += 1;
+              continue;
+            }
+            await tx.graphEdge.create({
+              data: {
+                sector_slug: sector.slug,
+                source_key: e.source,
+                target_key: e.target,
+                label: e.label || null,
+                weight: 1.0,
+                magnitude: "med",
+                origin: "agent",
+                author_label: author,
+              },
+            });
+            edge_count += 1;
+          }
+        }
+
         await tx.auditLog.create({
           data: {
             action: "sector.proposeFromAgent",
             sector_slug: sector.slug,
             payload: {
               workflow_id: wf.id,
+              workflow_kind: wf.kind,
               slug_preferred: preferredSlug,
               slug_final: finalSlug,
               driver_count: decomp.drivers.length,
               intermediate_count: decomp.intermediates.length,
               output_count: decomp.outputs.length,
+              edge_count,
+              skipped_endpoint_misses,
               cost_usd: wf.cost_usd,
             },
             author_label: author,
           },
         });
 
-        return { sector };
+        return { sector, edge_count };
       });
 
       ctx.log.info(
         {
           slug: finalSlug,
           workflow_id: wf.id,
+          workflow_kind: wf.kind,
           drivers: decomp.drivers.length,
           intermediates: decomp.intermediates.length,
           outputs: decomp.outputs.length,
+          edges: result.edge_count,
         },
         "sector.proposeFromAgent",
       );
@@ -305,6 +399,7 @@ export const sectorRouter = router({
           intermediate: decomp.intermediates.length,
           output: decomp.outputs.length,
         },
+        edge_count: result.edge_count,
       };
     }),
 

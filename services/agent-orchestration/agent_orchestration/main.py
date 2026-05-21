@@ -35,9 +35,14 @@ from agent_orchestration.repo import (
 )
 from agent_orchestration.schemas import (
     DecompositionRequest,
+    ProposeSectorRequest,
     WorkflowRecord,
 )
-from agent_orchestration.workflows import DecompositionWorkflow, WorkflowRunner
+from agent_orchestration.workflows import (
+    DecompositionWorkflow,
+    ProposeSectorWorkflow,
+    WorkflowRunner,
+)
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 log = logging.getLogger("agent_orchestration")
@@ -73,7 +78,9 @@ async def lifespan(app: FastAPI):
         app.state.runner = WorkflowRunner(repo=repo)
     if not hasattr(app.state, "llm"):
         app.state.llm = LLMClient()
-    log.info("agent-orchestration ready (workflows: decomposition)")
+    log.info(
+        "agent-orchestration ready (workflows: decomposition, propose_sector)"
+    )
     try:
         yield
     finally:
@@ -105,6 +112,22 @@ def create_app() -> FastAPI:
         runner: WorkflowRunner = app.state.runner
         llm: LLMClient = app.state.llm
         workflow = DecompositionWorkflow(llm=llm)
+
+        async def run(cost_meter):  # type: ignore[no-untyped-def]
+            return await workflow.run(req, cost_meter=cost_meter)
+
+        return await runner.start(kind=workflow.kind, request=req, run=run)
+
+    @app.post(
+        "/workflows/propose-sector", response_model=WorkflowRecord, status_code=202
+    )
+    async def start_propose_sector(req: ProposeSectorRequest) -> WorkflowRecord:
+        """Multi-step pipeline: Decomposition (Opus) → EdgeInference
+        (Opus). Returns immediately with the workflow record; the
+        composed result lands on `output` when both stages succeed."""
+        runner: WorkflowRunner = app.state.runner
+        llm: LLMClient = app.state.llm
+        workflow = ProposeSectorWorkflow(llm=llm)
 
         async def run(cost_meter):  # type: ignore[no-untyped-def]
             return await workflow.run(req, cost_meter=cost_meter)

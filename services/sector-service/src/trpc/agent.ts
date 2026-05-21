@@ -75,6 +75,14 @@ const DecompositionStartInput = z.object({
   reference_data: z.string().max(20000).optional(),
 });
 
+// Same surface as DecompositionStartInput today — kept distinct because
+// the propose-sector pipeline may grow new options (e.g. opt-out of the
+// EdgeInference stage when the topology is already known).
+const ProposeSectorStartInput = z.object({
+  description: z.string().min(10).max(4000),
+  reference_data: z.string().max(20000).optional(),
+});
+
 const WorkflowIdInput = z.object({ id: z.string().min(1) });
 
 const WorkflowListInput = z.object({
@@ -96,6 +104,20 @@ export const agentRouter = router({
           reference_data: input.reference_data ?? null,
         },
         context: "agent.startDecomposition",
+      }),
+    ),
+
+  startProposeSector: publicProcedure
+    .input(ProposeSectorStartInput)
+    .output(WorkflowRecord)
+    .mutation(({ input }) =>
+      agentFetch("/workflows/propose-sector", {
+        method: "POST",
+        body: {
+          description: input.description,
+          reference_data: input.reference_data ?? null,
+        },
+        context: "agent.startProposeSector",
       }),
     ),
 
