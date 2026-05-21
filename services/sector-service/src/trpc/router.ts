@@ -8,6 +8,8 @@ import { auditRouter } from "./audit.js";
 import { equityRouter } from "./equity.js";
 import { graphRouter } from "./graph.js";
 import { router } from "./init.js";
+import { lifecycleRouter } from "./lifecycle.js";
+import { monitoringRouter } from "./monitoring.js";
 import { scenarioRouter } from "./scenario.js";
 import { simRouter } from "./sim.js";
 
@@ -18,6 +20,8 @@ export const appRouter = router({
   equity: equityRouter,
   graph: graphRouter,
   audit: auditRouter,
+  lifecycle: lifecycleRouter,
+  monitoring: monitoringRouter,
 });
 
 export type AppRouter = typeof appRouter;

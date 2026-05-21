@@ -16,6 +16,11 @@ const Env = z.object({
   // "agent layer not configured" error rather than 500ing. Set this
   // to the agent-orchestration service URL (default :8002) to enable.
   AGENT_ORCHESTRATION_URL: z.string().url().optional(),
+  // Optional — used by monitoring.health to surface data-pipeline
+  // freshness. Default `:8003` if the service is reachable on the
+  // docker network; falls back to a "not configured" health card
+  // when unset.
+  DATA_PIPELINE_URL: z.string().url().optional(),
   DATABASE_URL: z.string().min(1),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),

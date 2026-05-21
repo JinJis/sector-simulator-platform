@@ -1985,31 +1985,104 @@ plumbing toward this: *섹터는 어떻게 성장하고, 그 흐름이 어떤 �
   home + equities expand; per-narrative version deferred until
   editorial requests it)
 
-### M18 — Lifecycle review + audit history + monitoring — *operational backbone*
+### M18 — Lifecycle review + audit history + monitoring (shipped 2026-05-21)
 
-**Why fifth**: by this point we have 49+ equities, 4 sectors, 100+
-graph nodes. They'll drift — companies get acquired, drivers become
-irrelevant, sims become stale. The platform needs a review cadence,
-but **never auto** — every deprecation / addition requires explicit
-user approval.
+The platform's operational backbone. By M17 the system held 49+ equities,
+4 sectors, 100+ graph nodes and a year+ of mutations; M18 surfaces those
+artifacts for **human review with full audit trail — never auto** (per
+durable user feedback: "자동으로 하지말고 항상 유저에게 허락 맡게끔. 그리고
+그러한 action들은 history처럼 남겨서 기록해").
 
-- **Periodic review surface** (`/admin/lifecycle`): weekly digest
-  of candidates for deprecation:
-  - Equities with stale price data > N days
-  - Drivers no driver_link references touched in N weeks
-  - Graph nodes with weight=1.0 unchanged since seed (suggests
-    they aren't pulling weight in the model)
-  - Sectors with no scenarios saved in 90 days
-- Each candidate shows the data backing the recommendation; the
-  user clicks **Approve** / **Defer** / **Keep**. No silent action.
-- **Audit history viewer** (`/admin/audit`): pageable view over
-  `audit_logs` (already being written since M7). Filters by
-  action / sector / author / date range.
-- **Monitoring panel** (`/admin/monitoring`): freshness signals
-  per data feed (yfinance, DART, EDGAR), last-success timestamp,
-  failure-reason aggregation, queued alarms when any source
-  hasn't refreshed in N hours.
-- All approvals write an `audit_logs` row with action = `lifecycle.*`
+**Backend** (`services/sector-service`):
+
+- **`audit.list`** — paginated audit viewer (cursor on `created_at`,
+  filters by sector / action_prefix / author). Returns `next_before`
+  for "older" pagination.
+- **`audit.facets`** — distinct actions / sectors / authors for the
+  filter dropdowns.
+- **`lifecycle.candidates`** — single procedure that detects 4
+  categories of "this might be ready to deprecate" candidates:
+  1. `equity.stale_price` — `sector_equities` whose most recent
+     `equity_quotes.trade_date` is older than `equity_stale_days`
+     (default 14)
+  2. `graph_node.orphan` — `graph_nodes` with zero edges in or out
+  3. `graph_edge.neutral` — `graph_edges` with origin=seed AND
+     weight=1.0 AND magnitude=med (untouched since bootstrap)
+  4. `sector.cold` — sectors with no scenarios saved in
+     `sector_cold_days` (default 90)
+  Active deferrals (from the audit_log itself, by `defer_until`
+  payload field) are filtered out so deferred candidates don't
+  re-surface until the deadline.
+- **`lifecycle.review`** — single mutation that takes
+  `{category, ref_id, action: keep|defer|approve_deprecate,
+  defer_until?, reason?}`. Writes an `audit_logs` row with action
+  `lifecycle.<category>.<action>`. For `approve_deprecate` on
+  `graph_edge.neutral`, also deletes the edge row; other categories
+  log only (soft-delete of equities/sectors is intentionally
+  manual — admin removes from `seed-equities.ts`).
+- **`monitoring.health`** — proxies data-pipeline `/health` (2s
+  timeout, fail-soft on connection error) + queries Postgres for
+  table-level freshness (`max trade_date`, `max period_end`,
+  `last audit_log`). Returns `feeds[]` (each with status: ok |
+  stale | down | not_configured) + `table_counts`. New
+  `DATA_PIPELINE_URL` env var on sector-service (optional —
+  defaults to "not configured" feed when unset).
+
+**Admin app** (`apps/admin`):
+
+- **`/lifecycle`** — RSC page. 4 stat tiles at top, sections by
+  category with `<LifecycleCandidateCard>` per item (client
+  component). Each card shows reason + structured `detail` chips +
+  reason textbox + defer-days input + three action buttons (Keep /
+  Defer / Approve deprecate, color-coded amber/neutral/rose).
+  Submitting calls `lifecycle.review` and `router.refresh()` so the
+  server re-fetches and resolved candidates drop off.
+- **`/audit`** — RSC page. Filter form with action / sector /
+  author dropdowns populated from `audit.facets`. 50 rows per page
+  with `Older →` cursor link. Action prefix badge color-codes by
+  prefix (graph / scenario / lifecycle). Raw payload rendered as
+  one-line JSON.
+- **`/monitoring`** — RSC page. Feeds list with status badges +
+  last/next timestamps + per-feed detail. Table count tiles
+  (sectors / equities / quote bars / financial quarters / graph
+  nodes / graph edges / scenarios / audit logs).
+- Top-nav gains `Lifecycle`, `Audit`, `Monitoring` links.
+- Admin home replaces the disabled `Approve queue` stub with three
+  live entry-point buttons (⚠ Lifecycle review, ◔ Monitoring,
+  ☷ Audit log).
+
+**Compose**: `sector-service` gains
+`DATA_PIPELINE_URL=http://data-pipeline:8003` + a `depends_on:
+data-pipeline: service_started` edge so the monitoring panel can
+reach it in containerized dev.
+
+**Verification**:
+
+- TS typecheck across all 5 workspaces clean (web / admin /
+  sector-service / ui / db)
+- sector-service vitest: 50 pass / 26 skipped (unchanged — new
+  routers are DB-required, exercised by integration tests on a
+  DB-enabled CI later)
+- @platform/db: 35 pass (unchanged)
+- **Cumulative: 269 + 17 skipped** (no test code added in this slice
+  — new routers exercise via the admin UI; unit-test seam is the
+  next slice)
+
+**Out of scope (deferred)**:
+
+- Background "weekly digest" job that emails the lifecycle queue —
+  needs Resend/SendGrid + auth (Phase 4)
+- Hard-delete of equities / drivers / sectors on
+  `approve_deprecate` — currently log-only for those; admin removes
+  from seed files manually
+- Driver-level orphan detection (drivers with no `driver_links`
+  referencing them anywhere) — requires walking the JSONB blob; skip
+  until that's needed
+- Custom defer windows (today: free-form days input; later: presets
+  like "until next quarter close")
+- Per-mutation rollback ("undo this graph edit") — audit_log has
+  enough info to support it, but the inverse action math is its own
+  slice
 
 ### M19 — Graph UI quality polish — *quality, do alongside*
 

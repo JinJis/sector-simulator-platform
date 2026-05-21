@@ -120,6 +120,70 @@ export async function cancelAgentWorkflow(id: string): Promise<AgentWorkflow> {
   );
 }
 
+// ---------- Audit / Lifecycle / Monitoring (M18) ----------
+
+export type AuditLog = RouterOutput["audit"]["list"]["rows"][number];
+export type AuditList = RouterOutput["audit"]["list"];
+export type AuditFacets = RouterOutput["audit"]["facets"];
+export type LifecycleCandidates = RouterOutput["lifecycle"]["candidates"];
+export type LifecycleCandidate = LifecycleCandidates["candidates"][number];
+export type LifecycleReviewResult = RouterOutput["lifecycle"]["review"];
+export type MonitoringHealth = RouterOutput["monitoring"]["health"];
+
+export async function listAudit(
+  input: {
+    limit?: number;
+    before?: string;
+    sector_slug?: string;
+    action_prefix?: string;
+    author_label?: string;
+  } = {},
+): Promise<AuditList> {
+  return rethrow(
+    () =>
+      trpc.audit.list.query({
+        limit: input.limit ?? 50,
+        before: input.before,
+        sector_slug: input.sector_slug,
+        action_prefix: input.action_prefix,
+        author_label: input.author_label,
+      }),
+    "listAudit",
+  );
+}
+
+export async function fetchAuditFacets(): Promise<AuditFacets> {
+  return rethrow(() => trpc.audit.facets.query(), "fetchAuditFacets");
+}
+
+export async function fetchLifecycleCandidates(
+  opts: { equity_stale_days?: number; sector_cold_days?: number } = {},
+): Promise<LifecycleCandidates> {
+  return rethrow(
+    () => trpc.lifecycle.candidates.query(opts),
+    "fetchLifecycleCandidates",
+  );
+}
+
+export async function reviewLifecycleCandidate(input: {
+  category: LifecycleCandidate["category"];
+  ref_id: string;
+  sector_slug?: string | null;
+  action: "keep" | "defer" | "approve_deprecate";
+  defer_until?: string;
+  reason?: string;
+  author_label?: string;
+}): Promise<LifecycleReviewResult> {
+  return rethrow(
+    () => trpc.lifecycle.review.mutate(input),
+    `reviewLifecycleCandidate(${input.category}/${input.ref_id})`,
+  );
+}
+
+export async function fetchMonitoringHealth(): Promise<MonitoringHealth> {
+  return rethrow(() => trpc.monitoring.health.query(), "fetchMonitoringHealth");
+}
+
 async function rethrow<T>(fn: () => Promise<T>, label: string): Promise<T> {
   try {
     return await fn();

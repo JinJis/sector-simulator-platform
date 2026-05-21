@@ -139,11 +139,14 @@ services:
       # bridge network, postgres ditto.
       SIMULATION_SERVICE_URL: http://simulation-service:8000
       AGENT_ORCHESTRATION_URL: http://agent-orchestration:8002
+      DATA_PIPELINE_URL: http://data-pipeline:8003
       DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
     depends_on:
       simulation-service:
         condition: service_started
       agent-orchestration:
+        condition: service_started
+      data-pipeline:
         condition: service_started
       postgres:
         condition: service_healthy

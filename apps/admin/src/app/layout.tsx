@@ -34,6 +34,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <Link href="/agent-runs" className="hover:text-neutral-100">
                 Agent runs
               </Link>
+              <Link href="/lifecycle" className="hover:text-neutral-100">
+                Lifecycle
+              </Link>
+              <Link href="/audit" className="hover:text-neutral-100">
+                Audit
+              </Link>
+              <Link href="/monitoring" className="hover:text-neutral-100">
+                Monitoring
+              </Link>
               <a
                 href="http://localhost:3000"
                 className="text-cyan-400 hover:text-cyan-300"

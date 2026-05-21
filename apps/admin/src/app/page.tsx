@@ -60,11 +60,29 @@ export default async function AdminHome() {
         >
           ↻ Agent runs
         </Link>
+        <Link
+          href="/lifecycle"
+          className="rounded border border-amber-700 bg-amber-900/40 px-3 py-1.5 text-[11px] font-medium text-amber-200 hover:bg-amber-800/60"
+          title="Stale equity / orphan node / cold sector deprecate review"
+        >
+          ⚠ Lifecycle review
+        </Link>
+        <Link
+          href="/monitoring"
+          className="rounded border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-[11px] font-medium text-neutral-300 hover:bg-neutral-800"
+          title="data-pipeline freshness + DB row counts"
+        >
+          ◔ Monitoring
+        </Link>
+        <Link
+          href="/audit"
+          className="rounded border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-[11px] font-medium text-neutral-300 hover:bg-neutral-800"
+          title="Full audit log viewer with filters"
+        >
+          ☷ Audit log
+        </Link>
         <StubAction title="Phase 2 later slice — kicks data-pipeline-service">
           ↻ Run ingest (all)
-        </StubAction>
-        <StubAction title="Phase 2 later slice — bulk approve proposed sectors">
-          ✓ Approve queue
         </StubAction>
       </div>
 

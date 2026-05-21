@@ -146,6 +146,9 @@ The platform answers, in one place: *"What's the upside on this stock if the sec
 | `/agent-runs/new` | Trigger a new DecompositionWorkflow (form) |
 | `/agent-runs/[id]` | Workflow status + output (decomposition JSON, cost USD, errors) |
 | `/scenarios` | Scenario list across sectors |
+| `/lifecycle` | **Deprecate review** — stale equities / orphan nodes / neutral edges / cold sectors. Keep / Defer / Approve buttons; every action logs to audit. |
+| `/audit` | **Audit log viewer** — filterable by action / sector / author, cursor-paginated |
+| `/monitoring` | **Data freshness panel** — data-pipeline cron status + DB table counts |
 
 ### Equities domain
 
@@ -332,12 +335,12 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **M15** | Per-page intent panels — collapsible `<PageIntent>` card at the top of every sector subpage + `/sectors` list + `/compare`. One-line pitch + two-column "왜 보는가 / 무엇을 찾는가" bullets. Centralized content in `apps/web/src/app/page-intents.ts`. |
 | **M16** | Home page / investor dashboard — new `/` route fans out per Promise.all (sims / equities ×3 / basket stats ×3 / scenarios / audit). `<HomeSearch>` client-side filters a flattened sector + equity + driver index. Trending sectors cards (basket sparkline + 90d %), Biggest movers table (sorted by |return|), Recent scenarios tiles, What's-changed feed via new `audit.recent` tRPC procedure. Legacy `/?sector=…` redirect preserved. |
 | **M17** | Investment narrative UI — `/sectors/[slug]/narrative` (thesis card + drivers/blockers + per-equity upside grid sorted by |Δ|) and `/sectors/[slug]/equities/[ticker]` (header stats + 90d+30d sparkline + "Why this number" driver × edge weight decomposition + financials + filings). New `equity.impactBreakdown` + `equity.getByTicker` tRPC. Editorial thesis content per sector in one file. |
+| **M18** | Lifecycle review + audit history + monitoring — admin `/lifecycle` detects 4 deprecate-candidate classes (stale equities / orphan nodes / neutral edges / cold sectors), filters by active deferrals from the audit log, accepts Keep/Defer/Approve per item. Admin `/audit` paginated viewer with action/sector/author facets. Admin `/monitoring` proxies data-pipeline `/health` + per-table freshness. New `audit.list` / `audit.facets` / `lifecycle.candidates` / `lifecycle.review` / `monitoring.health` tRPC. Hard rule: every action writes an `audit_logs` row; nothing auto-applies. |
 
-### Planned next (M18 → M19)
+### Planned next (M19)
 
 | | Scope |
 |---|---|
-| **M18** | Lifecycle review + audit history + monitoring — periodic deprecation/add review surface for drivers / equities / sims. **Always user-approved, never auto.** Audit log viewer + freshness/alarm panel for data feeds. |
 | **M19** | Graph UI quality polish — dagre auto-layout (no edge overlaps), visual differentiation by (color × thickness × dash × arrowhead) keyed to kind / weight / origin / sign. Equity nodes get a ticker pill + sparkline thumbnail. |
 
 ### In progress
