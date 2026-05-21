@@ -240,12 +240,13 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **Equities M8** | Equity nodes inside the causal graph — each `SectorEquity` becomes a `GraphNode(kind="equity")` with edges from drivers (weights derived from sign × magnitude). Four-column graph layout (driver / intermediate / output / equity). Pure-math impliedImpact via `graph-impact.ts`. |
 | **Equities M9** | Hybrid edge weights end-to-end — `EdgeWeights` in SDK, `memory-semi` sim refactored at 14 choke points, `sim.run` forwards `graph_edges` from DB → simulation-service. New `equity.impactScores` tRPC walks graph to score per-equity impliedImpact. Equity projections now move with edge weight edits. |
 | **Equities M10** | `EquityFinancial` mock-seeded domain — 8 quarters × 49 equities (revenue, COGS, gross profit, opex, EBITDA, net income, capex). Deterministic per-ticker margins; accounting identities preserved. `equity.financials` tRPC + lazy-loaded Financials panel in expand row with 4 SVG bar charts. Real DART/EDGAR adapters deferred to M10b. |
+| **Equities M11** | Graph editor UI — side panel with weight slider + magnitude select + label edit + delete on edge click. Drag-new-edge from node handles. Optimistic local state with rollback. Edge styling by weight (cyan amplify / rose inverse / amber dampen) and magnitude (stroke width). Brings M7-M9 backend plumbing alive. |
 
 ### In progress
 
 | | Scope |
 |---|---|
-| _epic complete — next pick TBD_ ||
+| _next pick TBD_ ||
 
 (Approved plan: `.claude/plans/fluffy-plotting-hanrahan.md`.)
 

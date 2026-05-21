@@ -1320,6 +1320,94 @@ endYear/endQuarter override, fiscal_quarter ∈ [1,4].
 - data-pipeline refresh job for quarterly cadence
 - Reconciliation: warn when mock and real values diverge >50%
 
+#### Equities Milestone 11 — Graph editor UI (2026-05-21)
+
+Brings the M7-M9 backend plumbing alive. Up to this slice every
+`graph.upsertEdge` / `deleteEdge` / `upsertNode` mutation was
+wired but unreachable from the UI — `/sectors/[slug]/graph` was
+purely a viewer. M11 ships the side panel, click handlers,
+weight slider, and drag-new-edge connector.
+
+**Side panel** (`apps/web/src/app/graph-side-panel.tsx`):
+
+- Slides in from the right when an edge or node is clicked
+- Edge mode:
+  - Source → target label (using human-readable node labels, not raw keys)
+  - Weight slider [-2.0, +2.0] step 0.05 with color chip:
+    cyan if amplifying (>1), amber if dampening (0..1),
+    rose if inverse (<0)
+  - Magnitude select: low / med / high (UI styling only — math reads weight)
+  - Label text input (commits on blur)
+  - Delete button with confirm prompt
+  - Status chip: "저장 중…" / "저장 실패" / "변경은 자동 저장됩니다"
+- Node mode:
+  - Read-only details (label / kind / group / unit / description)
+  - For equity nodes: link to `/sectors/[slug]/equities`
+  - Note: node editing lands in a follow-up slice
+- Closes on the X button, Escape key, or click outside the canvas
+
+**Graph view** (`apps/web/src/app/graph-view.tsx`):
+
+- Keeps `DbGraph` raw state in addition to the legacy
+  `SimGraphResponse` shape so the renderer has access to
+  `weight` + `magnitude` for edge styling and the panel for editing
+- `editable` mode flips on iff the DB graph is loaded (vs the
+  Python-side `sim.graph` fallback). Read-only badge in the header
+  when the seed hasn't run yet
+- Click handlers:
+  - `onEdgeClick` → opens edge panel with the canonical row
+  - `onNodeClick` → opens node panel
+  - `onPaneClick` → closes the panel
+  - `onConnect` (React Flow drag-new-edge from right-handle to
+    left-handle) → creates a `weight=1.0, magnitude=med` edge
+    and opens the panel so the user can tune it immediately
+- Optimistic local state mutation; failure rolls back via
+  `fetchDbGraph` re-fetch. Top-of-page error banner shows the
+  reason if a mutation fails.
+- Edge styling derived from `(weight, magnitude)`:
+  - Color: cyan when amplifying (>1.05), rose when inverse (<0),
+    grey at neutral (~1), faded grey when dampening (<0.95)
+  - Stroke width: low=0.75 / med=1.25 / high=2.0
+  - Label appends `· w=X.XX` when |weight - 1| > 0.001 so a
+    weighted edge is identifiable at a glance
+- React Flow `nodesConnectable={editable}` plus `nodesDraggable={editable}`
+  plus `elementsSelectable={editable}` — read-only fallback stays
+  truly read-only
+
+**Web client** (`apps/web/src/lib/sim-client.ts`):
+
+No new procedures — M7 already shipped `upsertGraphEdge`,
+`deleteGraphEdge`, `resetGraphToDefaults` wrappers. M11 just uses
+them.
+
+**Verification:**
+
+- TS typecheck (5 workspaces) clean
+- @platform/db vitest: 32/32 pass (unchanged)
+- sector-service vitest: 45 pass / 26 skipped (unchanged)
+- Manual smoke (planned in dev compose):
+  1. `/sectors/memory-semi/graph` → see graph with editable badge
+  2. Click any edge → panel opens, weight slider works
+  3. Slide weight to 2.0, release → toast "변경은 자동 저장됩니다"
+  4. Navigate to `/sectors/memory-semi` overview → outputs reflect new weight
+  5. Drag from a driver's right handle to an equity's left handle → new edge created at w=1.0, panel opens
+
+**Out of scope (lands in M12+):**
+
+- Node create / rename / delete (only edge-level mutations exposed
+  this slice)
+- Reset-to-defaults button in the UI (mutation exists at
+  `graph.resetToDefaults`; needs a re-seed-from-Python step
+  before exposing — defer until that flow is clean)
+- Audit log viewer in admin app (`audit_logs` table is being
+  written; visualization is a separate slice)
+- Multi-select + bulk edit (currently single-selection only)
+- Undo via audit log replay
+- Hot-reload on `simulation-service` cache (sector-service
+  re-reads on every `sim.run`, so the editor's changes are
+  visible instantly; explicit cache invalidation isn't needed
+  unless the sim grows hot caching later)
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

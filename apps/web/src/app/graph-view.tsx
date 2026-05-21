@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Background,
+  type Connection,
   Controls,
   type Edge,
   Handle,
@@ -16,15 +17,21 @@ import {
 import "reactflow/dist/style.css";
 
 import {
+  deleteGraphEdge,
   fetchDbGraph,
   fetchGraph,
+  type DbGraph,
+  type DbGraphEdge,
+  type DbGraphNode,
   type GraphEdge,
   type GraphNode,
   normalizeDbGraph,
   type SimGraphResponse,
   type SimMetadata,
+  upsertGraphEdge,
 } from "@/lib/sim-client";
 
+import { GraphSidePanel, type SidePanelSelection } from "./graph-side-panel";
 import { formatDriverValue, prettyName } from "./shared";
 
 interface Props {
@@ -37,31 +44,50 @@ interface Props {
 /**
  * Causal dependency graph for the current sim. Layout is hand-rolled:
  *
- *   drivers (left)  →  intermediates (middle, grouped vertically by `group`)  →  outputs (right)
+ *   drivers (left)  →  intermediates (middle)  →  outputs (right)  →  equities (far right)
  *
- * No auto-layout (dagre/elk) so we don't ship another dep for an MVP. The
- * column-by-kind layout reads cleanly because the authored graphs are already
- * acyclic and roughly DAG-shaped left-to-right.
+ * Two modes:
+ *
+ *   - **Editable**: when the DB-backed graph is loaded (M7+ seed has
+ *     run). Click an edge → side panel with weight slider, magnitude
+ *     select, label, delete. Drag from one node's right handle to
+ *     another's left handle → creates an edge at weight=1.0 / med.
+ *     Click a node → read-only details.
+ *
+ *   - **Read-only fallback**: when the DB has no rows for this sector
+ *     yet, fall back to the Python `SimGraph` literal via the legacy
+ *     `sim.graph` proxy. Editing is disabled until the bootstrap
+ *     completes.
  */
 export function GraphView({ meta, driverValues }: Props) {
-  const [graph, setGraph] = useState<SimGraphResponse | null>(null);
+  // Canonical state — the DB graph (when in edit mode) or null when
+  // we're in fallback. `legacyGraph` carries the Python-side shape so
+  // we can render *something* even when the DB hasn't been seeded.
+  const [dbGraph, setDbGraph] = useState<DbGraph | null>(null);
+  const [legacyGraph, setLegacyGraph] = useState<SimGraphResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selection, setSelection] = useState<SidePanelSelection>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
+  // Initial fetch — prefer DB, fall back to upstream Python proxy.
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    // Prefer the DB-backed graph (M7+). If the seed hasn't run yet
-    // (empty table → 0 nodes), fall back to the upstream Python
-    // `SimGraph` literal so the page still renders in dev.
+    setSelection(null);
+    setMutationError(null);
     void fetchDbGraph(meta.slug)
       .then(async (db) => {
         if (cancelled) return;
         if (db.nodes.length > 0) {
-          setGraph(normalizeDbGraph(db));
+          setDbGraph(db);
+          setLegacyGraph(null);
           return;
         }
         const upstream = await fetchGraph(meta.slug);
-        if (!cancelled) setGraph(upstream);
+        if (!cancelled) {
+          setDbGraph(null);
+          setLegacyGraph(upstream);
+        }
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(e instanceof Error ? e.message : "graph fetch failed");
@@ -71,10 +97,195 @@ export function GraphView({ meta, driverValues }: Props) {
     };
   }, [meta.slug]);
 
+  // The flat shape that `buildFlow` consumes. Computed from whichever
+  // source loaded successfully.
+  const renderable = useMemo<SimGraphResponse | null>(() => {
+    if (dbGraph) return normalizeDbGraph(dbGraph);
+    if (legacyGraph) return legacyGraph;
+    return null;
+  }, [dbGraph, legacyGraph]);
+
+  // Map of node_key → label for the side panel.
+  const nodeLabels = useMemo<Record<string, string>>(() => {
+    const m: Record<string, string> = {};
+    if (dbGraph) {
+      for (const n of dbGraph.nodes) m[n.node_key] = n.label;
+    } else if (legacyGraph) {
+      for (const n of legacyGraph.nodes) m[n.id] = n.label;
+    }
+    return m;
+  }, [dbGraph, legacyGraph]);
+
   const { nodes, edges } = useMemo(() => {
-    if (!graph) return { nodes: [] as Node<DriverNodeData>[], edges: [] as Edge[] };
-    return buildFlow(graph, driverValues);
-  }, [graph, driverValues]);
+    if (!renderable) return { nodes: [] as Node<DriverNodeData>[], edges: [] as Edge[] };
+    return buildFlow(renderable, driverValues, dbGraph);
+  }, [renderable, driverValues, dbGraph]);
+
+  // --- Mutation handlers (optimistic) ---
+
+  const editable = !!dbGraph;
+
+  const handleCommitEdge = useCallback(
+    async (input: {
+      source_key: string;
+      target_key: string;
+      weight: number;
+      magnitude: "low" | "med" | "high";
+      label?: string | null;
+    }) => {
+      if (!dbGraph) return;
+      // Optimistic: patch local state first.
+      setDbGraph((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev, edges: [...prev.edges] };
+        const idx = next.edges.findIndex(
+          (e) => e.source_key === input.source_key && e.target_key === input.target_key,
+        );
+        if (idx >= 0) {
+          next.edges[idx] = {
+            ...next.edges[idx]!,
+            weight: input.weight,
+            magnitude: input.magnitude,
+            label: input.label ?? null,
+          };
+        }
+        return next;
+      });
+      // Then fire mutation; on failure rollback by re-fetching.
+      try {
+        const updated = await upsertGraphEdge({
+          sector_slug: meta.slug,
+          source_key: input.source_key,
+          target_key: input.target_key,
+          weight: input.weight,
+          magnitude: input.magnitude,
+          label: input.label,
+        });
+        // Sync selection so the panel sees server-canonical fields.
+        setSelection((s) =>
+          s?.kind === "edge" && s.edge.source_key === input.source_key && s.edge.target_key === input.target_key
+            ? { kind: "edge", edge: updated }
+            : s,
+        );
+        setMutationError(null);
+      } catch (e) {
+        setMutationError(e instanceof Error ? e.message : String(e));
+        // Refetch to recover canonical state.
+        const fresh = await fetchDbGraph(meta.slug);
+        setDbGraph(fresh);
+        throw e;
+      }
+    },
+    [dbGraph, meta.slug],
+  );
+
+  const handleDeleteEdge = useCallback(
+    async (input: { source_key: string; target_key: string }) => {
+      if (!dbGraph) return;
+      setDbGraph((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          edges: prev.edges.filter(
+            (e) => !(e.source_key === input.source_key && e.target_key === input.target_key),
+          ),
+        };
+      });
+      setSelection(null);
+      try {
+        await deleteGraphEdge({
+          sector_slug: meta.slug,
+          source_key: input.source_key,
+          target_key: input.target_key,
+        });
+        setMutationError(null);
+      } catch (e) {
+        setMutationError(e instanceof Error ? e.message : String(e));
+        const fresh = await fetchDbGraph(meta.slug);
+        setDbGraph(fresh);
+        throw e;
+      }
+    },
+    [dbGraph, meta.slug],
+  );
+
+  // Drag-new-edge — React Flow calls this on a successful handle drop.
+  const handleConnect = useCallback(
+    async (connection: Connection) => {
+      if (!dbGraph || !connection.source || !connection.target) return;
+      const exists = dbGraph.edges.some(
+        (e) => e.source_key === connection.source && e.target_key === connection.target,
+      );
+      if (exists) return;
+      // Optimistic placeholder; gets replaced when the upsert returns.
+      // created_at/updated_at are inferred as strings on the wire
+      // (tRPC has no transformer in this project) — we cast through
+      // unknown so the placeholder satisfies the inferred type.
+      const now = new Date().toISOString() as unknown as DbGraphEdge["created_at"];
+      const placeholder: DbGraphEdge = {
+        id: `tmp_${connection.source}_${connection.target}`,
+        sector_slug: meta.slug,
+        source_key: connection.source,
+        target_key: connection.target,
+        label: null,
+        weight: 1.0,
+        magnitude: "med",
+        origin: "edit",
+        author_label: null,
+        created_at: now,
+        updated_at: now,
+      };
+      setDbGraph((prev) => (prev ? { ...prev, edges: [...prev.edges, placeholder] } : prev));
+      try {
+        const created = await upsertGraphEdge({
+          sector_slug: meta.slug,
+          source_key: connection.source,
+          target_key: connection.target,
+          weight: 1.0,
+          magnitude: "med",
+        });
+        setDbGraph((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            edges: prev.edges.map((e) =>
+              e.source_key === created.source_key && e.target_key === created.target_key ? created : e,
+            ),
+          };
+        });
+        // Open the new edge in the panel so the user can dial it in.
+        setSelection({ kind: "edge", edge: created });
+        setMutationError(null);
+      } catch (e) {
+        setMutationError(e instanceof Error ? e.message : String(e));
+        const fresh = await fetchDbGraph(meta.slug);
+        setDbGraph(fresh);
+      }
+    },
+    [dbGraph, meta.slug],
+  );
+
+  // Click handlers.
+  const handleEdgeClick = useCallback(
+    (_: unknown, edge: Edge) => {
+      if (!dbGraph) return;
+      const data = edge.data as DbGraphEdge | undefined;
+      if (!data) return;
+      setSelection({ kind: "edge", edge: data });
+    },
+    [dbGraph],
+  );
+
+  const handleNodeClick = useCallback(
+    (_: unknown, node: Node<DriverNodeData>) => {
+      if (!dbGraph) return;
+      const dbNode = dbGraph.nodes.find((n) => n.node_key === node.id);
+      if (dbNode) setSelection({ kind: "node", node: dbNode });
+    },
+    [dbGraph],
+  );
+
+  // ---- Render ----
 
   if (error) {
     return (
@@ -84,7 +295,7 @@ export function GraphView({ meta, driverValues }: Props) {
     );
   }
 
-  if (!graph) {
+  if (!renderable) {
     return (
       <div className="rounded-lg border border-neutral-800 bg-neutral-900/30 p-4 text-sm text-neutral-500">
         그래프 로드 중…
@@ -92,7 +303,7 @@ export function GraphView({ meta, driverValues }: Props) {
     );
   }
 
-  if (graph.nodes.length === 0) {
+  if (renderable.nodes.length === 0) {
     return (
       <div className="rounded-lg border border-neutral-800 bg-neutral-900/30 p-4 text-sm text-neutral-500">
         이 섹터는 아직 dependency graph가 등록되지 않았습니다. Phase 2 후반 슬라이스에서
@@ -101,7 +312,7 @@ export function GraphView({ meta, driverValues }: Props) {
     );
   }
 
-  const counts = countByKind(graph.nodes);
+  const counts = countByKind(renderable.nodes);
 
   return (
     <div className="space-y-3">
@@ -122,18 +333,38 @@ export function GraphView({ meta, driverValues }: Props) {
               label={`equities (${counts.equity ?? 0})`}
             />
           ) : null}
-          <span className="ml-auto text-[10px] text-neutral-600">
-            {graph.edges.length} edges · M9 wires weights into the sim
+          <span
+            className={`ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+              editable
+                ? "bg-cyan-950/60 text-cyan-300"
+                : "bg-neutral-800/60 text-neutral-500"
+            }`}
+          >
+            {editable ? "Editable" : "Read-only (seed pending)"}
           </span>
         </div>
         <p>
-          드라이버 → 중간 계산 → 산출물 → 종목 영향도로 흐르는 인과 그래프.
-          종목 노드는 sector_equities 의 driver_links 를 graph_edges 로
-          끌어올린 결과이며, M9 에서 슬라이더 변경이 weighted 합으로
-          전파됩니다.
+          {editable ? (
+            <>
+              Edge 클릭 → 우측 패널에서 weight / magnitude / label 수정. 노드 우측 핸들에서
+              다른 노드 좌측 핸들로 드래그 → 새 edge 생성. 변경은 즉시 시뮬레이션과 종목
+              영향도에 반영됩니다.
+            </>
+          ) : (
+            <>
+              DB graph 가 비어 있어 Python 소스의 SimGraph 를 fallback 으로 렌더링합니다.
+              <code className="ml-1 rounded bg-neutral-950 px-1 py-0.5">pnpm db:seed:graph</code>
+              실행 후 새로고침하면 편집 가능.
+            </>
+          )}
         </p>
+        {mutationError ? (
+          <p className="mt-2 rounded border border-rose-900/60 bg-rose-950/30 px-2 py-1 text-[11px] text-rose-300">
+            저장 실패: {mutationError}
+          </p>
+        ) : null}
       </div>
-      <div className="h-[640px] overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
+      <div className="relative h-[640px] overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -143,6 +374,13 @@ export function GraphView({ meta, driverValues }: Props) {
           minZoom={0.2}
           maxZoom={1.5}
           proOptions={REACTFLOW_PRO_OPTIONS}
+          nodesConnectable={editable}
+          nodesDraggable={editable}
+          elementsSelectable={editable}
+          onEdgeClick={handleEdgeClick}
+          onNodeClick={handleNodeClick}
+          onConnect={handleConnect}
+          onPaneClick={() => setSelection(null)}
           defaultEdgeOptions={{
             type: "smoothstep",
             animated: false,
@@ -160,6 +398,13 @@ export function GraphView({ meta, driverValues }: Props) {
             className="!border-neutral-800 !bg-neutral-900 !text-neutral-200"
           />
         </ReactFlow>
+        <GraphSidePanel
+          selection={selection}
+          onClose={() => setSelection(null)}
+          onCommitEdge={handleCommitEdge}
+          onDeleteEdge={handleDeleteEdge}
+          nodeLabels={nodeLabels}
+        />
       </div>
     </div>
   );
@@ -200,7 +445,6 @@ const KIND_COLORS: Record<"driver" | "intermediate" | "output" | "equity", KindS
     accent: "text-amber-300",
   },
   equity: {
-    // Distinct from output amber — yellow/gold tints for "stock ticker".
     border: "border-yellow-700/70",
     bg: "bg-yellow-950/40",
     accent: "text-yellow-300",
@@ -252,22 +496,48 @@ function GraphFlowNode({ data }: NodeProps<DriverNodeData>) {
 const NODE_TYPES = { sim: GraphFlowNode };
 
 /**
- * Hand-rolled layout: stack nodes by kind into three columns, within each
- * column stack vertically by group, then by id. Spacing is tuned for the
- * 14-driver / ~10-intermediate / ~5-output graphs we ship today. If graphs
- * grow well beyond that, swap this for dagre.
+ * Map a `(weight, magnitude)` pair to React Flow stroke styling. The
+ * weight controls color (positive = neutral grey, large positive =
+ * cyan amplify, negative = rose inverse, near-zero = faded). The
+ * magnitude controls thickness (low/med/high → 0.75/1.25/2.0).
+ */
+function edgeStyleFor(
+  weight: number | null,
+  magnitude: string | null,
+): { stroke: string; strokeWidth: number; strokeOpacity: number } {
+  const mag = magnitude ?? "med";
+  const baseWidth = mag === "high" ? 2.0 : mag === "low" ? 0.75 : 1.25;
+  if (weight == null) {
+    return { stroke: "#525252", strokeWidth: baseWidth, strokeOpacity: 1 };
+  }
+  let stroke = "#525252";
+  let opacity = 1;
+  if (weight < 0) {
+    stroke = "rgb(244 63 94)"; // rose-500
+    opacity = Math.min(1, Math.abs(weight) / 2 + 0.5);
+  } else if (weight > 1.05) {
+    stroke = "rgb(34 211 238)"; // cyan-400
+    opacity = Math.min(1, weight / 2 + 0.5);
+  } else if (weight < 0.95) {
+    stroke = "rgb(115 115 115)"; // neutral-500
+    opacity = Math.max(0.3, weight);
+  }
+  return { stroke, strokeWidth: baseWidth, strokeOpacity: opacity };
+}
+
+/**
+ * Hand-rolled layout: stack nodes by kind into four columns
+ * (driver / intermediate / output / equity), within each column stack
+ * vertically by group, then by id.
  */
 function buildFlow(
   g: SimGraphResponse,
   driverValues: Record<string, number>,
+  db: DbGraph | null,
 ): { nodes: Node<DriverNodeData>[]; edges: Edge[] } {
   const COLS = { driver: 0, intermediate: 1, output: 2, equity: 3 } as const;
-  // x-positions for each column. Equity column sits to the right of
-  // outputs so the visual reads driver → math → outputs → market.
   const COL_X = [40, 480, 980, 1280];
   const ROW_HEIGHT = 78;
-  // Equity rows are slimmer (no driver value, just ticker label) — pack
-  // them tighter so a 17-ticker basket doesn't blow the canvas height.
   const EQUITY_ROW_HEIGHT = 56;
   const GROUP_GAP = 28;
 
@@ -281,8 +551,6 @@ function buildFlow(
     const col = (n.kind in COLS ? n.kind : "intermediate") as keyof typeof COLS;
     byCol[col]!.push(n);
   }
-
-  // Within each column, group → id (stable + readable).
   for (const col of Object.keys(byCol)) {
     byCol[col]!.sort((a, b) => {
       if (a.group !== b.group) return a.group.localeCompare(b.group);
@@ -315,12 +583,37 @@ function buildFlow(
     }
   }
 
-  const edges: Edge[] = g.edges.map((e, i) => ({
-    id: `${e.source}->${e.target}-${i}`,
-    source: e.source,
-    target: e.target,
-    label: e.label || undefined,
-  }));
+  // Build a lookup from the DB edges (when available) so we can
+  // style each rendered edge by weight + magnitude AND attach the
+  // canonical row to the React Flow edge's `data` field for click
+  // handlers.
+  const dbByPair = new Map<string, DbGraphEdge>();
+  if (db) {
+    for (const e of db.edges) dbByPair.set(`${e.source_key}->${e.target_key}`, e);
+  }
+
+  const edges: Edge[] = g.edges.map((e, i) => {
+    const dbEdge = dbByPair.get(`${e.source}->${e.target}`);
+    const style = edgeStyleFor(dbEdge?.weight ?? null, dbEdge?.magnitude ?? null);
+    const weightSuffix =
+      dbEdge && Math.abs(dbEdge.weight - 1.0) > 1e-3
+        ? ` · w=${dbEdge.weight.toFixed(2)}`
+        : "";
+    return {
+      id: `${e.source}->${e.target}-${i}`,
+      source: e.source,
+      target: e.target,
+      label: (e.label || "") + weightSuffix || undefined,
+      style: { stroke: style.stroke, strokeWidth: style.strokeWidth, strokeOpacity: style.strokeOpacity },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: style.stroke,
+        width: 14,
+        height: 14,
+      },
+      data: dbEdge,
+    };
+  });
 
   return { nodes, edges };
 }
