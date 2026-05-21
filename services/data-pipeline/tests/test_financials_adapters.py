@@ -22,6 +22,7 @@ from data_pipeline.adapters.edgar_source import (
     EdgarSource,
     _aggregate,
     _calendar_quarter,
+    _pick_instant_facts,
     _pick_quarterly_facts,
 )
 from data_pipeline.adapters.fake_financials import FakeFinancialsSource
@@ -78,6 +79,29 @@ async def test_fake_accounting_identities_hold() -> None:
         assert r.revenue_usd == pytest.approx(r.cogs_usd + r.gross_profit_usd, rel=1e-9)
         # ebitda = gross - opex
         assert r.ebitda_usd == pytest.approx(r.gross_profit_usd - r.opex_usd, rel=1e-9)
+        # M10d: BS identity — assets = liabilities + equity (mock-honest)
+        assert r.total_assets_usd is not None
+        assert r.total_liabilities_usd is not None
+        assert r.total_equity_usd is not None
+        assert r.total_assets_usd == pytest.approx(
+            r.total_liabilities_usd + r.total_equity_usd, rel=1e-9
+        )
+
+
+@pytest.mark.asyncio
+async def test_fake_bs_grows_with_company() -> None:
+    """M10d: total_assets grows over quarters — leverage ratio holds."""
+    src = FakeFinancialsSource()
+    rows = await src.fetch_financials(
+        ticker="MU", exchange="NASDAQ", country="US", quarters=8
+    )
+    first_assets = rows[0].total_assets_usd or 0
+    last_assets = rows[-1].total_assets_usd or 0
+    assert last_assets > first_assets  # company grew
+    # Per-row leverage ratios should be in a reasonable band (35-70%).
+    for r in rows:
+        lev = (r.total_liabilities_usd or 0) / (r.total_assets_usd or 1)
+        assert 0.30 < lev < 0.75
 
 
 @pytest.mark.asyncio
@@ -206,6 +230,55 @@ def test_aggregate_falls_back_to_op_income_when_da_missing() -> None:
     }
     out = _aggregate(facts, quarters=4)
     assert out[0].ebitda_usd == 200
+
+
+def test_pick_instant_facts_filters_to_instant_rows() -> None:
+    """Balance-sheet items in EDGAR have no `qtrs` field. Picker must
+    pass those through while still rejecting quarterly rows."""
+    facts = {
+        "facts": {
+            "us-gaap": {
+                "Assets": {
+                    "units": {
+                        "USD": [
+                            {"end": "2025-03-31", "val": 1_000_000_000},  # no qtrs → instant
+                            {"end": "2025-03-31", "val": 999, "qtrs": 1, "fp": "Q1"},  # quarterly span (rejected)
+                        ],
+                    },
+                },
+            },
+        },
+    }
+    out = _pick_instant_facts(facts, ["Assets"])
+    assert len(out) == 1
+    assert out[0]["val"] == 1_000_000_000
+
+
+def test_aggregate_emits_balance_sheet_when_instants_provided() -> None:
+    """Instant facts joined onto the matching quarter by `end` date."""
+    facts = {
+        "revenue": [{"end": "2025-03-31", "val": 1000, "qtrs": 1, "fy": 2025, "fp": "Q1"}],
+        # No `qtrs` — BS instants
+        "assets": [{"end": "2025-03-31", "val": 50_000}],
+        "liabilities": [{"end": "2025-03-31", "val": 20_000}],
+        "equity": [{"end": "2025-03-31", "val": 30_000}],
+    }
+    out = _aggregate(facts, quarters=4)
+    assert len(out) == 1
+    r = out[0]
+    assert r.total_assets_usd == 50_000
+    assert r.total_liabilities_usd == 20_000
+    assert r.total_equity_usd == 30_000
+
+
+def test_aggregate_emits_null_bs_when_instants_absent() -> None:
+    facts = {
+        "revenue": [{"end": "2025-03-31", "val": 1000, "qtrs": 1, "fy": 2025, "fp": "Q1"}],
+    }
+    out = _aggregate(facts, quarters=4)
+    assert out[0].total_assets_usd is None
+    assert out[0].total_liabilities_usd is None
+    assert out[0].total_equity_usd is None
 
 
 def test_edgar_constructor_validates_user_agent() -> None:
@@ -379,6 +452,100 @@ def test_dart_legacy_substring_still_works_when_account_id_empty() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dart_autodiscovery_falls_back_when_ticker_unmapped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """M10d: when a ticker isn't in the hand-curated KR_CORP_CODES map,
+    the source asks corpCode.xml auto-discovery. We monkey-patch the
+    fetcher so the test stays offline."""
+    from data_pipeline.adapters import dart_source as ds_mod
+
+    calls = {"n": 0}
+
+    async def fake_fetch(api_key: str, *, timeout_s: float = 60.0) -> dict[str, str]:
+        calls["n"] += 1
+        return {"999999": "01234567"}  # a synthetic ticker not in the hand-map
+
+    monkeypatch.setattr(ds_mod, "fetch_corp_code_map", fake_fetch)
+    src = ds_mod.DartSource(api_key="x", corp_code_map={"005930": "00126380"})
+    # Hit a ticker NOT in the curated map → triggers discovery.
+    hit = await src._resolve_corp_code("999999")
+    assert hit == "01234567"
+    assert calls["n"] == 1
+    # Second call hits the same auto-discovered map → no second network call.
+    hit2 = await src._resolve_corp_code("999999")
+    assert hit2 == "01234567"
+    assert calls["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_dart_autodiscovery_skipped_when_curated_map_hits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hand-curated map wins — no network call for known tickers."""
+    from data_pipeline.adapters import dart_source as ds_mod
+
+    calls = {"n": 0}
+
+    async def fake_fetch(api_key: str, *, timeout_s: float = 60.0) -> dict[str, str]:
+        calls["n"] += 1
+        return {}
+
+    monkeypatch.setattr(ds_mod, "fetch_corp_code_map", fake_fetch)
+    src = ds_mod.DartSource(api_key="x", corp_code_map={"005930": "00126380"})
+    hit = await src._resolve_corp_code("005930")
+    assert hit == "00126380"
+    assert calls["n"] == 0  # no auto-discovery
+
+
+@pytest.mark.asyncio
+async def test_dart_autodiscovery_disabled_returns_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When `autodiscover_corp_codes=False`, missing ticker → None
+    without any network attempt."""
+    from data_pipeline.adapters import dart_source as ds_mod
+
+    calls = {"n": 0}
+
+    async def fake_fetch(api_key: str, *, timeout_s: float = 60.0) -> dict[str, str]:
+        calls["n"] += 1
+        return {"999999": "01234567"}
+
+    monkeypatch.setattr(ds_mod, "fetch_corp_code_map", fake_fetch)
+    src = ds_mod.DartSource(
+        api_key="x",
+        corp_code_map={"005930": "00126380"},
+        autodiscover_corp_codes=False,
+    )
+    hit = await src._resolve_corp_code("999999")
+    assert hit is None
+    assert calls["n"] == 0
+
+
+@pytest.mark.asyncio
+async def test_dart_autodiscovery_caches_empty_on_fetch_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A network failure shouldn't retry on every subsequent lookup —
+    we cache empty dict and move on."""
+    from data_pipeline.adapters import dart_source as ds_mod
+
+    calls = {"n": 0}
+
+    async def fake_fetch(api_key: str, *, timeout_s: float = 60.0) -> dict[str, str]:
+        calls["n"] += 1
+        raise RuntimeError("DART corpCode endpoint is down")
+
+    monkeypatch.setattr(ds_mod, "fetch_corp_code_map", fake_fetch)
+    src = ds_mod.DartSource(api_key="x", corp_code_map={})
+    assert await src._resolve_corp_code("999999") is None
+    assert await src._resolve_corp_code("888888") is None
+    # Discovery was attempted exactly once.
+    assert calls["n"] == 1
+
+
+@pytest.mark.asyncio
 async def test_dart_resolve_fx_uses_lookup_when_available() -> None:
     """M10c: historical FX via the fx_for callable. We don't make a
     real network call here — just confirm the constructor wires the
@@ -410,6 +577,46 @@ async def test_dart_resolve_fx_ignores_non_positive_results() -> None:
     src = DartSource(api_key="x", fx_for=bad_lookup, krw_per_usd=1380.0)
     rate = await src._resolve_fx(_date(2025, 3, 31))
     assert rate == 1380.0
+
+
+def test_dart_extracts_balance_sheet_totals() -> None:
+    """M10d: full-statements endpoint exposes BS items under
+    ifrs-full_Assets / Liabilities / Equity. Persist as absolute USD."""
+    rows = [
+        {
+            "fs_div": "CFS",
+            "account_id": "ifrs-full_Revenue",
+            "account_nm": "수익",
+            "thstrm_amount": "10,000,000,000",
+        },
+        {
+            "fs_div": "CFS",
+            "account_id": "ifrs-full_Assets",
+            "account_nm": "자산총계",
+            "thstrm_amount": "200,000,000,000",
+        },
+        {
+            "fs_div": "CFS",
+            "account_id": "ifrs-full_Liabilities",
+            "account_nm": "부채총계",
+            "thstrm_amount": "80,000,000,000",
+        },
+        {
+            "fs_div": "CFS",
+            "account_id": "ifrs-full_Equity",
+            "account_nm": "자본총계",
+            "thstrm_amount": "120,000,000,000",
+        },
+    ]
+    q = _accounting_to_quarter(rows, fy=2025, reprt_code="11013", krw_per_usd=1380.0)
+    assert q is not None
+    assert q.total_assets_usd == pytest.approx(200_000_000_000 / 1380, rel=1e-6)
+    assert q.total_liabilities_usd == pytest.approx(80_000_000_000 / 1380, rel=1e-6)
+    assert q.total_equity_usd == pytest.approx(120_000_000_000 / 1380, rel=1e-6)
+    # Accounting identity sanity check (within FP error).
+    assert q.total_assets_usd == pytest.approx(
+        q.total_liabilities_usd + q.total_equity_usd, rel=1e-9
+    )
 
 
 def test_dart_capex_taken_as_absolute_value() -> None:

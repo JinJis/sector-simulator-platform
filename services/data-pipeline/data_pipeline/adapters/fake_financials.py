@@ -72,6 +72,11 @@ class FakeFinancialsSource(FinancialsSource):
         seq.reverse()
 
         start = base_q_rev / ((1 + growth) ** (quarters - 1))
+        # Balance sheet ratios — also deterministic per ticker. Anchor
+        # at "today's" annual revenue scale so the numbers stay sensible.
+        annual_rev_today = base_q_rev * 4 * ((1 + growth) ** (quarters - 1))
+        assets_ratio = 0.8 + ((seed >> 4) % 60) / 100  # 0.8..1.4 × annual revenue
+        leverage = 0.35 + ((seed >> 12) % 30) / 100    # 35..64% of assets are liabilities
         for i, (yy, qq) in enumerate(seq):
             wobble = 1 + ((((seed >> (i % 24)) & 0xFF) - 128) / 128) * 0.03
             revenue = start * ((1 + growth) ** i) * wobble
@@ -81,6 +86,11 @@ class FakeFinancialsSource(FinancialsSource):
             ebitda = gross - opex
             net = ebitda * (1 - tax_drag)
             capex = revenue * capex_ratio
+            # BS items grow with the company; minor independent wobble.
+            bs_wobble = 1 + ((((seed >> ((i + 7) % 24)) & 0xFF) - 128) / 128) * 0.02
+            total_assets = annual_rev_today * assets_ratio * ((1 + growth) ** (i - (quarters - 1))) * bs_wobble
+            total_liabilities = total_assets * leverage
+            total_equity = total_assets - total_liabilities
             rows.append(
                 FinancialQuarter(
                     fiscal_year=yy,
@@ -93,6 +103,9 @@ class FakeFinancialsSource(FinancialsSource):
                     ebitda_usd=ebitda,
                     net_income_usd=net,
                     capex_usd=capex,
+                    total_assets_usd=total_assets,
+                    total_liabilities_usd=total_liabilities,
+                    total_equity_usd=total_equity,
                     source="fake",
                 )
             )

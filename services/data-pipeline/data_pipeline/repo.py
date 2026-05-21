@@ -67,6 +67,10 @@ class FinancialRow(BaseModel):
     ebitda_usd: float | None = None
     net_income_usd: float | None = None
     capex_usd: float | None = None
+    # Balance sheet (M10d)
+    total_assets_usd: float | None = None
+    total_liabilities_usd: float | None = None
+    total_equity_usd: float | None = None
     source: str = "dart"
 
 
@@ -210,9 +214,11 @@ _UPSERT_FINANCIALS_SQL = """
 INSERT INTO equity_financials
     (equity_id, fiscal_year, fiscal_quarter, period_end,
      revenue_usd, cogs_usd, gross_profit_usd, opex_usd, ebitda_usd,
-     net_income_usd, capex_usd, source)
+     net_income_usd, capex_usd,
+     total_assets_usd, total_liabilities_usd, total_equity_usd,
+     source)
 VALUES
-    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 ON CONFLICT (equity_id, fiscal_year, fiscal_quarter)
 DO UPDATE SET
     period_end = EXCLUDED.period_end,
@@ -223,6 +229,9 @@ DO UPDATE SET
     ebitda_usd = EXCLUDED.ebitda_usd,
     net_income_usd = EXCLUDED.net_income_usd,
     capex_usd = EXCLUDED.capex_usd,
+    total_assets_usd = EXCLUDED.total_assets_usd,
+    total_liabilities_usd = EXCLUDED.total_liabilities_usd,
+    total_equity_usd = EXCLUDED.total_equity_usd,
     source = EXCLUDED.source,
     inserted_at = now()
 """
@@ -317,6 +326,9 @@ class PostgresEquityRepository:
                 r.ebitda_usd,
                 r.net_income_usd,
                 r.capex_usd,
+                r.total_assets_usd,
+                r.total_liabilities_usd,
+                r.total_equity_usd,
                 r.source,
             )
             for r in rows

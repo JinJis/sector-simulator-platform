@@ -129,6 +129,9 @@ async def refresh_financials(
                 ebitda_usd=q.ebitda_usd,
                 net_income_usd=q.net_income_usd,
                 capex_usd=q.capex_usd,
+                total_assets_usd=q.total_assets_usd,
+                total_liabilities_usd=q.total_liabilities_usd,
+                total_equity_usd=q.total_equity_usd,
                 source=q.source,
             )
             for q in quarters_data

@@ -37,6 +37,12 @@ class FinancialQuarter(BaseModel):
     ebitda_usd: float | None = None
     net_income_usd: float | None = None
     capex_usd: float | None = None
+    # Balance-sheet totals (M10d). Optional — many simple endpoints
+    # don't return them. Filled by the full-statement DART path and by
+    # EDGAR `Assets` / `Liabilities` / `StockholdersEquity` concepts.
+    total_assets_usd: float | None = None
+    total_liabilities_usd: float | None = None
+    total_equity_usd: float | None = None
     source: Literal["dart", "edgar", "fake"] = "fake"
 
 

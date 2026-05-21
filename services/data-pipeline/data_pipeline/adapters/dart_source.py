@@ -29,10 +29,12 @@ Unmapped tickers return `[]` rather than fail loudly.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import date
 
+from data_pipeline.adapters.dart_corp_codes import fetch_corp_code_map
 from data_pipeline.adapters.financials_base import FinancialQuarter
 
 log = logging.getLogger(__name__)
@@ -63,6 +65,16 @@ ACCOUNT_ID_DA = {
     "ifrs-full_DepreciationExpense",
     "ifrs-full_DepreciationAndAmortisationExpense",
     "dart_DepreciationAndAmortizationExpense",
+}
+# Balance sheet (M10d). DART's full-statements endpoint reports the
+# BS section with these account_ids. Equity total may appear under
+# either label depending on whether non-controlling interest is
+# broken out separately.
+ACCOUNT_ID_TOTAL_ASSETS = {"ifrs-full_Assets"}
+ACCOUNT_ID_TOTAL_LIABILITIES = {"ifrs-full_Liabilities"}
+ACCOUNT_ID_TOTAL_EQUITY = {
+    "ifrs-full_Equity",
+    "ifrs-full_EquityAttributableToOwnersOfParent",
 }
 
 # DART quarter codes — the API surfaces reports under different
@@ -147,6 +159,9 @@ def _accounting_to_quarter(
         "cogs": None,
         "capex": None,
         "d_and_a": None,
+        "total_assets": None,
+        "total_liabilities": None,
+        "total_equity": None,
     }
     for row in rows:
         if row.get("fs_div") not in ("CFS", "OFS"):
@@ -172,6 +187,12 @@ def _accounting_to_quarter(
             fields["capex"] = abs(amount)
         elif account_id in ACCOUNT_ID_DA and fields["d_and_a"] is None:
             fields["d_and_a"] = amount
+        elif account_id in ACCOUNT_ID_TOTAL_ASSETS and fields["total_assets"] is None:
+            fields["total_assets"] = amount
+        elif account_id in ACCOUNT_ID_TOTAL_LIABILITIES and fields["total_liabilities"] is None:
+            fields["total_liabilities"] = amount
+        elif account_id in ACCOUNT_ID_TOTAL_EQUITY and fields["total_equity"] is None:
+            fields["total_equity"] = amount
         # Fallback: Korean name substring (covers the simple endpoint
         # where account_id may be empty).
         elif not account_id:
@@ -199,6 +220,9 @@ def _accounting_to_quarter(
     net_income_usd = to_usd(fields["net_income"])
     capex_usd = to_usd(fields["capex"])
     d_and_a_usd = to_usd(fields["d_and_a"])
+    total_assets_usd = to_usd(fields["total_assets"])
+    total_liabilities_usd = to_usd(fields["total_liabilities"])
+    total_equity_usd = to_usd(fields["total_equity"])
     gross_usd = (
         revenue_usd - cogs_usd if revenue_usd is not None and cogs_usd is not None else None
     )
@@ -224,6 +248,9 @@ def _accounting_to_quarter(
         ebitda_usd=ebitda_usd,
         net_income_usd=net_income_usd,
         capex_usd=capex_usd,
+        total_assets_usd=total_assets_usd,
+        total_liabilities_usd=total_liabilities_usd,
+        total_equity_usd=total_equity_usd,
         source="dart",
     )
 
@@ -240,14 +267,20 @@ class DartSource:
         corp_code_map: dict[str, str] | None = None,
         fx_for: FxLookup | None = None,
         use_full_statements: bool = True,
+        autodiscover_corp_codes: bool = True,
     ) -> None:
         if not api_key:
             raise ValueError("DartSource requires DART_API_KEY")
         self._api_key = api_key
         self._krw_per_usd = krw_per_usd
-        self._corp_code_map = corp_code_map or KR_CORP_CODES
+        self._corp_code_map = dict(corp_code_map or KR_CORP_CODES)
         self._fx_for = fx_for
         self._use_full_statements = use_full_statements
+        self._autodiscover = autodiscover_corp_codes
+        # Cache of the auto-discovered corpCode.xml map. Loaded lazily
+        # on the first miss against the hand-curated map.
+        self._discovered_map: dict[str, str] | None = None
+        self._discovery_lock = asyncio.Lock()
 
     async def _resolve_fx(self, period_end: date) -> float:
         """Quarter-end KRW/USD. Falls back to the constructor's
@@ -257,6 +290,32 @@ class DartSource:
             if rate is not None and rate > 0:
                 return rate
         return self._krw_per_usd
+
+    async def _resolve_corp_code(self, ticker: str) -> str | None:
+        """Look up the corp_code for a KR stock ticker. Tries the
+        hand-curated map first, then auto-discovery (if enabled), then
+        gives up. Auto-discovery is cached in-memory for the lifetime
+        of the source."""
+        hit = self._corp_code_map.get(ticker)
+        if hit:
+            return hit
+        if not self._autodiscover:
+            return None
+        if self._discovered_map is None:
+            async with self._discovery_lock:
+                if self._discovered_map is None:
+                    try:
+                        log.info("dart: fetching corpCode.xml (auto-discovery)…")
+                        self._discovered_map = await fetch_corp_code_map(self._api_key)
+                        log.info(
+                            "dart: corpCode discovery loaded %d KR tickers",
+                            len(self._discovered_map),
+                        )
+                    except Exception as e:  # noqa: BLE001
+                        log.warning("dart: corpCode auto-discovery failed: %s", e)
+                        # Cache empty dict so we don't retry every call.
+                        self._discovered_map = {}
+        return self._discovered_map.get(ticker)
 
     async def fetch_financials(
         self,
@@ -268,7 +327,7 @@ class DartSource:
     ) -> list[FinancialQuarter]:
         if country.upper() != "KR":
             return []
-        corp_code = self._corp_code_map.get(ticker)
+        corp_code = await self._resolve_corp_code(ticker)
         if not corp_code:
             log.info("dart: no corp_code mapping for ticker %s", ticker)
             return []

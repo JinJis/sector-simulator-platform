@@ -1658,6 +1658,99 @@ Knocks down four items the M10b doc flagged as out-of-scope.
 - Frankfurter rate-limit handling (free tier is generous; not a
   problem at 50-equity scale)
 
+#### Equities Milestone 10d — corpCode auto-discovery + balance sheet + multi-currency FX (2026-05-21)
+
+Closes three of the four out-of-scope items M10c flagged. The
+fourth (Frankfurter rate-limit handling) stays deferred — it's not a
+problem at current scale.
+
+**Schema** (`packages/db/prisma/schema.prisma` + migration
+`20260522040000_equity_financials_bs/migration.sql`):
+
+- `EquityFinancial` gains three nullable columns:
+  `total_assets_usd`, `total_liabilities_usd`, `total_equity_usd`
+- ALTER TABLE — no data migration required; existing rows have
+  NULL BS values (M10b/M10c didn't capture them anyway)
+
+**corpCode.xml auto-discovery**
+(`services/data-pipeline/data_pipeline/adapters/dart_corp_codes.py`):
+
+- New module with pure parsing helpers (`parse_corpcode_xml`,
+  `extract_corpcode_xml_from_zip`) + the network fetcher
+  `fetch_corp_code_map(api_key)`
+- Drops malformed entries defensively — only accepts
+  `stock_code` = 6 digits and `corp_code` = 8 digits
+- `DartSource.__init__` gains `autodiscover_corp_codes=True` (opt-out
+  for tests). On a curated-map miss, lazily fetches + caches the
+  full corpCode.xml; a fetch failure caches an empty dict so we
+  don't hammer the endpoint
+- 22-ticker hand-curated `KR_CORP_CODES` stays as the first-look
+  fast path (avoids the ~20MB cold-start fetch for known tickers)
+
+**Balance sheet capture**
+(`adapters/dart_source.py`, `adapters/edgar_source.py`):
+
+- **DART**: full-statements endpoint reports BS under K-IFRS
+  `account_id`s — new sets `ACCOUNT_ID_TOTAL_ASSETS` /
+  `…LIABILITIES` / `…EQUITY` (latter accepts both
+  `ifrs-full_Equity` and `…EquityAttributableToOwnersOfParent`)
+- **EDGAR**: BS items are *instant* facts (no `qtrs` field) — new
+  `_pick_instant_facts` helper filters by absence of `qtrs`
+  rather than `qtrs == 1`. New concept chains
+  `ASSETS_CONCEPTS` / `LIABILITIES_CONCEPTS` /
+  `EQUITY_CONCEPTS`. Joined onto the matching quarter by `end`
+  date inside `_aggregate`
+- `FinancialQuarter` / `FinancialRow` / `FakeFinancialsSource` /
+  `@platform/db/mock-financials.ts` / `seed-equity-financials.ts`
+  all extended in lockstep
+- Mock generators preserve the accounting identity
+  (`assets = liabilities + equity`); per-ticker leverage drawn from
+  a 35-65% range — sanity-checked by test
+
+**Multi-currency Frankfurter**
+(`adapters/frankfurter_fx.py`):
+
+- New `rate(base, target, on)` generic method
+- New `local_per_usd_factory(currency)` returns a curried
+  `(date) → local-per-1-USD` callable — drop-in for the same
+  `fx_for` parameter `DartSource` already accepts. Forward-looking
+  for non-KR/US adapters (JPY / EUR / etc.)
+- `krw_per_usd` preserved for backwards compat
+
+**Tests** (+21):
+
+- `test_corp_codes.py` (7) — XML parse, malformed-code drop,
+  whitespace tolerance, ZIP extraction (case-insensitive), missing
+  XML error
+- `test_financials_adapters.py` (+9): DART BS extraction +
+  accounting identity, EDGAR `_pick_instant_facts` filter, EDGAR
+  BS aggregation, EDGAR null-BS fallback, DartSource
+  auto-discovery (fallback + hit-cached / curated wins / disabled /
+  fetch-error caches-empty), `FakeFinancialsSource` BS identity +
+  growth + leverage band
+- `test_frankfurter_fx.py` (+2) — generic `rate()` URL parameters,
+  `local_per_usd_factory` returns currying closure
+- `mock-financials.test.ts` (+3, vitest) — BS identity, BS grows,
+  leverage in band
+
+**Verification:**
+
+- TS typecheck (5 workspaces) clean
+- **@platform/db vitest: 35/35 pass** (+3)
+- sector-service vitest: 45 pass / 26 skipped
+- simulation-service pytest: 61 pass
+- **data-pipeline pytest: 80 pass** (+18 from M10c)
+- **Cumulative: 264 + 17 skipped** (+21 from M10c)
+
+**Out of scope (M10e+):**
+
+- Frankfurter rate-limit handling (free tier generous)
+- DART per-line-item drill-down (operating cash flow, R&D expense,
+  inventory turn) — full statement returns 100+ rows we currently
+  filter to 9 line items
+- UI surfacing of balance-sheet bars in the equities table (the
+  data lands now; viewing is a follow-up slice)
+
 ### Phase 2.5 roadmap (added to DESIGN.md, 2026-05-20)
 
 Two new directions captured in `DESIGN.md` §8.5 (IA redesign) + §14

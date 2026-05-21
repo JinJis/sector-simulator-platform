@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import date
 
 import httpx
@@ -51,6 +52,27 @@ class FrankfurterFx:
     async def krw_per_usd(self, on: date) -> float | None:
         """Return KRW per 1 USD on (or near) `on`. None if unavailable."""
         return await self._fetch("USD", "KRW", on)
+
+    async def rate(self, *, base: str, target: str, on: date) -> float | None:
+        """Generic historical rate lookup (M10d). Returns
+        `target per 1 base` on (or near) `on`, or None when the pair
+        isn't supported / Frankfurter returns an error. Same on-disk
+        contract as `krw_per_usd` — caching, async-lock, exception
+        handling all apply."""
+        return await self._fetch(base.upper(), target.upper(), on)
+
+    def local_per_usd_factory(
+        self, currency: str
+    ) -> Callable[[date], Awaitable[float | None]]:
+        """Build a partial `(date) → local-per-1-USD` callable for an
+        arbitrary local currency. Useful when wiring a non-DART KR
+        adapter (e.g., a future JPY / EUR ingest) into the same
+        per-quarter FX path as `DartSource(fx_for=...)`."""
+
+        async def lookup(on: date) -> float | None:
+            return await self._fetch("USD", currency.upper(), on)
+
+        return lookup
 
     async def _fetch(self, base: str, target: str, on: date) -> float | None:
         key = (on.isoformat(), base, target)

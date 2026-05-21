@@ -63,6 +63,15 @@ DA_CONCEPTS = [
     "DepreciationAmortizationAndAccretionNet",
     "Depreciation",
 ]
+# Balance-sheet totals (M10d). BS items are *instant* facts (one date,
+# no covered period) so we filter on the absence of `qtrs` rather than
+# `qtrs == 1`. Concepts are stable across most us-gaap filers.
+ASSETS_CONCEPTS = ["Assets"]
+LIABILITIES_CONCEPTS = ["Liabilities"]
+EQUITY_CONCEPTS = [
+    "StockholdersEquity",
+    "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+]
 
 # Quarter mapping from fp (fiscal period) string.
 FP_TO_QUARTER = {"Q1": 1, "Q2": 2, "Q3": 3, "Q4": 4}
@@ -109,6 +118,27 @@ def _pick_quarterly_facts(
     return []
 
 
+def _pick_instant_facts(
+    facts_json: dict[str, Any], concepts: list[str]
+) -> list[dict[str, Any]]:
+    """Balance-sheet items publish *instant* facts (one date, no
+    covered-period span). Filter for rows without `qtrs` since those
+    are the point-in-time values. We still index by (fy, fq, end_iso)
+    in the aggregator — the BS row gets joined onto the matching
+    quarter by its `end` date.
+    """
+    us_gaap = facts_json.get("facts", {}).get("us-gaap", {})
+    for c in concepts:
+        units = us_gaap.get(c, {}).get("units", {})
+        usd = units.get("USD") or []
+        if not usd:
+            continue
+        instant = [f for f in usd if "qtrs" not in f or f.get("qtrs") in (None, 0)]
+        if instant:
+            return instant
+    return []
+
+
 def _aggregate(
     facts_by_concept: dict[str, list[dict[str, Any]]],
     quarters: int,
@@ -150,6 +180,9 @@ def _aggregate(
         net = m.get("net_income")
         capex = m.get("capex")
         d_and_a = m.get("d_and_a")
+        assets = m.get("assets")
+        liabilities = m.get("liabilities")
+        equity = m.get("equity")
         gross = revenue - cogs if revenue is not None and cogs is not None else None
         # Approximate opex from operating income: opex ≈ gross - op_income.
         opex = (gross - op_income) if gross is not None and op_income is not None else None
@@ -172,6 +205,9 @@ def _aggregate(
                 ebitda_usd=ebitda,
                 net_income_usd=net,
                 capex_usd=abs(capex) if capex is not None else None,
+                total_assets_usd=assets,
+                total_liabilities_usd=liabilities,
+                total_equity_usd=equity,
                 source="edgar",
             )
         )
@@ -257,8 +293,18 @@ class EdgarSource:
             "net_income": _pick_quarterly_facts(facts, NET_INCOME_CONCEPTS),
             "capex": _pick_quarterly_facts(facts, CAPEX_CONCEPTS),
             "d_and_a": _pick_quarterly_facts(facts, DA_CONCEPTS),
+            # Balance sheet items publish as `instant` facts (no `qtrs`).
+            "assets": _pick_instant_facts(facts, ASSETS_CONCEPTS),
+            "liabilities": _pick_instant_facts(facts, LIABILITIES_CONCEPTS),
+            "equity": _pick_instant_facts(facts, EQUITY_CONCEPTS),
         }
         return _aggregate(facts_by_concept, quarters=quarters)
 
 
-__all__ = ["EdgarSource", "_aggregate", "_pick_quarterly_facts", "_calendar_quarter"]
+__all__ = [
+    "EdgarSource",
+    "_aggregate",
+    "_pick_quarterly_facts",
+    "_pick_instant_facts",
+    "_calendar_quarter",
+]

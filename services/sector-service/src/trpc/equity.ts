@@ -73,6 +73,11 @@ const FinancialQuarterOut = z.object({
   ebitda_usd: z.number().nullable(),
   net_income_usd: z.number().nullable(),
   capex_usd: z.number().nullable(),
+  // Balance sheet (M10d) — usually populated; the simple-endpoint
+  // legacy data and mock-seed earlier than M10d leaves these null.
+  total_assets_usd: z.number().nullable(),
+  total_liabilities_usd: z.number().nullable(),
+  total_equity_usd: z.number().nullable(),
   source: z.string(),
 });
 

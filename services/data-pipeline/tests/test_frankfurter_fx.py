@@ -129,3 +129,44 @@ async def test_missing_target_currency_returns_none(
     fx = FrankfurterFx()
     rate = await fx.krw_per_usd(date(2025, 3, 31))
     assert rate is None
+
+
+@pytest.mark.asyncio
+async def test_generic_rate_method(monkeypatch: pytest.MonkeyPatch) -> None:
+    """M10d: arbitrary `(base, target)` lookup, not just USD/KRW."""
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json={"rates": {"JPY": 152.4}})
+
+    _install_mock(monkeypatch, handler)
+
+    fx = FrankfurterFx()
+    rate = await fx.rate(base="usd", target="jpy", on=date(2025, 6, 30))
+    assert rate == pytest.approx(152.4)
+    assert "from=USD" in captured["url"]
+    assert "to=JPY" in captured["url"]
+
+
+@pytest.mark.asyncio
+async def test_local_per_usd_factory_returns_currying_closure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """M10d: factory yields a `(date) → rate` callable for one currency,
+    plumbed into per-quarter FX paths like DartSource(fx_for=...)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "JPY" in str(request.url):
+            return httpx.Response(200, json={"rates": {"JPY": 152.4}})
+        return httpx.Response(200, json={"rates": {"EUR": 0.92}})
+
+    _install_mock(monkeypatch, handler)
+
+    fx = FrankfurterFx()
+    jpy_lookup = fx.local_per_usd_factory("JPY")
+    eur_lookup = fx.local_per_usd_factory("EUR")
+    rate_jpy = await jpy_lookup(date(2025, 6, 30))
+    rate_eur = await eur_lookup(date(2025, 6, 30))
+    assert rate_jpy == pytest.approx(152.4)
+    assert rate_eur == pytest.approx(0.92)

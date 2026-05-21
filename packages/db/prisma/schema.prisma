@@ -129,6 +129,12 @@ model EquityFinancial {
   net_income_usd    Float?   @map("net_income_usd")
   capex_usd         Float?   @map("capex_usd")
 
+  // Balance sheet (M10d) — totals only. Detailed sub-accounts can
+  // come later; these three are enough for leverage / book-value plots.
+  total_assets_usd       Float?   @map("total_assets_usd")
+  total_liabilities_usd  Float?   @map("total_liabilities_usd")
+  total_equity_usd       Float?   @map("total_equity_usd")
+
   source         String   @default("mock")
   inserted_at    DateTime @default(now()) @map("inserted_at")
 

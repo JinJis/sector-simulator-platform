@@ -97,6 +97,30 @@ describe("buildFinancials", () => {
     }
   });
 
+  it("M10d balance sheet identity: assets = liabilities + equity", () => {
+    const s = buildFinancials(SAMSUNG);
+    for (const r of s) {
+      expect(r.total_assets_usd).toBeCloseTo(
+        r.total_liabilities_usd + r.total_equity_usd,
+        2,
+      );
+    }
+  });
+
+  it("M10d total assets grow over time", () => {
+    const s = buildFinancials(SAMSUNG);
+    expect(s[s.length - 1]!.total_assets_usd).toBeGreaterThan(s[0]!.total_assets_usd);
+  });
+
+  it("M10d leverage stays in a sensible band per ticker", () => {
+    const s = buildFinancials(SAMSUNG);
+    for (const r of s) {
+      const lev = r.total_liabilities_usd / r.total_assets_usd;
+      expect(lev).toBeGreaterThan(0.30);
+      expect(lev).toBeLessThan(0.75);
+    }
+  });
+
   it("capex is a fraction of revenue", () => {
     const s = buildFinancials(MICRON);
     for (const r of s) {

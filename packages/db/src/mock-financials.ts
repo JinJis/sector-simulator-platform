@@ -34,6 +34,9 @@ export interface MockFinancialRow {
   ebitda_usd: number;
   net_income_usd: number;
   capex_usd: number;
+  total_assets_usd: number;
+  total_liabilities_usd: number;
+  total_equity_usd: number;
 }
 
 export interface BuildFinancialsOptions {
@@ -112,6 +115,10 @@ export function buildFinancials(
   // EBITDA = gross_profit - opex (approximation; D&A folded in below)
   // Net income = ebitda × (1 - tax_drag - depreciation_drag)
   const taxAndDeprDrag = 0.30 + rand() * 0.15;     // 30-45% combined
+  // Balance sheet ratios (M10d). Assets sized as ~0.8-1.4× annual
+  // revenue; leverage 35-65% of assets are liabilities.
+  const assetsToAnnualRev = 0.8 + rand() * 0.6;
+  const leverage = 0.35 + rand() * 0.30;
 
   // Anchor: market_cap / 8 ≈ rough quarterly revenue at current scale.
   // We grow back from "today" so the most recent quarter ≈ this anchor.
@@ -121,6 +128,11 @@ export function buildFinancials(
   // Oldest first; we set revenue_oldest = anchor / (1+g)^(quarters-1)
   // and walk forward. Each quarter wobbles ±3% around the trend.
   const baseRev = anchorRev / Math.pow(1 + growth, quarters - 1);
+
+  // Anchor for BS — scale the company's assets at "today's" annual
+  // revenue, then grow back proportional to the quarter's revenue.
+  const annualRevToday = baseRev * Math.pow(1 + growth, quarters - 1) * 4;
+  const assetsAnchor = annualRevToday * assetsToAnnualRev;
 
   const rows: MockFinancialRow[] = [];
   for (let i = 0; i < quartersList.length; i += 1) {
@@ -133,6 +145,11 @@ export function buildFinancials(
     const ebitda = grossProfit - opex;
     const netIncome = ebitda * (1 - taxAndDeprDrag);
     const capex = revenue * capexRatio;
+    // BS grows with the company; mild independent wobble.
+    const bsWobble = 1 + (rand() - 0.5) * 0.04;
+    const totalAssets = assetsAnchor * Math.pow(1 + growth, i - (quarters - 1)) * bsWobble;
+    const totalLiabilities = totalAssets * leverage;
+    const totalEquity = totalAssets - totalLiabilities;
 
     rows.push({
       fiscal_year: year,
@@ -144,6 +161,9 @@ export function buildFinancials(
       opex_usd: opex,
       ebitda_usd: ebitda,
       net_income_usd: netIncome,
+      total_assets_usd: totalAssets,
+      total_liabilities_usd: totalLiabilities,
+      total_equity_usd: totalEquity,
       capex_usd: capex,
     });
   }
