@@ -2,8 +2,9 @@
 
 Runs the workflow end-to-end against realistic sector descriptions. In
 offline mode (default) the agent's response is replayed from a canned
-`Decomposition`; in live mode (`ANTHROPIC_EVAL_LIVE=1`) the real Opus
-4.7 call is made and the same assertions run against the actual output.
+`Decomposition`; in live mode (`GEMINI_EVAL_LIVE=1`) the real Gemini
+3.1 Pro call is made and the same assertions run against the actual
+output.
 
 Each assertion checks an *invariant* — something that must hold for any
 valid Decomposition. Per-case content checks belong inline in the case

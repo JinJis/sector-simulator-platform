@@ -51,11 +51,16 @@
 - Python 3.12+
 
 ### Agent / LLM
-- Anthropic Claude (Opus 4.7 / Sonnet 4.6 / Haiku 4.5) — model routing 필수
-- Google Gemini Deep Search API (실시간 web research)
+- Google Gemini (3.1-pro-preview / 3-flash-preview / 3.1-flash-lite) — model routing 필수
+- 단일 API 키 사용 — `GEMINI_API_KEY` env 변수
+- Tier mapping (`packages/agent-tools/llm_client.py`):
+  - `opus` → `gemini-3.1-pro-preview` (critical reasoning)
+  - `sonnet` → `gemini-3-flash-preview` (balanced)
+  - `haiku` → `gemini-3.1-flash-lite` (cheapest)
 - Temporal.io (long-running workflow)
 - Modal 또는 E2B (sandboxed code execution)
 - MCP tools (`packages/agent-tools`)
+- (Anthropic Claude는 M34 (2026-05-22)에서 전체 제거됨 — `LLMClient.call()` 인터페이스는 그대로 유지)
 
 ### Data
 - PostgreSQL 16 + TimescaleDB extension + pgvector
@@ -124,7 +129,7 @@
 ### 초기 세팅
 ```bash
 pnpm install
-cp .env.example .env            # 필수 env 채우기 (DATABASE_URL, ANTHROPIC_API_KEY, ...)
+cp .env.example .env            # 필수 env 채우기 (DATABASE_URL, GEMINI_API_KEY, ...)
 pnpm db:migrate dev             # Prisma migrations
 pnpm seed                       # 시드 데이터 (1개 하드코딩 섹터)
 ```
@@ -179,14 +184,14 @@ Admin UI
   → API Gateway
   → agent-orchestration-service
   → Temporal workflow
-    → Research Agent (Gemini)
-    → Decomposition Agent (Claude Opus)
-    → Driver Inference Agent (Sonnet)
-    → Edge Inference Agent (Opus)
-    → Code Gen Agent (Sonnet)
-    → Code Review Agent (Sonnet)
+    → Research Agent (Gemini Flash)
+    → Decomposition Agent (Gemini Pro)
+    → Driver Inference Agent (Gemini Flash)
+    → Edge Inference Agent (Gemini Pro)
+    → Code Gen Agent (Gemini Pro)
+    → Code Review Agent (Gemini Pro)
     [admin approval checkpoint]
-    → Deployment Agent (Haiku)
+    → Deployment Agent (Gemini Flash-Lite)
   → Sandbox (Modal) for code validation
   → Deploy to platform → live for users
 ```
@@ -259,13 +264,13 @@ class SimulationBase:
 
 ### LLM calls
 - **항상** `packages/agent-tools/llm-client`를 통해 호출 (비용 로깅 내장)
-- Prompt caching 활성화 (static system prompt + tool defs)
-- Model routing:
-  - **Haiku**: routing, extraction, simple classification
-  - **Sonnet**: reasoning, code gen, code review, report writing
-  - **Opus**: critical decomposition, edge inference (높은 정확도 필요한 곳만)
-- 모든 agent output은 Pydantic schema로 validation
-- 가능하면 Batch API로 비실시간 작업 (50% 할인)
+- 공급자: Google Gemini (M34 이후). `LLMClient.call(tier=...)` 인터페이스는 변경 없음.
+- Model routing (tier 이름은 historical — 의미는 그대로):
+  - **`haiku`** (= `gemini-3.1-flash-lite`): routing, extraction, simple classification
+  - **`sonnet`** (= `gemini-3-flash-preview`): reasoning, code gen, code review, report writing
+  - **`opus`** (= `gemini-3.1-pro-preview`): critical decomposition, edge inference (높은 정확도 필요한 곳만)
+- 모든 agent output은 Pydantic schema로 validation (Gemini의 `response_schema` 기능 활용)
+- `adaptive_thinking=True`는 Gemini의 dynamic thinking budget (`-1`)으로 매핑됨 — overthinking 방지를 위해 opt-in
 
 ---
 

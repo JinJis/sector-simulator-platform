@@ -6,7 +6,7 @@
  * write/read paths; resolved counts stay at 0 until the cron is up.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
@@ -408,12 +408,12 @@ export const predictionRouter = router({
     .output(RationaleAnalysisSchema)
     .mutation(async ({ ctx, input }) => {
       const user = requireUser(ctx);
-      const apiKey = env().ANTHROPIC_API_KEY;
+      const apiKey = env().GEMINI_API_KEY;
       if (!apiKey) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message:
-            "AI 분석이 아직 구성되지 않았습니다. (ANTHROPIC_API_KEY 미설정 — 관리자에게 문의해 주세요.)",
+            "AI 분석이 아직 구성되지 않았습니다. (GEMINI_API_KEY 미설정 — 관리자에게 문의해 주세요.)",
         });
       }
 
@@ -502,22 +502,29 @@ ${input.rationale || "(비어 있음)"}
 
 JSON 만 출력해 주세요 (다른 텍스트 금지).`;
 
-      const client = new Anthropic({ apiKey });
+      // Gemini 3 Flash. JSON-only mode + maxOutputTokens cap keeps the
+      // call cheap (≈ $0.005 per analyze) and shaped for the
+      // RationaleAnalysisSchema downstream zod validation.
+      const ai = new GoogleGenAI({ apiKey });
       let text: string;
       try {
-        const resp = await client.messages.create({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1024,
-          system: "You are an investment analyst. Respond ONLY with valid JSON. No markdown, no commentary, just the JSON object the user asks for.",
-          messages: [{ role: "user", content: userPrompt }],
+        const resp = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+          config: {
+            systemInstruction:
+              "You are an investment analyst. Respond ONLY with valid JSON. No markdown, no commentary, just the JSON object the user asks for.",
+            responseMimeType: "application/json",
+            maxOutputTokens: 1024,
+          },
         });
-        const block = resp.content[0];
-        if (!block || block.type !== "text") {
-          throw new Error("empty response from Claude");
+        const out = resp.text;
+        if (typeof out !== "string" || out.length === 0) {
+          throw new Error("empty response from Gemini");
         }
-        text = block.text.trim();
+        text = out.trim();
       } catch (e) {
-        ctx.log.error({ err: e }, "analyzeRationale: Claude call failed");
+        ctx.log.error({ err: e }, "analyzeRationale: Gemini call failed");
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "AI 분석 중 오류가 발생했습니다. 다시 시도해 주세요.",

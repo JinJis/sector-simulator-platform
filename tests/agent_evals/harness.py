@@ -4,10 +4,12 @@
 list of assertions over the parsed output. `CostBudget` is the upper
 bound on what a case may spend; the harness fails a case that overruns.
 
-Cases work in both offline (`FakeAnthropic` returns the canned response)
-and live (`ANTHROPIC_EVAL_LIVE=1`, real `Anthropic()` client) modes.
-The Python contract is identical in both modes — only the LLMClient's
-internal client object differs.
+Cases work in both offline (`FakeGenAI` returns the canned response)
+and live (`GEMINI_EVAL_LIVE=1`, real `genai.Client()` via LLMClient)
+modes. The Python contract is identical in both modes — only the
+LLMClient's internal client object differs.
+
+History: pre-M34 this faked Anthropic; M34 swapped to Gemini.
 """
 
 from __future__ import annotations
@@ -29,8 +31,14 @@ OutputT = TypeVar("OutputT", bound=BaseModel)
 def is_live_mode() -> bool:
     """Live mode means real API calls. Triggered by setting the env var
     explicitly — never inferred. Eval runs in offline mode by default so
-    `pytest tests/agent-evals` is cheap to run in CI."""
-    return os.environ.get("ANTHROPIC_EVAL_LIVE", "").lower() in {"1", "true", "yes"}
+    `pytest tests/agent-evals` is cheap to run in CI.
+
+    `ANTHROPIC_EVAL_LIVE` kept as a back-compat alias so any wrapper
+    scripts that already set it continue to work."""
+    for var in ("GEMINI_EVAL_LIVE", "ANTHROPIC_EVAL_LIVE"):
+        if os.environ.get(var, "").lower() in {"1", "true", "yes"}:
+            return True
+    return False
 
 
 # ---- Cost guard ----------------------------------------------------------
@@ -84,54 +92,66 @@ class Case(Generic[OutputT]):
 
 @dataclass
 class _FakeUsage:
-    input_tokens: int = 4096
-    output_tokens: int = 1024
-    cache_creation_input_tokens: int = 0
-    cache_read_input_tokens: int = 0
+    """Mirrors `genai.types.GenerateContentResponseUsageMetadata`."""
+
+    prompt_token_count: int = 4096
+    candidates_token_count: int = 1024
+    thoughts_token_count: int = 0
+    cached_content_token_count: int = 0
 
 
 @dataclass
-class _FakeBlock:
-    type: str
+class _FakePart:
     text: str = ""
 
 
 @dataclass
+class _FakeContent:
+    parts: list[_FakePart] = field(default_factory=list)
+
+
+@dataclass
+class _FakeCandidate:
+    content: _FakeContent | None = None
+    finish_reason: str | None = "STOP"
+
+
+@dataclass
 class _FakeResponse:
-    content: list[_FakeBlock] = field(default_factory=list)
-    usage: _FakeUsage = field(default_factory=_FakeUsage)
-    stop_reason: str | None = "end_turn"
-    parsed_output: Any = None
+    text: str = ""
+    parsed: Any = None
+    candidates: list[_FakeCandidate] = field(default_factory=list)
+    usage_metadata: _FakeUsage = field(default_factory=_FakeUsage)
 
 
-class _FakeMessages:
+class _FakeModels:
     def __init__(self, canned: BaseModel) -> None:
         self._canned = canned
         self.requests: list[dict[str, Any]] = []
 
-    def _respond(self, **kwargs: Any) -> _FakeResponse:
+    def generate_content(self, **kwargs: Any) -> _FakeResponse:
         self.requests.append(kwargs)
+        text = self._canned.model_dump_json()
         return _FakeResponse(
-            content=[_FakeBlock(type="text", text=self._canned.model_dump_json())],
-            usage=_FakeUsage(),
-            parsed_output=self._canned,
+            text=text,
+            parsed=self._canned,
+            candidates=[
+                _FakeCandidate(
+                    content=_FakeContent(parts=[_FakePart(text=text)]),
+                    finish_reason="STOP",
+                )
+            ],
         )
 
-    def create(self, **kwargs: Any) -> _FakeResponse:
-        return self._respond(**kwargs)
 
-    def parse(self, **kwargs: Any) -> _FakeResponse:
-        return self._respond(**kwargs)
-
-
-class _FakeAnthropic:
+class _FakeGenAI:
     def __init__(self, canned: BaseModel) -> None:
-        self.messages = _FakeMessages(canned)
+        self.models = _FakeModels(canned)
 
 
 def build_llm(case: Case) -> LLMClient:
     """Build an LLMClient suitable for one case. Lives here so tests can
     construct it directly when they don't want the pytest fixture."""
     if is_live_mode():
-        return LLMClient()  # uses ANTHROPIC_API_KEY from env
-    return LLMClient(client=_FakeAnthropic(case.canned_response))
+        return LLMClient()  # uses GEMINI_API_KEY from env
+    return LLMClient(client=_FakeGenAI(case.canned_response))

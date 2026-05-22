@@ -13,7 +13,8 @@ Structured eval harness for the Phase 2 agent layer. Two tiers:
 - **Tier 2 — workflow behavior** (`test_decomposition.py`,
   later one file per workflow). Runs the actual `Workflow` class
   against fixtures of (input, canned response, assertions). Offline by
-  default — flip to live API with `ANTHROPIC_EVAL_LIVE=1`.
+  default — flip to live API with `GEMINI_EVAL_LIVE=1`
+  (`ANTHROPIC_EVAL_LIVE=1` still accepted as a back-compat alias).
 
 ## Running
 
@@ -21,10 +22,10 @@ Structured eval harness for the Phase 2 agent layer. Two tiers:
 # Default — offline, no API calls
 .venv/bin/python -m pytest tests/agent-evals -v
 
-# Live mode — real Anthropic API. Requires ANTHROPIC_API_KEY. Cost is
+# Live mode — real Gemini API. Requires GEMINI_API_KEY. Cost is
 # bounded per case (see CostBudget in harness.py); a case that exceeds
 # budget fails fast.
-ANTHROPIC_EVAL_LIVE=1 .venv/bin/python -m pytest tests/agent-evals -v
+GEMINI_EVAL_LIVE=1 .venv/bin/python -m pytest tests/agent-evals -v
 ```
 
 Live mode is intentionally opt-in — eval cases call paid APIs, and

@@ -241,7 +241,9 @@ async def test_research_workflow_succeeds(
     assert "launch cost trends" in user_text
     assert "radiation tolerance" in user_text
     # Sonnet tier — adaptive thinking should NOT be set for sonnet calls.
-    assert last.get("thinking") is None
+    # (post-M34: Gemini-backed wrapper still routes thinking via budget;
+    # the assertion now checks that the *adaptive* mode isn't enabled.)
+    assert last.get("thinking") != {"type": "adaptive"}
 
 
 @pytest.mark.asyncio

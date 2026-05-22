@@ -61,7 +61,7 @@ The platform answers, in one place: *"What's the upside on this stock if the sec
 
 ## 1. Current architecture (2026-05-21)
 
-**5 services + 2 Next.js apps**, all wired through `docker-compose`. Postgres-backed; Anthropic + yfinance + Gemini consumed externally.
+**5 services + 2 Next.js apps**, all wired through `docker-compose`. Postgres-backed; Google Gemini (3.1-pro / 3-flash / 3.1-flash-lite) + yfinance consumed externally. Single LLM API key (`GEMINI_API_KEY`) since M34.
 
 ```
                             ┌───────────────────────────────────────┐
@@ -113,7 +113,7 @@ The platform answers, in one place: *"What's the upside on this stock if the sec
 - `@platform/db` — Prisma 5.22, schema + migrations source-of-truth
 - `@platform/ui` — shared shadcn-flavored components (`Breadcrumbs`, `SubNav`, `Sparkline`)
 - `@platform/sdk-python` — `SimulationBase`, `Driver`, `Output`
-- `@platform/agent-tools` — Anthropic LLM client + prompt loader + cost meter
+- `@platform/agent-tools` — Gemini LLM client + prompt loader + cost meter
 
 ---
 
@@ -165,7 +165,7 @@ The platform answers, in one place: *"What's the upside on this stock if the sec
 
 ### Agent orchestration
 
-- 7 live workflows: `DecompositionWorkflow` (Opus 4.7), `EdgeInferenceWorkflow` (Opus), `ProposeSectorWorkflow` (chain), `ResearchWorkflow` (Sonnet), `DriverInferenceWorkflow` (Sonnet), `CodeGenWorkflow` (Sonnet), `CodeReviewWorkflow` (Sonnet), `FullPipelineWorkflow` (6-stage chain).
+- 7 live workflows: `DecompositionWorkflow` (Gemini Pro), `EdgeInferenceWorkflow` (Pro), `ProposeSectorWorkflow` (chain), `ResearchWorkflow` (Gemini Flash), `DriverInferenceWorkflow` (Flash), `CodeGenWorkflow` (Pro), `CodeReviewWorkflow` (Pro), `FullPipelineWorkflow` (6-stage chain).
 - **Full pipeline (M28)** — `research → decomposition → driver_inference → edge_inference → code_gen → code_review`. Produces a reviewed `SimulationBase` Python source file as a string (not executed; Modal sandbox is a future slice). Typical cost $0.50–$1.00; gated by per-user budget.
 - Workflow records persisted in Postgres (`agent_workflows` table), survive restarts.
 - Dangling sweep on startup flips zombie pending/running workflows to failed after 5min grace.
@@ -180,7 +180,7 @@ The platform answers, in one place: *"What's the upside on this stock if the sec
 ### One-shot Docker (all 7 services)
 
 ```bash
-cp .env.example .env       # set ANTHROPIC_API_KEY if you want agent runs
+cp .env.example .env       # set GEMINI_API_KEY if you want agent runs
 docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 ```
 
@@ -195,7 +195,7 @@ Then open:
 # prereqs: Node 20+, pnpm 9+, Python 3.12+, uv, Postgres 16 reachable
 pnpm install
 uv sync
-cp .env.example .env       # set DATABASE_URL + ANTHROPIC_API_KEY
+cp .env.example .env       # set DATABASE_URL + GEMINI_API_KEY
 pnpm db:migrate            # apply all migrations
 pnpm db:seed               # 3 sectors
 pnpm db:seed:equities      # 49 equity rows
@@ -284,7 +284,7 @@ curl -X POST http://localhost:8002/workflows/decompose \
 curl http://localhost:8002/workflows/<workflow_id>
 ```
 
-Needs `ANTHROPIC_API_KEY` set in `.env`. Without it the endpoint returns the workflow record but the run errors out.
+Needs `GEMINI_API_KEY` set in `.env`. Without it the endpoint returns the workflow record but the run errors out.
 
 ### Quality gates
 
@@ -348,8 +348,9 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **M24** | Watchlist + stock comparison + page tours + a11y. New `watchlist_items` table + `watchlist.*` tRPC + `<WatchButton>` on every equity row/header + `/watchlist` page (★ 관심 종목 link in user menu). New `/sectors/[slug]/compare-stocks?a=&b=` route with side-by-side cards (price / 30d / 90d / 섹터 노출 / top 3 영향 요인 / 최신 분기 fundamentals) + "한눈에 비교" diff table marking the winner per row. Floating "📍 이 페이지 둘러보기" button on every primary page → 3-5 step plain-Korean modal (10 page-specific tour entries). `useFocusTrap` hook + applied to Onboarding/PageTour modals. Skip-to-content link in SiteHeader. `aria-current` / `aria-live` / `aria-label` polished. |
 | **M25** | Agent flow → user-facing + admin pivot + Premium scaffolding. `User.tier` + `Sector.created_by_user_id` schema. New `/propose` (4-step UX: prompt → working → result → activate) wired to `agent.startProposeSector` + auto `sector.activate` chain. New `/my-sectors` page + user menu links. `<ProposeCta>` on home. Settings adds "현재 플랜" section with Premium upgrade stub. Admin pivots to monitoring dashboard with 4 metric tiles + new `/admin/users` page (search/filter + ★ Promote button). New `admin.listUsers` + `admin.setTier` tRPC. Full agent capabilities inventory at `docs/agent-capabilities.md`. |
 | **M26 + M27 + M32** | Payment + per-user agent budget + community/predictions/suggestions. Stripe customer/subscription/events. agent_workflows.user_id + 24h cap on analyzeRationale. Predictions + UserScore + SectorSuggestion + community.hubFeed. /community + sub-routes (predict / leaderboard / my-predictions / suggestions). |
-| **M33** | Scenario-backed predictions + LLM rationale analysis. `predictions.rationale_analysis` JSONB. `prediction.analyzeRationale` tRPC calling claude-sonnet-4-6. Predict form 5-step rework (sector → horizon → magnitude → 근거(scenario+text+AI) → submit). Shared `PredictionRationale` component on equity detail + my-predictions. Default horizon shifted from 1d to 1w. |
+| **M33** | Scenario-backed predictions + LLM rationale analysis. `predictions.rationale_analysis` JSONB. `prediction.analyzeRationale` tRPC calling claude-sonnet-4-6 (later swapped to gemini-3-flash-preview in M34). Predict form 5-step rework (sector → horizon → magnitude → 근거(scenario+text+AI) → submit). Shared `PredictionRationale` component on equity detail + my-predictions. Default horizon shifted from 1d to 1w. |
 | **M28** | Dormant agent prompts → live workflows. Four written prompts (`research` / `driver-inference` / `code-gen` / `code-review`) become live workflows with full Pydantic schemas and HTTP/tRPC surfaces. New `FullPipelineWorkflow` chains 6 agents end-to-end (Research → Decomposition → DriverInference → EdgeInference → CodeGen → CodeReview), producing a reviewed `SimulationBase` Python source file as a string (typical cost $0.50–$1.00). Admin `/agent-runs/new` gains the Full Pipeline pipeline picker; `/agent-runs/[id]` renders all six stage outputs (ResearchBrief / Decomposition / DriverInference / EdgeInference / CodeGenSource / CodeReviewFindings) with severity-tagged review badges. Generated source is shown for review only — NOT executed by the orchestrator (Modal sandbox is a future slice; CLAUDE.md security invariant preserved). 16 new pytest cases (9 workflow + 7 HTTP). |
+| **M34** | LLM provider swap (Claude → Gemini). Replace Anthropic SDK with `google-genai` (Python) + `@google/genai` (TS) across the entire platform. Single API key (`GEMINI_API_KEY`). Tier mapping: `opus` → `gemini-3.1-pro-preview`, `sonnet` → `gemini-3-flash-preview`, `haiku` → `gemini-3.1-flash-lite`. `LLMClient.call()` interface preserved — no workflow changes. Cost meter rebuilt with Gemini 3.x pricing ($2/$12 Pro, $0.50/$3 Flash, $0.25/$1.50 Flash-Lite per 1M tokens; cache-read 0.25×). Expected per-user monthly LLM bill drops ~80% vs Claude. 20 agent-tools tests, 56 agent-orchestration tests, 34 agent-evals — all green. |
 
 ### Planned next — M28b → M31
 
@@ -401,7 +402,7 @@ full inventory of agent features (shipped + dormant + roadmap).
 │   ├── db/                           # Prisma schema + migrations + seed
 │   ├── ui/                           # Shared shadcn components
 │   ├── sdk-python/                   # SimulationBase + Driver + Output
-│   └── agent-tools/                  # Anthropic client + prompts loader
+│   └── agent-tools/                  # Gemini client + prompts loader (M34)
 ├── prompts/                          # 6 versioned agent prompts (.md)
 ├── infra/docker/                     # Per-service Dockerfiles
 ├── docker-compose.{yml,local,dev,prod}.yml
@@ -440,7 +441,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up admin web se
 | Var | Default | Purpose |
 |---|---|---|
 | `DATABASE_URL` | `postgresql://platform:platform@postgres:5432/platform_dev` | All services that talk to Postgres |
-| `ANTHROPIC_API_KEY` | (unset) | Required for live agent runs; without it agent-orchestration only serves `/health` |
+| `GEMINI_API_KEY` | (unset) | Required for live agent runs + prediction.analyzeRationale; without it agent-orchestration only serves `/health` |
 | `SECTOR_SERVICE_URL` | `http://sector-service:8001` | RSC-side fetch from web/admin |
 | `AGENT_ORCHESTRATION_URL` | `http://agent-orchestration:8002` | Admin → orchestration calls |
 | `INGEST_SOURCE` | local: `fake`, prod: `yfinance` | data-pipeline data source |

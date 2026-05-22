@@ -1,11 +1,17 @@
 """Cost model + meter for LLM calls.
 
-Prices are the public Anthropic per-1M token rates as of 2026-05.
-Cache reads are billed at ~0.1× input; 5-minute cache writes at ~1.25×.
-We don't track the 1-hour TTL premium because everywhere we cache today
-uses the default ephemeral (5-minute) TTL.
+Prices are the public Google Gemini per-1M token rates as of 2026-05.
+Thinking tokens are billed at the same rate as output tokens.
 
 Numbers stored as USD per **1M** tokens so the multipliers stay readable.
+
+History: this module used to encode Anthropic Claude pricing. We swapped
+to Gemini in M34 (2026-05-22). The `cache_read_multiplier` and
+`cache_write_multiplier` fields are kept for shape compatibility but
+default to neutral values — Gemini's context caching API is invoked
+through the `cachedContent` resource (an explicit upload), not the
+inline ephemeral-cache trick we used with Claude, so the wrapper no
+longer reports cache_creation/cache_read counts.
 """
 
 from __future__ import annotations
@@ -18,31 +24,52 @@ from threading import Lock
 class ModelPrice:
     input_per_million_usd: float
     output_per_million_usd: float
-    # Multipliers applied to the input price.
-    cache_read_multiplier: float = 0.1
-    cache_write_multiplier: float = 1.25
+    # Multipliers applied to the input price. Gemini default to neutral
+    # — we don't use ephemeral caching for Gemini calls.
+    cache_read_multiplier: float = 0.25
+    cache_write_multiplier: float = 1.0
 
 
-# Public API prices (per 1M tokens) at the time of writing.
-# Source of truth lives at the model catalog page — re-check when migrating models.
+# Public API prices (per 1M tokens) as of 2026-05.
+# https://ai.google.dev/gemini-api/docs/pricing  (verified before this slice)
+#
+# We use Gemini 3.x preview/GA models — they're the freshest tier and
+# (importantly) carry the Gemini 3 reasoning improvements. The pro
+# model bills tiered (<200k vs >200k input); we encode the cheaper
+# tier here because our prompts rarely exceed 50k tokens. If we ever
+# regularly cross 200k, add a `tiered_input_per_million_usd` field
+# instead of guessing.
 _PRICES: dict[str, ModelPrice] = {
-    "claude-opus-4-7": ModelPrice(5.00, 25.00),
-    "claude-sonnet-4-6": ModelPrice(3.00, 15.00),
-    "claude-haiku-4-5": ModelPrice(1.00, 5.00),
+    # Pro — opus tier. Latest reasoning model, used for decomposition +
+    # edge inference + code gen + code review.
+    "gemini-3.1-pro-preview": ModelPrice(2.00, 12.00),
+    # Flash — sonnet tier. Used for research + driver inference +
+    # prediction analysis (Korean rationale summarization in
+    # services/sector-service/src/trpc/prediction.ts).
+    "gemini-3-flash-preview": ModelPrice(0.50, 3.00),
+    # Flash-Lite — haiku tier. Used for cheap extraction / routing.
+    "gemini-3.1-flash-lite": ModelPrice(0.25, 1.50),
 }
 
 
 def model_price(model_id: str) -> ModelPrice:
     """Look up the price entry for a model. Falls back to the cheapest entry
-    (haiku) for unknown IDs rather than raising — so an unfamiliar model
-    surfaces as a small cost spike in the meter instead of a crashed agent.
+    (flash-lite) for unknown IDs rather than raising — so an unfamiliar
+    model surfaces as a small cost spike in the meter instead of a
+    crashed agent.
     """
-    return _PRICES.get(model_id, _PRICES["claude-haiku-4-5"])
+    return _PRICES.get(model_id, _PRICES["gemini-3.1-flash-lite"])
 
 
 @dataclass(frozen=True)
 class PricedUsage:
-    """Token counts + computed USD cost for a single call."""
+    """Token counts + computed USD cost for a single call.
+
+    `cache_creation_input_tokens` / `cache_read_input_tokens` are kept on
+    the dataclass for shape compatibility with the Anthropic-era code,
+    but in Gemini-mode they're always 0 (we don't use explicit context
+    caching today).
+    """
 
     model: str
     input_tokens: int
@@ -53,8 +80,6 @@ class PricedUsage:
 
     @property
     def total_input_tokens(self) -> int:
-        """Including cached + cache-write prefix, which still flow through the
-        prompt even though they're billed at discounted rates."""
         return (
             self.input_tokens
             + self.cache_creation_input_tokens

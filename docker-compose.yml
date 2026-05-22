@@ -97,10 +97,11 @@ services:
       context: .
       dockerfile: infra/docker/agent-orchestration.Dockerfile
     environment:
-      # ANTHROPIC_API_KEY is opt-in — without it, only /health works (any
+      # GEMINI_API_KEY is opt-in — without it, only /health works (any
       # call that constructs a real LLMClient at request time will fail).
       # The fake-client codepath is for tests only.
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Renamed from ANTHROPIC_API_KEY in M34 (Claude → Gemini swap).
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       PROMPTS_DIR: /repo/prompts
       # Persistence: when set, workflow records survive restarts.
       # Without it the service falls back to an in-memory dict.
@@ -149,10 +150,10 @@ services:
       AGENT_ORCHESTRATION_URL: http://agent-orchestration:8002
       DATA_PIPELINE_URL: http://data-pipeline:8003
       DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
-      # M33 — sector-service uses ANTHROPIC_API_KEY for one-shot Claude
-      # Sonnet calls (rationale analysis). Inherits from the host env
-      # so it's the same key the agent-orchestration uses.
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # M33 + M34 — sector-service uses GEMINI_API_KEY for one-shot
+      # Gemini 3 Flash calls (rationale analysis). Inherits from the
+      # host env so it's the same key the agent-orchestration uses.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     depends_on:
       simulation-service:
         condition: service_started

@@ -17,9 +17,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.97.1",
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^10.0.1",
+    "@google/genai": "^1.30.0",
     "@platform/db": "workspace:*",
     "@trpc/server": "^11.0.0-rc.638",
     "bcryptjs": "^3.0.3",

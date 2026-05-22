@@ -3,7 +3,7 @@
   "globalEnv": [
     "NODE_ENV",
     "DATABASE_URL",
-    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
     "NEXT_PUBLIC_SIMULATION_SERVICE_URL"
   ],
   "tasks": {
