@@ -165,11 +165,12 @@ The platform answers, in one place: *"What's the upside on this stock if the sec
 
 ### Agent orchestration
 
-- `DecompositionWorkflow` (Opus 4.7) — natural-language sector description → structured `Decomposition` (drivers / intermediates / outputs).
+- 7 live workflows: `DecompositionWorkflow` (Opus 4.7), `EdgeInferenceWorkflow` (Opus), `ProposeSectorWorkflow` (chain), `ResearchWorkflow` (Sonnet), `DriverInferenceWorkflow` (Sonnet), `CodeGenWorkflow` (Sonnet), `CodeReviewWorkflow` (Sonnet), `FullPipelineWorkflow` (6-stage chain).
+- **Full pipeline (M28)** — `research → decomposition → driver_inference → edge_inference → code_gen → code_review`. Produces a reviewed `SimulationBase` Python source file as a string (not executed; Modal sandbox is a future slice). Typical cost $0.50–$1.00; gated by per-user budget.
 - Workflow records persisted in Postgres (`agent_workflows` table), survive restarts.
 - Dangling sweep on startup flips zombie pending/running workflows to failed after 5min grace.
-- Prompt files in `prompts/` (5 versioned system prompts; hot-reloadable in local mode).
-- Cost meter logs every LLM call with token + USD breakdown.
+- Prompt files in `prompts/` (7 versioned system prompts; hot-reloadable in local mode).
+- Cost meter logs every LLM call with token + USD breakdown; rolls up across all stages of a chained workflow.
 - Eval harness in `tests/agent_evals/` (Tier 1: prompt sanity / Tier 2: workflow behavior).
 
 ---
@@ -346,21 +347,19 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **M23** | Beginner-investor UX overhaul — 7 sector subpages collapsed to **3 primary (개요 / 종목 / 시뮬레이션) + 고급 expander**. Overview rewritten thesis-first (1-paragraph hero + 드라이버 / 블로커 columns with center-out deviation gauges). New `/simulate` shows only the 5 most-impactful sliders + live per-stock impact + 고급 toggle to embed the full ManualPanel. "왜 이 숫자인가" decomposition rewritten as 🟢🔴 plain-Korean sentences ("AI DRAM 수요가 기본값 대비 크게 30% 올라가서 이 종목에 유리하게 작용합니다") with "숫자로 보기" toggle for power users. Home rewritten as hero + 3 emoji-led sector cards + 3 mover highlights, everything analyst-grade behind a "더 보기" expander. Onboarding rewritten as 3-step value demo (pick sector → thesis → live single-slider demo). Plain-Korean language pass across page intents + nav. |
 | **M24** | Watchlist + stock comparison + page tours + a11y. New `watchlist_items` table + `watchlist.*` tRPC + `<WatchButton>` on every equity row/header + `/watchlist` page (★ 관심 종목 link in user menu). New `/sectors/[slug]/compare-stocks?a=&b=` route with side-by-side cards (price / 30d / 90d / 섹터 노출 / top 3 영향 요인 / 최신 분기 fundamentals) + "한눈에 비교" diff table marking the winner per row. Floating "📍 이 페이지 둘러보기" button on every primary page → 3-5 step plain-Korean modal (10 page-specific tour entries). `useFocusTrap` hook + applied to Onboarding/PageTour modals. Skip-to-content link in SiteHeader. `aria-current` / `aria-live` / `aria-label` polished. |
 | **M25** | Agent flow → user-facing + admin pivot + Premium scaffolding. `User.tier` + `Sector.created_by_user_id` schema. New `/propose` (4-step UX: prompt → working → result → activate) wired to `agent.startProposeSector` + auto `sector.activate` chain. New `/my-sectors` page + user menu links. `<ProposeCta>` on home. Settings adds "현재 플랜" section with Premium upgrade stub. Admin pivots to monitoring dashboard with 4 metric tiles + new `/admin/users` page (search/filter + ★ Promote button). New `admin.listUsers` + `admin.setTier` tRPC. Full agent capabilities inventory at `docs/agent-capabilities.md`. |
+| **M26 + M27 + M32** | Payment + per-user agent budget + community/predictions/suggestions. Stripe customer/subscription/events. agent_workflows.user_id + 24h cap on analyzeRationale. Predictions + UserScore + SectorSuggestion + community.hubFeed. /community + sub-routes (predict / leaderboard / my-predictions / suggestions). |
+| **M33** | Scenario-backed predictions + LLM rationale analysis. `predictions.rationale_analysis` JSONB. `prediction.analyzeRationale` tRPC calling claude-sonnet-4-6. Predict form 5-step rework (sector → horizon → magnitude → 근거(scenario+text+AI) → submit). Shared `PredictionRationale` component on equity detail + my-predictions. Default horizon shifted from 1d to 1w. |
+| **M28** | Dormant agent prompts → live workflows. Four written prompts (`research` / `driver-inference` / `code-gen` / `code-review`) become live workflows with full Pydantic schemas and HTTP/tRPC surfaces. New `FullPipelineWorkflow` chains 6 agents end-to-end (Research → Decomposition → DriverInference → EdgeInference → CodeGen → CodeReview), producing a reviewed `SimulationBase` Python source file as a string (typical cost $0.50–$1.00). Admin `/agent-runs/new` gains the Full Pipeline pipeline picker; `/agent-runs/[id]` renders all six stage outputs (ResearchBrief / Decomposition / DriverInference / EdgeInference / CodeGenSource / CodeReviewFindings) with severity-tagged review badges. Generated source is shown for review only — NOT executed by the orchestrator (Modal sandbox is a future slice; CLAUDE.md security invariant preserved). 16 new pytest cases (9 workflow + 7 HTTP). |
 
-### Planned next — M26 → M31
-
-Six concrete milestones queued, ordered by dependency. See
-[`docs/tasks/current.md`](docs/tasks/current.md) for per-milestone
-scope / touch points / dependencies / out-of-scope.
+### Planned next — M28b → M31
 
 | | Scope |
 |---|---|
-| **M26** | Payment integration + hard tier gating — Stripe + Toss Checkout + webhooks. `billing_customers / billing_subscriptions / billing_events` tables. Settings "Premium 업그레이드" stub becomes real. Hard gate on `/propose` for free users (with `AGENT_BETA_FREE=true` env flag during transition). Customer portal link. |
-| **M27** | Per-user agent budget + rate limiting — `BudgetPolicy` per tier (free $0 / premium $20-50 monthly). agent_workflows.user_id FK. Pre-call cost check + per-user concurrent-run cap. Settings "이번 달 사용량" meter. Admin `/users` surfaces MTD usage. Depends on M26. |
-| **M28** | Dormant agent prompts → live workflows — activate the 4 written prompts as workflows: `ResearchWorkflow` (Gemini Deep Search), `DriverInferenceWorkflow` (Sonnet, calibrated defaults+sources), `CodeGenWorkflow` (Sonnet, `SimulationBase` Python), `CodeReviewWorkflow` (Sonnet, severity findings). New `ProposeSectorV2Workflow` chains all 6 stages ($1-2 / run). Code-gen output displayed but not executed until M28b adds Modal/E2B sandbox. Depends on M26 + M27. |
+| **M28b** | Modal/E2B sandbox for agent-generated code — execute the `CodeGenResult.source` inside a network-whitelisted sandbox, run `simulate()` against the calibrated defaults, smoke-test outputs, surface failures back to the workflow record. Unblocks fully automated sector activation. Depends on M28. |
 | **M29** | OAuth providers (Google / GitHub) — `oauth_accounts` table (one user → multiple providers, link-by-email with confirm). `User.password_hash` becomes nullable. New `/api/oauth/[provider]/callback` route handlers. Login + signup pages gain provider buttons. Settings "연결된 계정" section. Independent. |
 | **M30** | Multi-tenant scoping — `workspaces` + `workspace_members` tables. Every user-scoped table gets `workspace_id` FK. Prisma middleware injects automatically; Postgres RLS as 2nd defense line. Workspace switcher in header. Tier moves to workspace. Billing attaches to workspace. Big schema migration; sequencing critical. |
 | **M31** | Backtest harness — new `services/validation-service` (uv member). Weekly cron replays sector × scenario × equity from 90d ago → compares projected vs realized → persists to `backtest_runs`. Equity detail gains "예측 정확도" section. Aggregate calibrates `PROJECTION_SCALE` per sector. Independent of M30. |
+| **M33b** | Prediction resolution cron + permalink — validation-service computes `actual_close + score` at `target_date`. Per-prediction permalink page for sharing. |
 
 See [`docs/agent-capabilities.md`](docs/agent-capabilities.md) for the
 full inventory of agent features (shipped + dormant + roadmap).

@@ -12,6 +12,7 @@ import { z } from "zod";
 import { agentFetch } from "../lib/agent-proxy.js";
 import { checkBudget, readBudget } from "../lib/budget.js";
 import { publicProcedure, router } from "./init.js";
+import type { Context } from "./context.js";
 
 // ---------- Domain: decomposition output ----------------------------------
 
@@ -85,12 +86,117 @@ const ProposeSectorStartInput = z.object({
   reference_data: z.string().max(20000).optional(),
 });
 
+// M28 — dormant prompts as live workflows. Standalone Research takes
+// just a description; the four downstream agents take pre-structured
+// upstream output (admin UI assembles it from prior workflow records).
+const ResearchStartInput = z.object({
+  description: z.string().min(10).max(4000),
+  focus_areas: z.array(z.string().max(200)).max(20).default([]),
+});
+
+// `passthrough()` on the Decomposition shape would let new fields flow
+// through without bumping schemas in lockstep, but we'd lose the
+// guarantee that what the orchestrator receives matches what the
+// downstream agents expect. Keep the explicit shape; bump both sides
+// together when the contract changes.
+const DriverInferenceStartInput = z.object({
+  decomposition: Decomposition,
+  research_brief: z
+    .object({
+      summary: z.string(),
+      anchors: z.array(z.record(z.unknown())).default([]),
+      open_questions: z.array(z.string()).default([]),
+    })
+    .nullable()
+    .optional(),
+});
+
+const DriverInferenceResultShape = z.object({
+  drivers: z.array(z.record(z.unknown())),
+  unresolved: z.array(z.string()).default([]),
+});
+
+const EdgeInferenceResultShape = z.object({
+  edges: z.array(
+    z.object({ source: z.string(), target: z.string(), label: z.string() }),
+  ),
+  intermediates: z.array(z.record(z.unknown())).default([]),
+  outputs: z.array(z.record(z.unknown())),
+  assumptions: z.array(z.string()).default([]),
+});
+
+const CodeGenStartInput = z.object({
+  slug: z.string().min(1).max(64),
+  decomposition: Decomposition,
+  driver_inference: DriverInferenceResultShape,
+  edge_inference: EdgeInferenceResultShape,
+});
+
+const CodeReviewStartInput = z.object({
+  source: z.string().min(1).max(200_000),
+  decomposition: Decomposition,
+  driver_inference: DriverInferenceResultShape,
+  edge_inference: EdgeInferenceResultShape,
+  concerns: z.array(z.string()).default([]),
+});
+
+const FullPipelineStartInput = z.object({
+  description: z.string().min(10).max(4000),
+  reference_data: z.string().max(20000).optional(),
+  focus_areas: z.array(z.string().max(200)).max(20).default([]),
+});
+
 const WorkflowIdInput = z.object({ id: z.string().min(1) });
 
 const WorkflowListInput = z.object({
   kind: z.string().optional(),
   limit: z.number().int().positive().max(200).default(50),
 });
+
+// ---------- Helper: kick off + tag a workflow ----------------------------
+
+/**
+ * Shared boilerplate for every M28 workflow mutation:
+ * 1. require auth (UNAUTHORIZED if missing)
+ * 2. check the per-user agent budget (FORBIDDEN if exceeded)
+ * 3. POST to agent-orchestration
+ * 4. tag the resulting workflow with user_id (best-effort, so the
+ *    budget counter can find it on the next call)
+ *
+ * Returns the workflow envelope unchanged so the procedure passes it
+ * to the typed output schema.
+ */
+async function startAgentWorkflow(
+  ctx: Context,
+  path: string,
+  body: unknown,
+  context: string,
+): Promise<z.infer<typeof WorkflowRecord>> {
+  if (!ctx.user) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "에이전트 워크플로 실행은 로그인이 필요합니다.",
+    });
+  }
+  await checkBudget(ctx.user.id);
+  const wf = await agentFetch<{ id: string }>(path, {
+    method: "POST",
+    body,
+    context,
+  });
+  try {
+    await ctx.prisma.agentWorkflow.update({
+      where: { id: wf.id },
+      data: { user_id: ctx.user.id },
+    });
+  } catch (e) {
+    ctx.log.warn(
+      { err: e, wf_id: wf.id },
+      "agent workflow user_id tag failed",
+    );
+  }
+  return wf as unknown as z.infer<typeof WorkflowRecord>;
+}
 
 // ---------- Procedures ----------------------------------------------------
 
@@ -166,6 +272,84 @@ export const agentRouter = router({
       }
       return wf as unknown as z.infer<typeof WorkflowRecord>;
     }),
+
+  /**
+   * M28 — Research Agent (Sonnet). Standalone entry point; the
+   * full-pipeline workflow runs the same agent as its first stage.
+   */
+  startResearch: publicProcedure
+    .input(ResearchStartInput)
+    .output(WorkflowRecord)
+    .mutation(async ({ ctx, input }) =>
+      startAgentWorkflow(ctx, "/workflows/research", input, "agent.startResearch"),
+    ),
+
+  /**
+   * M28 — Driver Inference Agent (Sonnet). Takes a decomposition +
+   * optional research brief (both come from prior workflow outputs;
+   * the client assembles them).
+   */
+  startDriverInference: publicProcedure
+    .input(DriverInferenceStartInput)
+    .output(WorkflowRecord)
+    .mutation(async ({ ctx, input }) =>
+      startAgentWorkflow(
+        ctx,
+        "/workflows/driver-inference",
+        input,
+        "agent.startDriverInference",
+      ),
+    ),
+
+  /**
+   * M28 — Code Gen Agent (Sonnet). Takes the full structured spec,
+   * returns the SimulationBase subclass source as a string. Not
+   * executed here; Modal sandbox is a future slice.
+   */
+  startCodeGen: publicProcedure
+    .input(CodeGenStartInput)
+    .output(WorkflowRecord)
+    .mutation(async ({ ctx, input }) =>
+      startAgentWorkflow(
+        ctx,
+        "/workflows/code-gen",
+        input,
+        "agent.startCodeGen",
+      ),
+    ),
+
+  /**
+   * M28 — Code Review Agent (Sonnet). Returns approve/revise/reject
+   * with severity-tagged findings.
+   */
+  startCodeReview: publicProcedure
+    .input(CodeReviewStartInput)
+    .output(WorkflowRecord)
+    .mutation(async ({ ctx, input }) =>
+      startAgentWorkflow(
+        ctx,
+        "/workflows/code-review",
+        input,
+        "agent.startCodeReview",
+      ),
+    ),
+
+  /**
+   * M28 — Headline workflow: chains all six agents (research →
+   * decomposition → driver_inference → edge_inference → code_gen →
+   * code_review). Typical cost $0.50–$1.00; gated by per-user budget.
+   */
+  startFullPipeline: publicProcedure
+    .input(FullPipelineStartInput)
+    .output(WorkflowRecord)
+    .mutation(async ({ ctx, input }) =>
+      startAgentWorkflow(
+        ctx,
+        "/workflows/full-pipeline",
+        input,
+        "agent.startFullPipeline",
+      ),
+    ),
 
   /**
    * Surface the current user's agent budget to the client — used by

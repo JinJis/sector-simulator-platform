@@ -5,16 +5,18 @@ import { useState } from "react";
 
 import {
   startDecomposition,
+  startFullPipeline,
   startProposeSector,
 } from "@/lib/sim-client";
 
-type Pipeline = "propose_sector" | "decomposition";
+type Pipeline = "full_pipeline" | "propose_sector" | "decomposition";
 
 export function NewDecompositionForm() {
   const router = useRouter();
   const [description, setDescription] = useState("");
   const [referenceData, setReferenceData] = useState("");
-  const [pipeline, setPipeline] = useState<Pipeline>("propose_sector");
+  const [focusAreasRaw, setFocusAreasRaw] = useState("");
+  const [pipeline, setPipeline] = useState<Pipeline>("full_pipeline");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,10 +29,19 @@ export function NewDecompositionForm() {
         description: description.trim(),
         reference_data: referenceData.trim() || undefined,
       };
-      const record =
-        pipeline === "propose_sector"
-          ? await startProposeSector(payload)
-          : await startDecomposition(payload);
+      let record;
+      if (pipeline === "full_pipeline") {
+        const focus_areas = focusAreasRaw
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .slice(0, 20);
+        record = await startFullPipeline({ ...payload, focus_areas });
+      } else if (pipeline === "propose_sector") {
+        record = await startProposeSector(payload);
+      } else {
+        record = await startDecomposition(payload);
+      }
       router.push(`/agent-runs/${encodeURIComponent(record.id)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -49,14 +60,22 @@ export function NewDecompositionForm() {
         <legend className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
           Pipeline
         </legend>
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+          <PipelineOption
+            value="full_pipeline"
+            current={pipeline}
+            onSelect={setPipeline}
+            title="Full pipeline (M28)"
+            subtitle="6 agents end-to-end"
+            blurb="Research → Decomposition → DriverInference → EdgeInference → CodeGen → CodeReview. Produces a reviewed SimulationBase source file. Typical cost $0.50–$1.00 — most expensive option."
+          />
           <PipelineOption
             value="propose_sector"
             current={pipeline}
             onSelect={setPipeline}
-            title="Propose sector (full)"
-            subtitle="Decomposition → EdgeInference"
-            blurb="Two-stage chain. Returns drivers + intermediates + outputs AND a causal DAG with formulas + assumptions. Both Opus stages — typical cost $0.20–$0.60."
+            title="Propose sector"
+            subtitle="Decomp → Edges"
+            blurb="Two-stage chain. Returns drivers + intermediates + outputs AND a causal DAG with formulas. Both Opus stages — typical cost $0.20–$0.60."
           />
           <PipelineOption
             value="decomposition"
@@ -64,7 +83,7 @@ export function NewDecompositionForm() {
             onSelect={setPipeline}
             title="Decomposition only"
             subtitle="Single-stage"
-            blurb="Just the node schema (drivers / intermediates / outputs). Faster + cheaper but you'll add edges manually in the Graph view. Typical cost $0.10–$0.30."
+            blurb="Just the node schema. Faster + cheaper but you add edges manually. Typical cost $0.10–$0.30."
           />
         </div>
       </fieldset>
@@ -112,6 +131,30 @@ export function NewDecompositionForm() {
         />
       </div>
 
+      {pipeline === "full_pipeline" && (
+        <div>
+          <label
+            htmlFor="focus_areas"
+            className="block text-[10px] font-semibold uppercase tracking-wider text-neutral-400"
+          >
+            Focus areas{" "}
+            <span className="text-neutral-600">(optional, one per line)</span>
+          </label>
+          <textarea
+            id="focus_areas"
+            name="focus_areas"
+            rows={3}
+            value={focusAreasRaw}
+            onChange={(e) => setFocusAreasRaw(e.target.value)}
+            placeholder={"launch cost trends 2015-2025\npanel efficiency floor for LEO\nbattery cycle life vs depth-of-discharge"}
+            className="mt-1 w-full rounded border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-700 focus:border-cyan-700 focus:outline-none"
+          />
+          <p className="mt-1 text-[10px] text-neutral-600">
+            Passed to the Research Agent as priorities. Up to 20.
+          </p>
+        </div>
+      )}
+
       {error && (
         <p className="rounded border border-red-900/60 bg-red-950/40 p-2 text-[11px] text-red-300">
           {error}
@@ -131,9 +174,11 @@ export function NewDecompositionForm() {
         >
           {busy
             ? "Submitting…"
-            : pipeline === "propose_sector"
-              ? "Run propose-sector"
-              : "Run decomposition"}
+            : pipeline === "full_pipeline"
+              ? "Run full pipeline"
+              : pipeline === "propose_sector"
+                ? "Run propose-sector"
+                : "Run decomposition"}
         </button>
       </div>
     </form>

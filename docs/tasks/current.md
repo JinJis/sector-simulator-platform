@@ -2980,47 +2980,117 @@ asyncio.
 
 ---
 
-### M28 — Dormant agent prompts → live workflows
+### M28 — Dormant agent prompts → live workflows (shipped 2026-05-22)
 
-**Why**: 4 prompts (`research`, `driver-inference`, `code-gen`,
-`code-review`) exist on disk but no workflow wires them. Activating
-them turns the platform from "schema-only agent" to "research-backed
-calibrated agent that writes actual Python sim code."
+The 4 prompts that previously existed only on disk (`research`,
+`driver-inference`, `code-gen`, `code-review`) are now live workflows
+with full Pydantic schemas, HTTP routes, tRPC procedures, and admin
+UI rendering.
 
-**Scope** (4 sub-workflows + 1 chained super-workflow):
+**Schemas** (`agent_orchestration/schemas.py`):
 
-1. **`ResearchWorkflow`** (Gemini Deep Search) — natural-language
-   prompt → `ResearchBrief` (numeric anchors with kind-labeled
-   citations). Output becomes the `reference_data` field for
-   downstream Decomposition.
-2. **`DriverInferenceWorkflow`** (Sonnet 4.6) — `Decomposition` →
-   `DriverInferenceResult` (calibrated defaults / ranges / history /
-   per-driver sources). Replaces the current placeholder `default=0,
-   range=(0,1)` for agent-generated drivers.
-3. **`CodeGenWorkflow`** (Sonnet 4.6) — `Decomposition` + `EdgeInferenceResult`
-   → `CodeGenResult` (a `SimulationBase` subclass as Python source).
-4. **`CodeReviewWorkflow`** (Sonnet 4.6) — `CodeGenResult` →
-   `CodeReviewResult` (severity-tagged findings). Gates promotion.
-5. **`ProposeSectorV2Workflow`** chains: Research → Decomposition →
-   DriverInference → EdgeInference → CodeGen → CodeReview. Roughly
-   6 model calls; cost ≈ $1-2 / run.
+- `ResearchAnchor` / `ResearchSourceCitation` / `ResearchBrief` /
+  `ResearchRequest`
+- `DriverHistoryPoint` / `DriverSourceRef` / `CalibratedDriver` /
+  `DriverInferenceResult` / `DriverInferenceRequest`
+- `CodeGenResult` / `CodeGenRequest`
+- `CodeReviewFinding` / `CodeReviewRerunInputs` / `CodeReviewResult` /
+  `CodeReviewRequest`
+- `FullPipelineRequest` / `FullPipelineResult` composite
 
-Code-gen output **does not execute** outside the M22b sandbox
-(`simpleeval`-only) until M28b lands Modal / E2B execution.
+All four are typed `Literal[...]` where the prompt mandates an
+enumerated value (`status`, `severity`, `category`, source `kind`),
+so the parsed output is structurally validated end-to-end.
 
-**Touch points**: `services/agent-orchestration/agent_orchestration/`
-(4 new workflows + schemas), `prompts/` (already present), new
-`research-source.py` adapter for Gemini, `services/sector-service/src/trpc/agent.ts`
-(new mutations), `apps/web/src/app/propose/` (UX surfaces 6 stages
-instead of 2).
+**Workflows** (`agent_orchestration/workflows.py`):
 
-**Out of scope (becomes M28b)**: sandboxed (Modal / E2B) Python
-execution of the generated `SimulationBase` subclass. M28 stops at
-"persist the code as a file + display to admin for review";
-sandboxed execution + code → live sector activation is the follow-on.
+- `ResearchWorkflow` (Sonnet, 4k max_tokens). Format helper surfaces
+  the focus areas to the agent.
+- `DriverInferenceWorkflow` (Sonnet, 8k max_tokens). Format helper
+  carries the Decomposition + the ResearchBrief anchors+open
+  questions in the same user turn; falls back gracefully when no
+  brief is provided ("No research brief was supplied — fall back to
+  general knowledge...").
+- `CodeGenWorkflow` (Sonnet, 16k max_tokens). Format helper merges
+  the Decomposition + DriverInference + EdgeInference into a single
+  per-driver / per-intermediate / per-output spec block so the agent
+  can transcribe without cross-reference.
+- `CodeReviewWorkflow` (Sonnet, 4k max_tokens). Format helper
+  fences the generated source in a triple-backtick block + supplies
+  the spec for cross-check + any Code Gen concerns.
+- `FullPipelineWorkflow` chains all six agents end-to-end:
+  `Research → Decomposition → DriverInference → EdgeInference →
+  CodeGen → CodeReview`. Single shared `CostMeter` rolls up across
+  all six stages; failure in any stage short-circuits the chain.
 
-**Dependencies**: M26 (Premium-only — these calls are expensive) +
-M27 (budget gating critical given $1-2 per run).
+**HTTP** (`agent_orchestration/main.py`):
+`POST /workflows/research`, `/driver-inference`, `/code-gen`,
+`/code-review`, `/full-pipeline`. All status_code=202 with the
+WorkflowRecord envelope — same poll-by-id pattern as the existing
+`/workflows/decompose` and `/workflows/propose-sector`.
+
+**tRPC** (`services/sector-service/src/trpc/agent.ts`): 5 new
+mutations — `startResearch`, `startDriverInference`, `startCodeGen`,
+`startCodeReview`, `startFullPipeline`. All require auth + checkBudget
++ user_id post-tagging, via a new `startAgentWorkflow()` helper that
+consolidates the boilerplate (the existing
+`startDecomposition` / `startProposeSector` were left alone to limit
+the blast radius; the helper is structurally identical and can absorb
+them in a follow-up).
+
+**Admin UI** (`apps/admin/src/app/agent-runs/`):
+
+- `new/form.tsx` — 3-option pipeline picker (Full pipeline /
+  Propose sector / Decomposition only). Selecting "Full pipeline"
+  reveals an optional "Focus areas" textarea (one per line, up to 20).
+- `[id]/watcher.tsx` — extends `extractResult()` to handle the 5
+  new workflow kinds (research, driver_inference, code_gen,
+  code_review, full_pipeline) plus the standalone edge_inference
+  output. Five new render sections:
+  - `ResearchBriefSection` (violet card with sourced anchors)
+  - `DriverInferenceSection` (collapsible per-driver expand-on-click
+    with history + sources)
+  - `CodeGenSection` (line-counted scrollable `<pre>` + Copy +
+    Download .py buttons + concerns block + rose-tinted security
+    notice that source is for review only)
+  - `CodeReviewSection` (tone-coded by status; severity-counted
+    header; per-finding card with location + suggestion)
+- `sim-client.ts` — `AgentResearchBrief` / `AgentDriverInferenceResult`
+  / `AgentCodeGenResult` / `AgentCodeReviewResult` /
+  `AgentFullPipelineResult` types + `startFullPipeline()` wrapper.
+
+**Security invariant preserved**: generated source is shown to the
+admin as a string. The orchestrator does NOT execute it. CLAUDE.md's
+"LLM-generated code is never run outside a sandbox" rule holds —
+Modal/E2B execution lands in M28b as a follow-up.
+
+**Cost containment**: Full pipeline is $0.50–$1.00 per run.
+Per-user budget (M27) enforces the cap; admin UI surfaces the cost
+estimate range up front so users don't fire by accident.
+
+**Verification**:
+
+- 16 new pytest cases for agent-orchestration:
+  - 9 workflow tests (`tests/test_m28_workflows.py`) — happy path +
+    failure path per workflow, plus three FullPipelineWorkflow tests
+    (chain succeeds with all 6 stages firing, short-circuits on early
+    failure, shares CostMeter across stages).
+  - 7 HTTP smoke tests (`tests/test_m28_api.py`) — one happy path
+    per new route + parametrized short-description rejection.
+- Total agent-orchestration suite: **56 pass / 2 skipped** (was
+  40 pass / 2 skipped before M28).
+- TS typecheck clean across `@platform/admin`, `@platform/web`,
+  `@platform/sector-service`, `@platform/db`, `@platform/ui`.
+- sector-service vitest: 56 pass / 26 skipped (baseline; 2 DB-
+  requiring suites continue to fail without a local Postgres — pre-
+  existing environment).
+
+**Out of scope (still M28b)**: Modal/E2B sandbox execution of the
+generated `CodeGenResult.source`. Without M28b, `code_review.status =
+"approve"` does not auto-activate a sector — admin still picks
+"Register as draft sector" manually, and `sector.proposeFromAgent`
+only consumes the `Decomposition` + `EdgeInference` (the source code
+is metadata, not yet a deployable artifact).
 
 ---
 

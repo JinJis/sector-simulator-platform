@@ -58,6 +58,78 @@ export type AgentProposeSectorResult = {
   edge_inference: AgentEdgeInference;
 };
 
+/** M28 — Research Agent output. */
+export type AgentResearchBrief = {
+  summary: string;
+  anchors: {
+    concept: string;
+    value_range: string;
+    as_of: string;
+    sources: {
+      title: string;
+      url: string;
+      kind: string;
+      excerpt: string;
+    }[];
+  }[];
+  open_questions: string[];
+};
+
+/** M28 — Driver Inference Agent output. */
+export type AgentDriverInferenceResult = {
+  drivers: {
+    name: string;
+    default: number;
+    min: number;
+    max: number;
+    unit: string;
+    description: string;
+    history: { date: string; value: number }[];
+    sources: {
+      title: string;
+      url: string;
+      as_of: string;
+      kind: string;
+      excerpt: string;
+    }[];
+    note: string;
+  }[];
+  unresolved: string[];
+};
+
+/** M28 — Code Gen Agent output. */
+export type AgentCodeGenResult = {
+  slug: string;
+  module_name: string;
+  class_name: string;
+  source: string;
+  concerns: string[];
+};
+
+/** M28 — Code Review Agent output. */
+export type AgentCodeReviewResult = {
+  status: "approve" | "revise" | "reject";
+  findings: {
+    severity: "blocker" | "major" | "minor" | "nit";
+    category: "spec_mismatch" | "logic" | "safety" | "style" | "provenance";
+    location: string;
+    message: string;
+    suggestion: string;
+  }[];
+  summary: string;
+  rerun_inputs: { preserve: string[]; rerun: string[] };
+};
+
+/** M28 — Composite full-pipeline output. */
+export type AgentFullPipelineResult = {
+  research: AgentResearchBrief;
+  decomposition: AgentDecomposition;
+  driver_inference: AgentDriverInferenceResult;
+  edge_inference: AgentEdgeInference;
+  code_gen: AgentCodeGenResult;
+  code_review: AgentCodeReviewResult;
+};
+
 export type AgentDecomposition = {
   // Mirror of the orchestration Decomposition shape; the upstream
   // procedure types this as `Record<string, unknown>` because the
@@ -128,6 +200,22 @@ export async function startProposeSector(input: {
   return rethrow(
     () => trpc.agent.startProposeSector.mutate(input),
     "startProposeSector",
+  );
+}
+
+export async function startFullPipeline(input: {
+  description: string;
+  reference_data?: string;
+  focus_areas?: string[];
+}): Promise<AgentWorkflow> {
+  return rethrow(
+    () =>
+      trpc.agent.startFullPipeline.mutate({
+        description: input.description,
+        reference_data: input.reference_data,
+        focus_areas: input.focus_areas ?? [],
+      }),
+    "startFullPipeline",
   );
 }
 

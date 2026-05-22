@@ -34,13 +34,23 @@ from agent_orchestration.repo import (
     utc_now,
 )
 from agent_orchestration.schemas import (
+    CodeGenRequest,
+    CodeReviewRequest,
     DecompositionRequest,
+    DriverInferenceRequest,
+    FullPipelineRequest,
     ProposeSectorRequest,
+    ResearchRequest,
     WorkflowRecord,
 )
 from agent_orchestration.workflows import (
+    CodeGenWorkflow,
+    CodeReviewWorkflow,
     DecompositionWorkflow,
+    DriverInferenceWorkflow,
+    FullPipelineWorkflow,
     ProposeSectorWorkflow,
+    ResearchWorkflow,
     WorkflowRunner,
 )
 
@@ -79,7 +89,8 @@ async def lifespan(app: FastAPI):
     if not hasattr(app.state, "llm"):
         app.state.llm = LLMClient()
     log.info(
-        "agent-orchestration ready (workflows: decomposition, propose_sector)"
+        "agent-orchestration ready (workflows: decomposition, propose_sector, "
+        "research, driver_inference, code_gen, code_review, full_pipeline)"
     )
     try:
         yield
@@ -128,6 +139,96 @@ def create_app() -> FastAPI:
         runner: WorkflowRunner = app.state.runner
         llm: LLMClient = app.state.llm
         workflow = ProposeSectorWorkflow(llm=llm)
+
+        async def run(cost_meter):  # type: ignore[no-untyped-def]
+            return await workflow.run(req, cost_meter=cost_meter)
+
+        return await runner.start(kind=workflow.kind, request=req, run=run)
+
+    # ---- M28 dormant prompts → live workflows ---------------------------
+
+    @app.post(
+        "/workflows/research", response_model=WorkflowRecord, status_code=202
+    )
+    async def start_research(req: ResearchRequest) -> WorkflowRecord:
+        """Research Agent (Sonnet). Returns a `ResearchBrief` with
+        sourced numeric anchors — typically the first stage of
+        full_pipeline but exposed independently for stage-level
+        testing."""
+        runner: WorkflowRunner = app.state.runner
+        llm: LLMClient = app.state.llm
+        workflow = ResearchWorkflow(llm=llm)
+
+        async def run(cost_meter):  # type: ignore[no-untyped-def]
+            return await workflow.run(req, cost_meter=cost_meter)
+
+        return await runner.start(kind=workflow.kind, request=req, run=run)
+
+    @app.post(
+        "/workflows/driver-inference",
+        response_model=WorkflowRecord,
+        status_code=202,
+    )
+    async def start_driver_inference(
+        req: DriverInferenceRequest,
+    ) -> WorkflowRecord:
+        """Driver Inference Agent (Sonnet). Takes a `Decomposition` +
+        optional `ResearchBrief`, returns calibrated drivers with
+        provenance."""
+        runner: WorkflowRunner = app.state.runner
+        llm: LLMClient = app.state.llm
+        workflow = DriverInferenceWorkflow(llm=llm)
+
+        async def run(cost_meter):  # type: ignore[no-untyped-def]
+            return await workflow.run(req, cost_meter=cost_meter)
+
+        return await runner.start(kind=workflow.kind, request=req, run=run)
+
+    @app.post(
+        "/workflows/code-gen", response_model=WorkflowRecord, status_code=202
+    )
+    async def start_code_gen(req: CodeGenRequest) -> WorkflowRecord:
+        """Code Generation Agent (Sonnet). Takes the full structured
+        spec, returns a `SimulationBase` subclass source file as a
+        string. The orchestrator does NOT execute the source — Modal
+        sandbox is a future slice."""
+        runner: WorkflowRunner = app.state.runner
+        llm: LLMClient = app.state.llm
+        workflow = CodeGenWorkflow(llm=llm)
+
+        async def run(cost_meter):  # type: ignore[no-untyped-def]
+            return await workflow.run(req, cost_meter=cost_meter)
+
+        return await runner.start(kind=workflow.kind, request=req, run=run)
+
+    @app.post(
+        "/workflows/code-review", response_model=WorkflowRecord, status_code=202
+    )
+    async def start_code_review(req: CodeReviewRequest) -> WorkflowRecord:
+        """Code Review Agent (Sonnet). Returns a `CodeReviewResult`
+        with status `approve` / `revise` / `reject` and severity-tagged
+        findings."""
+        runner: WorkflowRunner = app.state.runner
+        llm: LLMClient = app.state.llm
+        workflow = CodeReviewWorkflow(llm=llm)
+
+        async def run(cost_meter):  # type: ignore[no-untyped-def]
+            return await workflow.run(req, cost_meter=cost_meter)
+
+        return await runner.start(kind=workflow.kind, request=req, run=run)
+
+    @app.post(
+        "/workflows/full-pipeline",
+        response_model=WorkflowRecord,
+        status_code=202,
+    )
+    async def start_full_pipeline(req: FullPipelineRequest) -> WorkflowRecord:
+        """Six-stage chain: research → decomposition → driver_inference
+        → edge_inference → code_gen → code_review. Headline workflow
+        for admin sector authoring. Typical cost $0.50–$1.00."""
+        runner: WorkflowRunner = app.state.runner
+        llm: LLMClient = app.state.llm
+        workflow = FullPipelineWorkflow(llm=llm)
 
         async def run(cost_meter):  # type: ignore[no-untyped-def]
             return await workflow.run(req, cost_meter=cost_meter)

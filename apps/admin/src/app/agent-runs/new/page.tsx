@@ -9,21 +9,20 @@ export default function NewAgentRunPage() {
         className="mb-3"
         items={[
           { label: "Agent runs", href: "/agent-runs" },
-          { label: "New decomposition" },
+          { label: "New run" },
         ]}
       />
       <h1 className="text-xl font-semibold text-neutral-50">
         Propose new sector
       </h1>
       <p className="mt-1 text-sm text-neutral-400">
-        Run the Decomposition Agent against a free-form sector concept. The
-        agent returns drivers, intermediates, and outputs you can review
-        before promoting to a registered sector.
+        Run an agent pipeline against a free-form sector concept. The
+        result is reviewable before any promotion to a registered sector.
       </p>
       <p className="mt-1 text-[11px] text-neutral-600">
-        Routed to Claude Opus 4.7 with adaptive thinking — typical cost
-        $0.10–$0.30 per run. The page redirects to a live status view
-        the moment the run is queued.
+        Three options — pick by depth. Full pipeline (M28) chains six
+        agents end-to-end and produces a reviewed Python source file;
+        the other two stop earlier and let you iterate manually.
       </p>
       <div className="mt-6">
         <NewDecompositionForm />
