@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, TypeVar
@@ -659,6 +660,17 @@ def _build_default_clients(*, api_key: str | None) -> tuple[Any | None, Any | No
                 "explicitly, or GOOGLE_APPLICATION_CREDENTIALS to point at a "
                 "service-account JSON containing a `project_id` field."
             )
+        # One-line startup log so `docker compose logs agent-orchestration | head`
+        # immediately shows which region the providers actually got. The error
+        # path "Publisher Model ...locations/<region>... not servable" almost
+        # always means this log line shows the wrong region — a stale env in
+        # the container, fixable with `docker compose up -d --force-recreate`.
+        print(
+            f"[agent-tools] Vertex AI clients: project={project_id} location={location} "
+            f"(GOOGLE_CLOUD_LOCATION env={os.environ.get('GOOGLE_CLOUD_LOCATION')!r})",
+            file=sys.stderr,
+            flush=True,
+        )
         credentials = _load_sa_credentials(creds_path) if creds_path else None
         if genai is not None:
             client_kwargs: dict[str, Any] = {
