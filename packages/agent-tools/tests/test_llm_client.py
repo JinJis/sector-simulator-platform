@@ -88,7 +88,7 @@ def test_available_models_returns_expected_tier_mapping() -> None:
     models = available_models()
     assert models["haiku"] == "gemini-3.1-flash-lite"
     assert models["sonnet"] == "gemini-3-flash-preview"
-    assert models["opus"] == "gemini-3.1-pro-preview"
+    assert models["opus"] == "gemini-3.5-flash"
 
 
 def test_call_routes_tier_to_correct_model_id() -> None:
@@ -320,8 +320,8 @@ def test_cache_read_tokens_billed_at_discounted_rate() -> None:
     )
     client = LLMClient(client=fake)
     client.call(tier="opus", system="sys", user="hi")
-    # opus (gemini-3.1-pro-preview): input 1000 * $2/1M = $0.002
-    # plus cache-read 1000 * $2/1M * 0.25 = $0.0005
+    # opus (gemini-3.5-flash): input 1000 * $0.50/1M = $0.0005
+    # plus cache-read 1000 * $0.50/1M * 0.25 = $0.000125
     # output 0
-    expected = (1000 * 2.00 + 1000 * 2.00 * 0.25) / 1_000_000.0
+    expected = (1000 * 0.50 + 1000 * 0.50 * 0.25) / 1_000_000.0
     assert abs(client.cost_meter.total_usd - expected) < 1e-6

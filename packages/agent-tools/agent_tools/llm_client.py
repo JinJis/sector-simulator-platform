@@ -69,8 +69,11 @@ ModelTier = Literal["haiku", "sonnet", "opus"]
 # best model"; `tier="haiku"` still means "use the cheap one".
 #
 # Routing rationale (Gemini 3.x lineup, 2026-05):
-# - Pro (3.1-pro-preview): best reasoning. Used by Decomposition,
-#   EdgeInference, CodeGen, CodeReview workflows.
+# - 3.5-flash (opus tier): newest GA flash with stronger reasoning;
+#   Vertex AI doesn't currently expose `gemini-3.1-pro-preview` in
+#   our project (404 on GenerateContent), so we route the "high
+#   accuracy" workflows here instead. Used by Decomposition,
+#   EdgeInference, CodeGen, CodeReview.
 # - Flash (3-flash-preview): balanced. Used by Research,
 #   DriverInference, the prediction.analyzeRationale tRPC.
 # - Flash-Lite (3.1-flash-lite): cheapest. Reserved for high-volume
@@ -79,7 +82,7 @@ ModelTier = Literal["haiku", "sonnet", "opus"]
 _MODEL_BY_TIER: dict[ModelTier, str] = {
     "haiku": "gemini-3.1-flash-lite",
     "sonnet": "gemini-3-flash-preview",
-    "opus": "gemini-3.1-pro-preview",
+    "opus": "gemini-3.5-flash",
 }
 
 

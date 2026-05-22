@@ -40,9 +40,11 @@ class ModelPrice:
 # regularly cross 200k, add a `tiered_input_per_million_usd` field
 # instead of guessing.
 _PRICES: dict[str, ModelPrice] = {
-    # Pro — opus tier. Latest reasoning model, used for decomposition +
-    # edge inference + code gen + code review.
-    "gemini-3.1-pro-preview": ModelPrice(2.00, 12.00),
+    # 3.5-flash — opus tier (post-2026-05 swap from gemini-3.1-pro-preview,
+    # which Vertex AI doesn't expose in our project). Same flash family
+    # pricing as the sonnet tier; the tier distinction is now about
+    # reasoning depth (thinking_budget) rather than raw $/token.
+    "gemini-3.5-flash": ModelPrice(0.50, 3.00),
     # Flash — sonnet tier. Used for research + driver inference +
     # prediction analysis (Korean rationale summarization in
     # services/sector-service/src/trpc/prediction.ts).

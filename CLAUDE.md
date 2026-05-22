@@ -56,7 +56,7 @@
   - 필수 env (compose가 자동 주입): `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` (기본 `us-central1`), `GOOGLE_APPLICATION_CREDENTIALS=/secrets/vertex-ai-sa.json`
   - GCP 접근 권한 없는 컨트리뷰터용 dev fallback: `GEMINI_API_KEY` (Google AI Studio)
 - Tier mapping (`packages/agent-tools/llm_client.py`):
-  - `opus` → `gemini-3.1-pro-preview` (critical reasoning)
+  - `opus` → `gemini-3.5-flash` (critical reasoning — `gemini-3.1-pro-preview`은 Vertex AI에 미노출이라 3.5-flash로 라우팅)
   - `sonnet` → `gemini-3-flash-preview` (balanced)
   - `haiku` → `gemini-3.1-flash-lite` (cheapest)
 - Temporal.io (long-running workflow)
@@ -272,7 +272,7 @@ class SimulationBase:
 - Model routing (tier 이름은 historical — 의미는 그대로):
   - **`haiku`** (= `gemini-3.1-flash-lite`): routing, extraction, simple classification
   - **`sonnet`** (= `gemini-3-flash-preview`): reasoning, code gen, code review, report writing
-  - **`opus`** (= `gemini-3.1-pro-preview`): critical decomposition, edge inference (높은 정확도 필요한 곳만)
+  - **`opus`** (= `gemini-3.5-flash`): critical decomposition, edge inference (높은 정확도 필요한 곳만 — `gemini-3.1-pro-preview` Vertex 미노출로 3.5-flash로 임시 라우팅)
 - 모든 agent output은 Pydantic schema로 validation (Gemini의 `response_schema` 기능 활용)
 - `adaptive_thinking=True`는 Gemini의 dynamic thinking budget (`-1`)으로 매핑됨 — overthinking 방지를 위해 opt-in
 
