@@ -96,21 +96,23 @@ services:
     build:
       context: .
       dockerfile: infra/docker/agent-orchestration.Dockerfile
+    # Vertex / LLM env comes from .env — NOT from compose interpolation.
+    # `${VAR:-default}` interpolation lets the host shell env win over the
+    # .env file (compose's standard precedence), which means an
+    # `export GOOGLE_CLOUD_LOCATION=us-central1` in someone's ~/.bashrc
+    # would silently override the value here. `env_file:` skips
+    # interpolation and injects the .env entries directly into the
+    # container, so the file is the only source of truth for these.
+    env_file:
+      - .env
     environment:
-      # M34b: Vertex AI auth via service-account JSON. The host file at
-      # infra/secrets/vertex-ai-sa.json is mounted read-only at /secrets
-      # below; google-auth's ADC picks it up via the GOOGLE_APPLICATION_*
-      # env var. Without GOOGLE_GENAI_USE_VERTEXAI=true the LLMClient
-      # falls back to GEMINI_API_KEY (dev-only).
-      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-true}
-      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
-      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
-      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-/secrets/vertex-ai-sa.json}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       PROMPTS_DIR: /repo/prompts
       # Persistence: when set, workflow records survive restarts.
       # Without it the service falls back to an in-memory dict.
       DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
+      # Default for the SA JSON mount path — kept here (not in .env)
+      # because the path is container-internal and shouldn't change.
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/vertex-ai-sa.json
     volumes:
       # Service-account JSON keys (read-only). Drop the file at
       # infra/secrets/vertex-ai-sa.json on the host — see
@@ -154,6 +156,10 @@ services:
     build:
       context: .
       dockerfile: infra/docker/sector-service.Dockerfile
+    # See agent-orchestration above — same reasoning: Vertex env comes
+    # only from .env, never from host shell interpolation.
+    env_file:
+      - .env
     environment:
       # Container-internal addressing — simulation-service is in the same
       # bridge network, postgres ditto.
@@ -161,14 +167,8 @@ services:
       AGENT_ORCHESTRATION_URL: http://agent-orchestration:8002
       DATA_PIPELINE_URL: http://data-pipeline:8003
       DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
-      # M33 + M34 + M34b — sector-service makes one-shot Gemini 3 Flash
-      # calls (rationale analysis). Same Vertex AI auth path as
-      # agent-orchestration; same /secrets bind mount below.
-      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-true}
-      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
-      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
-      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-/secrets/vertex-ai-sa.json}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # Container-internal SA mount path.
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/vertex-ai-sa.json
     volumes:
       - ./infra/secrets:/secrets:ro
     depends_on:
