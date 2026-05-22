@@ -224,7 +224,7 @@ class DecompositionWorkflow:
     ) -> Decomposition:
         # `cost_meter` is the per-workflow meter; rebind the client onto
         # it so each call rolls into the right ledger.
-        llm = LLMClient(client=self._llm._client, cost_meter=cost_meter)  # noqa: SLF001
+        llm = self._llm.clone(cost_meter=cost_meter)
         system = load_prompt("decomposition")
         user_parts = [request.description]
         if request.reference_data:
@@ -273,7 +273,7 @@ class EdgeInferenceWorkflow:
     async def run(
         self, request: EdgeInferenceRequest, *, cost_meter: CostMeter
     ) -> EdgeInferenceResult:
-        llm = LLMClient(client=self._llm._client, cost_meter=cost_meter)  # noqa: SLF001
+        llm = self._llm.clone(cost_meter=cost_meter)
         system = load_prompt("edge-inference")
         user = self._format_user_turn(request.decomposition)
         result = await asyncio.to_thread(
@@ -395,7 +395,7 @@ class ResearchWorkflow:
     async def run(
         self, request: ResearchRequest, *, cost_meter: CostMeter
     ) -> ResearchBrief:
-        llm = LLMClient(client=self._llm._client, cost_meter=cost_meter)  # noqa: SLF001
+        llm = self._llm.clone(cost_meter=cost_meter)
         system = load_prompt("research")
         user = self._format_user_turn(request)
         result = await asyncio.to_thread(
@@ -457,7 +457,7 @@ class DriverInferenceWorkflow:
     async def run(
         self, request: DriverInferenceRequest, *, cost_meter: CostMeter
     ) -> DriverInferenceResult:
-        llm = LLMClient(client=self._llm._client, cost_meter=cost_meter)  # noqa: SLF001
+        llm = self._llm.clone(cost_meter=cost_meter)
         system = load_prompt("driver-inference")
         user = self._format_user_turn(request)
         result = await asyncio.to_thread(
@@ -550,7 +550,7 @@ class CodeGenWorkflow:
     async def run(
         self, request: CodeGenRequest, *, cost_meter: CostMeter
     ) -> CodeGenResult:
-        llm = LLMClient(client=self._llm._client, cost_meter=cost_meter)  # noqa: SLF001
+        llm = self._llm.clone(cost_meter=cost_meter)
         system = load_prompt("code-gen")
         user = self._format_user_turn(request)
         result = await asyncio.to_thread(
@@ -685,7 +685,7 @@ class CodeReviewWorkflow:
     async def run(
         self, request: CodeReviewRequest, *, cost_meter: CostMeter
     ) -> CodeReviewResult:
-        llm = LLMClient(client=self._llm._client, cost_meter=cost_meter)  # noqa: SLF001
+        llm = self._llm.clone(cost_meter=cost_meter)
         system = load_prompt("code-review")
         user = self._format_user_turn(request)
         result = await asyncio.to_thread(

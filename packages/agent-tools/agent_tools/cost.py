@@ -1,22 +1,20 @@
 """Cost model + meter for LLM calls.
 
-Prices are the public Google Gemini per-1M token rates as of 2026-05.
-Thinking tokens are billed at the same rate as output tokens.
+Prices stored as USD per **1M** tokens so the multipliers stay readable.
 
-Numbers stored as USD per **1M** tokens so the multipliers stay readable.
-
-History: this module used to encode Anthropic Claude pricing. We swapped
-to Gemini in M34 (2026-05-22). The `cache_read_multiplier` and
-`cache_write_multiplier` fields are kept for shape compatibility but
-default to neutral values — Gemini's context caching API is invoked
-through the `cachedContent` resource (an explicit upload), not the
-inline ephemeral-cache trick we used with Claude, so the wrapper no
-longer reports cache_creation/cache_read counts.
+History:
+- pre-M34: Anthropic Claude only.
+- M34 (2026-05-22): swapped entirely to Google Gemini.
+- M35 (2026-05-22): brought Claude back for the opus tier alongside
+  Gemini for sonnet/haiku. The `cache_read_multiplier` /
+  `cache_write_multiplier` fields drive the Anthropic prompt-caching
+  math (and remain neutral-ish for Gemini, where we don't use explicit
+  context caching today).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from threading import Lock
 
 
@@ -24,53 +22,55 @@ from threading import Lock
 class ModelPrice:
     input_per_million_usd: float
     output_per_million_usd: float
-    # Multipliers applied to the input price. Gemini default to neutral
-    # — we don't use ephemeral caching for Gemini calls.
+    # Multipliers applied to the input price.
+    # - Gemini: defaults to (0.25, 1.0). We don't use explicit
+    #   `cachedContent` today, so the cache_read field is populated only
+    #   when the response surfaces `cached_content_token_count`.
+    # - Claude: standard Anthropic prompt-caching economics
+    #   (cache read = 0.1×, cache write = 1.25×).
     cache_read_multiplier: float = 0.25
     cache_write_multiplier: float = 1.0
 
 
-# Public API prices (per 1M tokens) as of 2026-05.
-# https://ai.google.dev/gemini-api/docs/pricing  (verified before this slice)
-#
-# We use Gemini 3.x preview/GA models — they're the freshest tier and
-# (importantly) carry the Gemini 3 reasoning improvements. The pro
-# model bills tiered (<200k vs >200k input); we encode the cheaper
-# tier here because our prompts rarely exceed 50k tokens. If we ever
-# regularly cross 200k, add a `tiered_input_per_million_usd` field
-# instead of guessing.
+# Per-1M-token published rates as of 2026-05.
+# Sources: https://ai.google.dev/gemini-api/docs/pricing (Gemini),
+#          https://www.anthropic.com/pricing (Claude).
 _PRICES: dict[str, ModelPrice] = {
-    # 3.5-flash — opus tier (post-2026-05 swap from gemini-3.1-pro-preview,
-    # which Vertex AI doesn't expose in our project). Same flash family
-    # pricing as the sonnet tier; the tier distinction is now about
-    # reasoning depth (thinking_budget) rather than raw $/token.
+    # claude-opus-4-7 — opus tier. Bills via AnthropicVertex (same
+    # public list price as the Anthropic API). Cache multipliers are
+    # Anthropic-specific: 90% discount on cache reads, 25% premium on
+    # cache writes.
+    "claude-opus-4-7": ModelPrice(
+        input_per_million_usd=15.00,
+        output_per_million_usd=75.00,
+        cache_read_multiplier=0.1,
+        cache_write_multiplier=1.25,
+    ),
+    # gemini-3.5-flash — sonnet tier. Cheap, fast, used for the bulk
+    # of research / driver inference / prediction rationale analysis.
     "gemini-3.5-flash": ModelPrice(0.50, 3.00),
-    # Flash — sonnet tier. Used for research + driver inference +
-    # prediction analysis (Korean rationale summarization in
-    # services/sector-service/src/trpc/prediction.ts).
-    "gemini-3-flash-preview": ModelPrice(0.50, 3.00),
-    # Flash-Lite — haiku tier. Used for cheap extraction / routing.
-    "gemini-3.1-flash-lite": ModelPrice(0.25, 1.50),
+    # gemini-3.5-flash-lite — haiku tier. Cheapest tier; used for
+    # extraction + routing + classification.
+    "gemini-3.5-flash-lite": ModelPrice(0.25, 1.50),
 }
 
 
 def model_price(model_id: str) -> ModelPrice:
-    """Look up the price entry for a model. Falls back to the cheapest entry
-    (flash-lite) for unknown IDs rather than raising — so an unfamiliar
+    """Look up the price entry for a model. Falls back to the cheapest
+    Gemini entry for unknown IDs rather than raising — so an unfamiliar
     model surfaces as a small cost spike in the meter instead of a
     crashed agent.
     """
-    return _PRICES.get(model_id, _PRICES["gemini-3.1-flash-lite"])
+    return _PRICES.get(model_id, _PRICES["gemini-3.5-flash-lite"])
 
 
 @dataclass(frozen=True)
 class PricedUsage:
     """Token counts + computed USD cost for a single call.
 
-    `cache_creation_input_tokens` / `cache_read_input_tokens` are kept on
-    the dataclass for shape compatibility with the Anthropic-era code,
-    but in Gemini-mode they're always 0 (we don't use explicit context
-    caching today).
+    `cache_creation_input_tokens` / `cache_read_input_tokens` are 0 on
+    the Gemini path today (we don't use explicit context caching), but
+    populated on the Anthropic path when prompt caching is in play.
     """
 
     model: str

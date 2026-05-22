@@ -1,48 +1,54 @@
-"""Thin wrapper around the Google Gemini SDK (`google-genai`) with model
-routing, cost tracking, and Pydantic-validated outputs.
+"""Thin wrapper around two LLM providers — Anthropic Claude (via
+AnthropicVertex) for the opus tier, Google Gemini (via `google-genai`)
+for sonnet + haiku — with model routing, cost tracking, and
+Pydantic-validated outputs.
 
 History:
-- pre-M34: wrapped Anthropic Claude.
-- M34 (2026-05-22): swapped to Gemini via the Google AI Studio API key.
-- M34b (2026-05-22): swapped auth to **Vertex AI** via Application
-  Default Credentials (service account JSON). Same `google-genai` SDK,
-  same `LLMClient.call(...)` surface — only the client construction
-  changed. Vertex AI gives us per-project quotas, GCP IAM, and bill
-  consolidation; the API-key path is kept only as a dev fallback for
-  contributors without GCP access.
+- pre-M34: wrapped Anthropic Claude (single provider).
+- M34 (2026-05-22): swapped entirely to Gemini via Google AI Studio API
+  key.
+- M34b (2026-05-22): swapped auth to Vertex AI via ADC (service-account
+  JSON), still Gemini-only.
+- M35 (2026-05-22): brought Claude back for the opus tier. Both
+  providers now authenticate against the same Vertex AI service-account
+  JSON; both run in the `global` multi-region. Tier mapping:
+    - opus  → claude-opus-4-7      (AnthropicVertex, region="global")
+    - sonnet → gemini-3.5-flash     (google-genai,    location="global")
+    - haiku  → gemini-3.5-flash-lite (google-genai,    location="global")
 
 Design decisions
 ----------------
-- Model routing is by tier (`"haiku"` / `"sonnet"` / `"opus"`) rather
-  than exact ID. The mapping table here is the only place to bump when
-  models migrate. Tier names are unchanged from the Anthropic era — the
-  semantic meaning ("cheap/fast", "balanced", "max-quality") carries
-  over even though the underlying provider doesn't think in tiers.
-- The wrapper's surface (`LLMClient.call(tier, system, user,
-  max_tokens, response_model, adaptive_thinking, effort, ...)`) is
-  preserved verbatim so every callsite (workflows, prediction.py,
-  etc.) keeps working without edits. Per-call options that don't map
-  to Gemini are accepted-and-ignored rather than rejected — keeps the
-  blast radius of the swap small.
+- Routing is by tier (`"haiku"` / `"sonnet"` / `"opus"`). The dispatch
+  table here is the only place to bump when the mapping changes; every
+  callsite stays generic.
+- `LLMClient.call(...)` surface (tier, system, user, max_tokens,
+  response_model, adaptive_thinking, effort, tools, extra_messages,
+  cache_system) is preserved verbatim across the swap.
+- Structured output:
+    - Gemini path: native `response_schema` (the SDK validates against
+      the Pydantic class and surfaces `.parsed`).
+    - Anthropic path: tool-use trick — register a single tool whose
+      `input_schema` is the Pydantic JSON Schema, force `tool_choice`,
+      and extract the validated dict from the `tool_use` block.
 - `adaptive_thinking=True` enables Gemini's dynamic thinking budget
-  (-1, "let the model decide"). False sets `thinking_budget=0` which
-  disables the thinking pass and saves tokens.
-- Structured output uses Gemini's native `response_schema` (the SDK
-  validates against the Pydantic class and surfaces `.parsed`).
-- Cost accounting reads `usage_metadata.{prompt,candidates,thoughts}_token_count`
-  off the response. Thinking tokens are billed at the output rate.
+  (-1 sentinel). False sets `thinking_budget=0` for haiku and a small
+  fixed cap for sonnet, saving output tokens. The flag is a no-op on
+  the Anthropic path today; we can wire it to Claude's extended
+  thinking later if needed.
+- Cost accounting is provider-specific in how it extracts usage but
+  unified through the shared `price_call` + `CostMeter`.
 
 What this file does NOT do (deliberately):
-- Explicit context caching via `cachedContent`. The first-token savings
-  rarely beat the upload cost for our workloads; revisit if a per-call
-  static prefix grows past 32K tokens.
-- Tool execution loop. The caller drives the loop; we just return.
-- Retry/backoff. The SDK handles transient 429/5xx with backoff.
-- Streaming. Added later if chat-style UX needs it.
+- Explicit context caching for Gemini (`cachedContent` resource).
+- Anthropic extended thinking opt-in.
+- Tool execution loop. Callers drive the loop.
+- Retry/backoff (SDKs handle transient 429/5xx).
+- Streaming.
 """
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -53,36 +59,26 @@ from pydantic import BaseModel
 try:  # Allow import without the optional dep present (tests using fakes
     # can still exercise the cost meter and tool defs).
     from google import genai
-    from google.genai import types as genai_types
 except ImportError:  # pragma: no cover - exercised only in environments
     # without the google-genai dep.
     genai = None  # type: ignore[assignment]
-    genai_types = None  # type: ignore[assignment]
+
+try:
+    from anthropic import AnthropicVertex
+except ImportError:  # pragma: no cover - same story for Anthropic SDK
+    AnthropicVertex = None  # type: ignore[assignment]
 
 
 ModelTier = Literal["haiku", "sonnet", "opus"]
 
 
 # Single source of truth for tier → model ID. Update only when migrating.
-# Gemini doesn't think in tiers, but we preserve the three-level concept
-# so all callsites stay generic — `tier="opus"` still means "use the
-# best model"; `tier="haiku"` still means "use the cheap one".
-#
-# Routing rationale (Gemini 3.x lineup, 2026-05):
-# - 3.5-flash (opus tier): newest GA flash with stronger reasoning;
-#   Vertex AI doesn't currently expose `gemini-3.1-pro-preview` in
-#   our project (404 on GenerateContent), so we route the "high
-#   accuracy" workflows here instead. Used by Decomposition,
-#   EdgeInference, CodeGen, CodeReview.
-# - Flash (3-flash-preview): balanced. Used by Research,
-#   DriverInference, the prediction.analyzeRationale tRPC.
-# - Flash-Lite (3.1-flash-lite): cheapest. Reserved for high-volume
-#   classification + extraction tasks (no current workflow uses it
-#   yet, but it's the fallback when costs spike).
+# - opus  → Claude (best reasoning; routed via AnthropicVertex).
+# - sonnet / haiku → Gemini 3.5 flash family (cheap & fast).
 _MODEL_BY_TIER: dict[ModelTier, str] = {
-    "haiku": "gemini-3.1-flash-lite",
-    "sonnet": "gemini-3-flash-preview",
-    "opus": "gemini-3.5-flash",
+    "haiku": "gemini-3.5-flash-lite",
+    "sonnet": "gemini-3.5-flash",
+    "opus": "claude-opus-4-7",
 }
 
 
@@ -91,10 +87,14 @@ def available_models() -> Mapping[ModelTier, str]:
     return dict(_MODEL_BY_TIER)
 
 
-# Effort hints retained for API compatibility (and so callers can keep
-# threading them through), but Gemini doesn't have a direct "effort"
-# parameter — the closest analog is `thinking_budget`. We translate
-# in `_thinking_budget()` below.
+def _is_anthropic_tier(tier: ModelTier) -> bool:
+    """True when the tier routes to the Anthropic provider."""
+    return tier == "opus"
+
+
+# Effort hints retained for API compatibility; Gemini-only. The
+# Anthropic path ignores the value today (Claude doesn't expose a
+# matching knob).
 _DEFAULT_EFFORT_BY_TIER: dict[ModelTier, str] = {
     "haiku": "medium",
     "sonnet": "medium",
@@ -105,7 +105,7 @@ _DEFAULT_EFFORT_BY_TIER: dict[ModelTier, str] = {
 @dataclass(frozen=True)
 class LLMCallResult:
     """Everything callers usually need from one LLM call. Field shape
-    preserved across the Claude → Gemini swap."""
+    preserved across the Claude → Gemini → dual-provider swaps."""
 
     model: str
     tier: ModelTier
@@ -116,21 +116,27 @@ class LLMCallResult:
     was passed. None otherwise."""
     stop_reason: str | None
     raw_usage: dict[str, int]
-    """Raw usage dict (`input_tokens`, `output_tokens`,
-    `cache_creation_input_tokens`, `cache_read_input_tokens`). The
-    two cache_* fields are 0 in Gemini-mode — kept for shape
-    compatibility with the cost meter."""
+    """Raw usage dict with keys: input_tokens, output_tokens,
+    cache_creation_input_tokens, cache_read_input_tokens. Cache fields
+    are 0 on the Gemini path (we don't use `cachedContent` today) but
+    populated on the Anthropic path."""
 
 
 T = TypeVar("T", bound=BaseModel)
 
 
+# Scopes required for the SA to authenticate against Vertex AI.
+# `cloud-platform` covers both `aiplatform.googleapis.com` (Gemini +
+# Claude on Vertex Model Garden); `generative-language` is harmless
+# extra coverage for the Google AI Studio path if we ever toggle back.
+_VERTEX_SCOPES = [
+    "https://www.googleapis.com/auth/cloud-platform",
+    "https://www.googleapis.com/auth/generative-language",
+]
+
+
 class LLMClient:
     """Centralized entry point for every LLM call in the platform.
-
-    The public `.call(...)` surface is unchanged from the Anthropic era —
-    every workflow built against this client keeps working as-is after
-    the Gemini swap.
 
     ```python
     # Free-form text
@@ -140,7 +146,7 @@ class LLMClient:
         user="What's the area of a triangle with sides 3, 4, 5?",
     )
 
-    # Pydantic-validated structured output
+    # Pydantic-validated structured output (routes to Claude opus)
     class Decomposition(BaseModel):
         drivers: list[str]
         intermediates: list[str]
@@ -152,6 +158,16 @@ class LLMClient:
     )
     assert isinstance(result.parsed, Decomposition)
     ```
+
+    Construction:
+    - `LLMClient()` — pick up both clients from env (Vertex AI SA JSON
+      + GOOGLE_CLOUD_LOCATION). Production path.
+    - `LLMClient(genai_client=fake_g, anthropic_client=fake_a)` —
+      inject fakes for tests. Either may be None when the test only
+      exercises one provider.
+    - `LLMClient(client=fake_g)` — backwards-compat alias for
+      `genai_client=`. Kept so the (many) pre-M35 test fixtures keep
+      compiling; they all faked the Gemini path.
     """
 
     def __init__(
@@ -159,24 +175,59 @@ class LLMClient:
         *,
         cost_meter: CostMeter | None = None,
         client: Any | None = None,
+        genai_client: Any | None = None,
+        anthropic_client: Any | None = None,
         api_key: str | None = None,
     ) -> None:
         from agent_tools.cost import CostMeter as _CostMeter
 
-        if genai is None and client is None:  # pragma: no cover - import-time guard
+        # Backwards-compat: pre-M35 fixtures pass `client=` and assume
+        # it's the Gemini provider.
+        if client is not None and genai_client is None:
+            genai_client = client
+
+        if genai_client is None and anthropic_client is None:
+            built_g, built_a = _build_default_clients(api_key=api_key)
+            genai_client = built_g
+            anthropic_client = built_a
+
+        if genai_client is None and anthropic_client is None:
+            # Both SDKs absent and no fakes — refuse to construct rather
+            # than crashing later on `.call()`.
             raise RuntimeError(
-                "google-genai SDK not installed and no fake client supplied. "
-                "Install `agent-tools` with the runtime extras, or pass "
-                "`client=<fake>`."
+                "LLMClient: no provider configured. Set "
+                "GOOGLE_GENAI_USE_VERTEXAI=true + GOOGLE_APPLICATION_CREDENTIALS "
+                "(production), or inject a fake via genai_client= / "
+                "anthropic_client= for tests."
             )
 
-        if client is not None:
-            self._client = client
-        else:
-            self._client = _build_default_client(api_key=api_key)
+        self._genai = genai_client
+        self._anthropic = anthropic_client
         self.cost_meter = cost_meter or _CostMeter()
 
-    # ---- public helpers --------------------------------------------------
+    # ---- internal accessors -------------------------------------------------
+    #
+    # `workflows.py` (and a couple of test helpers) reach into `_client`
+    # to rebind a fresh LLMClient onto a per-workflow cost meter. Keep
+    # the attr as an alias for the Gemini client to avoid breaking that
+    # pattern; new code should call `.clone()` instead.
+
+    @property
+    def _client(self) -> Any:
+        return self._genai
+
+    def clone(self, *, cost_meter: CostMeter | None = None) -> LLMClient:
+        """Return a new LLMClient sharing the same underlying providers
+        but with a fresh (or supplied) cost meter. Used by per-workflow
+        wrappers to scope cost to a single run without touching the
+        shared client."""
+        return LLMClient(
+            genai_client=self._genai,
+            anthropic_client=self._anthropic,
+            cost_meter=cost_meter,
+        )
+
+    # ---- public surface -----------------------------------------------------
 
     def call(
         self,
@@ -192,42 +243,240 @@ class LLMClient:
         response_model: type[T] | None = None,
         extra_messages: list[dict[str, Any]] | None = None,
     ) -> LLMCallResult:
-        """Make one Gemini `generate_content` call.
+        """Make one LLM call.
 
-        Args:
-            tier: Routing knob — "haiku" / "sonnet" / "opus".
-            system: System instruction. List joined with double newlines.
-            user: Current user turn — string or content blocks. When a
-                list of dicts, each item must have `role` + `content`.
-            max_tokens: Hard cap on output.
-            effort: Retained for API compatibility; translated into
-                `thinking_budget` per tier.
-            adaptive_thinking: Enable dynamic thinking budget (-1, "let
-                the model decide"). Off by default — saves output tokens.
-            cache_system: Retained for API compatibility; Gemini-mode
-                ignores it (explicit context caching is opt-in via the
-                `cachedContent` resource, not this knob).
-            tools: Tool definitions. Currently passed through to Gemini
-                as `tools=[...]` — coverage of the tool-execution loop
-                lands in a later slice.
-            response_model: Pydantic model. When set, requests JSON
-                output with the schema attached; `.parsed` is populated.
-            extra_messages: Optional prior turns to prepend.
+        Routing: `tier="opus"` dispatches to AnthropicVertex; everything
+        else dispatches to google-genai. The surface is identical for
+        both — the only knob that differs in behavior is
+        `adaptive_thinking`, which controls Gemini's `thinking_budget`
+        and is ignored on the Anthropic path.
         """
-        from agent_tools.cost import price_call
-
         model = _MODEL_BY_TIER[tier]
         effort = effort or _DEFAULT_EFFORT_BY_TIER[tier]
 
+        if _is_anthropic_tier(tier):
+            return self._call_anthropic(
+                tier=tier,
+                model=model,
+                system=system,
+                user=user,
+                max_tokens=max_tokens,
+                adaptive_thinking=adaptive_thinking,
+                tools=tools,
+                response_model=response_model,
+                extra_messages=extra_messages,
+            )
+        return self._call_gemini(
+            tier=tier,
+            model=model,
+            system=system,
+            user=user,
+            max_tokens=max_tokens,
+            effort=effort,
+            adaptive_thinking=adaptive_thinking,
+            tools=tools,
+            response_model=response_model,
+            extra_messages=extra_messages,
+        )
+
+    # ---- Anthropic provider -------------------------------------------------
+
+    def _call_anthropic(
+        self,
+        *,
+        tier: ModelTier,
+        model: str,
+        system: str | list[str],
+        user: str | list[dict[str, Any]],
+        max_tokens: int,
+        adaptive_thinking: bool,
+        tools: Iterable[dict[str, Any]] | None,
+        response_model: type[T] | None,
+        extra_messages: list[dict[str, Any]] | None,
+    ) -> LLMCallResult:
+        from agent_tools.cost import price_call
+
+        if self._anthropic is None:
+            raise RuntimeError(
+                f"tier={tier} routes to {model} (Anthropic) but no "
+                "AnthropicVertex client is configured. Install "
+                "`anthropic[vertex]` and set GOOGLE_GENAI_USE_VERTEXAI=true "
+                "+ GOOGLE_APPLICATION_CREDENTIALS."
+            )
+
+        system_text = self._join_system(system)
+        messages = self._render_anthropic_messages(user=user, extra=extra_messages)
+
+        # Structured output: tool-use trick. Register the response model
+        # as a single tool, force the model to call it, then read the
+        # validated input dict back out.
+        api_tools: list[dict[str, Any]] | None = None
+        tool_choice: dict[str, Any] | None = None
+        schema_name: str | None = None
+        if response_model is not None:
+            schema_name = self._schema_tool_name(response_model)
+            api_tools = [{
+                "name": schema_name,
+                "description": (response_model.__doc__ or schema_name).strip(),
+                "input_schema": response_model.model_json_schema(),
+            }]
+            tool_choice = {"type": "tool", "name": schema_name}
+        elif tools:
+            api_tools = list(tools)
+
+        request: dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "system": system_text,
+            "messages": messages,
+        }
+        if api_tools is not None:
+            request["tools"] = api_tools
+        if tool_choice is not None:
+            request["tool_choice"] = tool_choice
+        # `adaptive_thinking=True` on opus → Claude extended thinking with a
+        # reasonable token budget. Matches the semantic of Gemini's "let the
+        # model decide" budget; the model spends extra output tokens
+        # reasoning before answering. Caller-tunable cap so a runaway
+        # thinking phase can't blow past max_tokens.
+        if adaptive_thinking:
+            request["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": max(min(max_tokens // 2, 8192), 1024),
+            }
+
+        response = self._anthropic.messages.create(**request)
+
+        usage = self._extract_anthropic_usage(response)
+        priced = price_call(model=model, **usage)
+        self.cost_meter.record(priced)
+
+        text, parsed = self._extract_anthropic_content(
+            response, response_model=response_model, schema_name=schema_name
+        )
+        stop_reason = getattr(response, "stop_reason", None)
+        if stop_reason is not None and not isinstance(stop_reason, str):
+            stop_reason = str(stop_reason)
+
+        return LLMCallResult(
+            model=model,
+            tier=tier,
+            text=text,
+            parsed=parsed,
+            stop_reason=stop_reason,
+            raw_usage=usage,
+        )
+
+    @staticmethod
+    def _schema_tool_name(model: type[BaseModel]) -> str:
+        """Anthropic tool names must match `^[a-zA-Z0-9_-]{1,64}$`. Pydantic
+        class names already conform but sanitize defensively in case a
+        future schema sneaks in a dot or space."""
+        raw = model.__name__
+        clean = "".join(c if c.isalnum() or c in "-_" else "_" for c in raw)
+        return clean[:64] or "structured_output"
+
+    @staticmethod
+    def _render_anthropic_messages(
+        *,
+        user: str | list[dict[str, Any]],
+        extra: list[dict[str, Any]] | None,
+    ) -> list[dict[str, Any]]:
+        """Render to Anthropic's `messages` shape. Roles are
+        "user" / "assistant" (Gemini-era "model" gets translated back)."""
+        msgs: list[dict[str, Any]] = []
+        if extra:
+            for m in extra:
+                role = m.get("role", "user")
+                if role == "model":
+                    role = "assistant"
+                content = m.get("content", "")
+                msgs.append({"role": role, "content": content})
+        if isinstance(user, str):
+            msgs.append({"role": "user", "content": user})
+        else:
+            msgs.append({"role": "user", "content": list(user)})
+        return msgs
+
+    @staticmethod
+    def _extract_anthropic_content(
+        response: Any,
+        *,
+        response_model: type[T] | None,
+        schema_name: str | None,
+    ) -> tuple[str, BaseModel | None]:
+        """Walk `response.content` blocks. Concatenate `text` blocks for
+        the free-form text return; pick the matching `tool_use` block
+        for the structured-output return."""
+        text_parts: list[str] = []
+        parsed: BaseModel | None = None
+        for block in getattr(response, "content", []) or []:
+            btype = getattr(block, "type", None)
+            if btype == "text":
+                t = getattr(block, "text", "")
+                if isinstance(t, str):
+                    text_parts.append(t)
+            elif btype == "tool_use" and response_model is not None:
+                if schema_name is None or getattr(block, "name", "") == schema_name:
+                    raw = getattr(block, "input", None)
+                    if isinstance(raw, dict):
+                        parsed = response_model.model_validate(raw)
+        return "".join(text_parts), parsed
+
+    @staticmethod
+    def _extract_anthropic_usage(response: Any) -> dict[str, int]:
+        """Pull the standard usage dict off an Anthropic response. Unlike
+        Gemini, Anthropic already reports `input_tokens` excluding
+        cache-read tokens, so no subtraction needed."""
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+            }
+        return {
+            "input_tokens": int(getattr(usage, "input_tokens", 0) or 0),
+            "output_tokens": int(getattr(usage, "output_tokens", 0) or 0),
+            "cache_creation_input_tokens": int(
+                getattr(usage, "cache_creation_input_tokens", 0) or 0
+            ),
+            "cache_read_input_tokens": int(
+                getattr(usage, "cache_read_input_tokens", 0) or 0
+            ),
+        }
+
+    # ---- Gemini provider ----------------------------------------------------
+
+    def _call_gemini(
+        self,
+        *,
+        tier: ModelTier,
+        model: str,
+        system: str | list[str],
+        user: str | list[dict[str, Any]],
+        max_tokens: int,
+        effort: str,
+        adaptive_thinking: bool,
+        tools: Iterable[dict[str, Any]] | None,
+        response_model: type[T] | None,
+        extra_messages: list[dict[str, Any]] | None,
+    ) -> LLMCallResult:
+        from agent_tools.cost import price_call
+
+        if self._genai is None:
+            raise RuntimeError(
+                f"tier={tier} routes to {model} (Gemini) but no "
+                "google-genai client is configured."
+            )
+
         system_instruction = self._join_system(system)
-        contents = self._render_messages(user=user, extra=extra_messages)
+        contents = self._render_gemini_messages(user=user, extra=extra_messages)
         thinking_budget = _thinking_budget(
             tier=tier, effort=effort, adaptive=adaptive_thinking
         )
 
-        # Build the config dict. We pass dict (not GenerateContentConfig)
-        # so fakes used in tests don't need to import google.genai.types —
-        # the SDK accepts a dict alias for the config.
         config: dict[str, Any] = {
             "system_instruction": system_instruction,
             "max_output_tokens": max_tokens,
@@ -239,20 +488,19 @@ class LLMClient:
         if tools:
             config["tools"] = list(tools)
 
-        request = {
-            "model": model,
-            "contents": contents,
-            "config": config,
-        }
-        response = self._client.models.generate_content(**request)
+        response = self._genai.models.generate_content(
+            model=model,
+            contents=contents,
+            config=config,
+        )
 
-        usage = self._extract_usage(response)
+        usage = self._extract_gemini_usage(response)
         priced = price_call(model=model, **usage)
         self.cost_meter.record(priced)
 
-        text = self._extract_text(response)
-        parsed = self._extract_parsed(response, response_model)
-        stop_reason = self._extract_stop_reason(response)
+        text = self._extract_gemini_text(response)
+        parsed = self._extract_gemini_parsed(response, response_model)
+        stop_reason = self._extract_gemini_stop_reason(response)
 
         return LLMCallResult(
             model=model,
@@ -263,7 +511,7 @@ class LLMClient:
             raw_usage=usage,
         )
 
-    # ---- internals -------------------------------------------------------
+    # ---- shared helpers -----------------------------------------------------
 
     @staticmethod
     def _join_system(system: str | list[str]) -> str:
@@ -272,18 +520,13 @@ class LLMClient:
         return "\n\n".join(s for s in system if s)
 
     @staticmethod
-    def _render_messages(
+    def _render_gemini_messages(
         *,
         user: str | list[dict[str, Any]],
         extra: list[dict[str, Any]] | None,
     ) -> list[dict[str, Any]]:
-        """Render to Gemini's `contents` shape.
-
-        Gemini expects a list of `{role, parts: [{text}]}` entries with
-        `role` ∈ {"user", "model"}. We accept the Anthropic-era
-        {"role": "user"|"assistant", "content": "..."} shape and
-        translate to keep callsites stable.
-        """
+        """Render to Gemini's `contents` shape (`{role, parts: [{text}]}`
+        with role ∈ {"user", "model"})."""
         rendered: list[dict[str, Any]] = []
         if extra:
             for m in extra:
@@ -294,7 +537,6 @@ class LLMClient:
                 if isinstance(content, str):
                     parts: list[dict[str, Any]] = [{"text": content}]
                 else:
-                    # Assume already in {parts: [...]} shape.
                     parts = list(content)
                 rendered.append({"role": role, "parts": parts})
         if isinstance(user, str):
@@ -304,12 +546,10 @@ class LLMClient:
         return rendered
 
     @staticmethod
-    def _extract_text(response: Any) -> str:
-        # SDK shortcut: `response.text` joins all text parts.
+    def _extract_gemini_text(response: Any) -> str:
         text = getattr(response, "text", None)
         if isinstance(text, str):
             return text
-        # Fall back to walking candidates → content → parts.
         parts: list[str] = []
         for cand in getattr(response, "candidates", []) or []:
             content = getattr(cand, "content", None)
@@ -320,37 +560,31 @@ class LLMClient:
         return "".join(parts)
 
     @staticmethod
-    def _extract_parsed(response: Any, response_model: type[T] | None) -> BaseModel | None:
+    def _extract_gemini_parsed(response: Any, response_model: type[T] | None) -> BaseModel | None:
         if response_model is None:
             return None
-        # `response.parsed` is the SDK's structured-output accessor.
         parsed = getattr(response, "parsed", None)
         if isinstance(parsed, BaseModel):
             return parsed
-        # Some fake test responses set `parsed_output` (Anthropic-era
-        # name); honor it for cross-fixture compatibility.
         legacy = getattr(response, "parsed_output", None)
         if isinstance(legacy, BaseModel):
             return legacy
-        # Final fallback: parse JSON ourselves.
         if isinstance(parsed, dict):
             return response_model.model_validate(parsed)
         return None
 
     @staticmethod
-    def _extract_stop_reason(response: Any) -> str | None:
+    def _extract_gemini_stop_reason(response: Any) -> str | None:
         candidates = getattr(response, "candidates", None) or []
         if not candidates:
             return None
         fr = getattr(candidates[0], "finish_reason", None)
         if fr is None:
             return None
-        # Gemini's finish_reason is an enum; coerce to its string name
-        # for callers that just want a debug label.
         return getattr(fr, "name", str(fr))
 
     @staticmethod
-    def _extract_usage(response: Any) -> dict[str, int]:
+    def _extract_gemini_usage(response: Any) -> dict[str, int]:
         meta = getattr(response, "usage_metadata", None)
         if meta is None:
             return {
@@ -359,14 +593,10 @@ class LLMClient:
                 "cache_creation_input_tokens": 0,
                 "cache_read_input_tokens": 0,
             }
-        # Gemini reports candidates_token_count for the answer and
-        # thoughts_token_count for the thinking pass; combine into
-        # output_tokens since both bill at the same rate.
         candidate_tokens = int(getattr(meta, "candidates_token_count", 0) or 0)
         thoughts_tokens = int(getattr(meta, "thoughts_token_count", 0) or 0)
         cached = int(getattr(meta, "cached_content_token_count", 0) or 0)
         prompt = int(getattr(meta, "prompt_token_count", 0) or 0)
-        # Subtract cached from prompt so cache_read isn't double-counted.
         return {
             "input_tokens": max(prompt - cached, 0),
             "output_tokens": candidate_tokens + thoughts_tokens,
@@ -379,41 +609,98 @@ def _truthy(val: str | None) -> bool:
     return (val or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _build_default_client(*, api_key: str | None) -> Any:
-    """Pick the genai.Client construction mode from the environment.
+def _read_sa_project_id(creds_path: str) -> str | None:
+    """Extract `project_id` from a service-account JSON key. Returns None
+    if the file is unreadable or doesn't contain the field — the caller
+    decides whether that's fatal."""
+    try:
+        with open(creds_path) as fh:
+            info = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return None
+    pid = info.get("project_id")
+    return pid if isinstance(pid, str) and pid else None
 
-    Vertex AI (default in production): set ``GOOGLE_GENAI_USE_VERTEXAI=true``
-    along with ``GOOGLE_CLOUD_PROJECT``, ``GOOGLE_CLOUD_LOCATION``, and
-    ``GOOGLE_APPLICATION_CREDENTIALS`` pointing at a service account JSON.
-    The SDK picks up the credentials via google-auth's ADC chain — we
-    just pass ``vertexai=True`` so it routes through the Vertex endpoint.
 
-    API-key fallback (dev only): if Vertex isn't configured, fall back to
-    a ``GEMINI_API_KEY`` / ``GOOGLE_API_KEY`` direct call. This path
-    isn't used in compose anymore but keeps a no-GCP contributor unblocked.
+def _build_default_clients(*, api_key: str | None) -> tuple[Any | None, Any | None]:
+    """Construct (genai_client, anthropic_client) from environment.
+
+    Production path: Vertex AI for both. Service-account JSON at
+    ``GOOGLE_APPLICATION_CREDENTIALS`` authenticates both SDKs;
+    ``GOOGLE_CLOUD_LOCATION`` (default ``global``) picks the region.
+    The project id is read from the SA JSON itself (matches the
+    user-provided example) and overridden by ``GOOGLE_CLOUD_PROJECT``
+    when explicitly set.
+
+    Dev fallback (no Vertex): a ``GEMINI_API_KEY`` / ``GOOGLE_API_KEY``
+    builds a Gemini-only client; opus calls will then error at runtime
+    with a clear message. Use this path only when you don't have GCP
+    access — Anthropic models aren't reachable here.
     """
-    if genai is None:  # pragma: no cover - import-time guard
-        raise RuntimeError("google-genai SDK not installed")
+    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
+    creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
+    if not project_id and creds_path and os.path.exists(creds_path):
+        project_id = _read_sa_project_id(creds_path)
 
-    if _truthy(os.environ.get("GOOGLE_GENAI_USE_VERTEXAI")):
-        project = os.environ.get("GOOGLE_CLOUD_PROJECT")
-        location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
-        if not project:
+    use_vertex = _truthy(os.environ.get("GOOGLE_GENAI_USE_VERTEXAI"))
+
+    genai_client: Any | None = None
+    anthropic_client: Any | None = None
+
+    if use_vertex:
+        if not project_id:
             raise RuntimeError(
-                "Vertex AI mode requires GOOGLE_CLOUD_PROJECT. Set it in "
-                ".env (and ensure GOOGLE_APPLICATION_CREDENTIALS points "
-                "at a service-account JSON with the Vertex AI User role)."
+                "Vertex AI mode requires either GOOGLE_CLOUD_PROJECT to be set "
+                "explicitly, or GOOGLE_APPLICATION_CREDENTIALS to point at a "
+                "service-account JSON containing a `project_id` field."
             )
-        return genai.Client(vertexai=True, project=project, location=location)  # type: ignore[union-attr]
+        credentials = _load_sa_credentials(creds_path) if creds_path else None
+        if genai is not None:
+            client_kwargs: dict[str, Any] = {
+                "vertexai": True,
+                "project": project_id,
+                "location": location,
+            }
+            if credentials is not None:
+                client_kwargs["credentials"] = credentials
+            genai_client = genai.Client(**client_kwargs)  # type: ignore[union-attr]
+        if AnthropicVertex is not None:
+            # AnthropicVertex picks up credentials via google-auth's ADC
+            # chain — same SA JSON via GOOGLE_APPLICATION_CREDENTIALS.
+            anthropic_client = AnthropicVertex(
+                project_id=project_id, region=location
+            )
+        return genai_client, anthropic_client
 
+    # Dev fallback: Gemini-only via API key. No Anthropic provider — opus
+    # calls will raise at runtime with a helpful message.
     key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not key:
         raise RuntimeError(
             "No LLM auth configured. Either set GOOGLE_GENAI_USE_VERTEXAI=true "
-            "(with GOOGLE_CLOUD_PROJECT + GOOGLE_APPLICATION_CREDENTIALS) for "
-            "Vertex AI, or GEMINI_API_KEY for the direct Gemini API."
+            "(with GOOGLE_APPLICATION_CREDENTIALS pointing at a service-account "
+            "JSON) for Vertex AI — required for opus-tier Claude calls — or "
+            "GEMINI_API_KEY for a Gemini-only dev setup."
         )
-    return genai.Client(api_key=key)  # type: ignore[union-attr]
+    if genai is not None:
+        genai_client = genai.Client(api_key=key)  # type: ignore[union-attr]
+    return genai_client, anthropic_client
+
+
+def _load_sa_credentials(creds_path: str) -> Any | None:
+    """Build google.oauth2 service-account credentials with the scopes
+    Vertex AI requires. Returns None if google-auth isn't importable
+    (we'll fall through to ADC in that case)."""
+    if not os.path.exists(creds_path):
+        return None
+    try:
+        from google.oauth2 import service_account  # type: ignore[import-not-found]
+    except ImportError:  # pragma: no cover - google-auth is a transitive of google-genai
+        return None
+    return service_account.Credentials.from_service_account_file(
+        creds_path, scopes=_VERTEX_SCOPES
+    )
 
 
 def _thinking_budget(
@@ -422,18 +709,15 @@ def _thinking_budget(
     """Map (tier, effort, adaptive) → Gemini's thinking_budget int.
 
     `-1` is the SDK's "let the model decide" sentinel; `0` disables
-    thinking entirely. Anything in between is a hard cap on thinking
-    tokens.
+    thinking entirely. Anything in between is a hard cap.
 
-    The translation is intentionally conservative — overthinking is the
-    main failure mode for these models, so we only opt into a big
-    budget when the caller explicitly asked for adaptive_thinking.
+    Translation stays conservative — overthinking is the main failure
+    mode for these models, so we only opt into a big budget when the
+    caller explicitly passes adaptive_thinking=True. Anthropic ignores
+    this (extended thinking isn't wired through the wrapper yet).
     """
     if adaptive:
         return -1
-    # Without adaptive, derive a small fixed budget from effort.
-    # Flash-lite (haiku) supports thinking_budget=0; flash + pro
-    # require a positive integer when thinking is on.
     if tier == "haiku":
         return 0
     if effort == "high":

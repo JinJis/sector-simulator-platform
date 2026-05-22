@@ -74,7 +74,7 @@ const Env = z.object({
     .string()
     .optional()
     .transform((v) => (v && v.length > 0 ? v : undefined)),
-  GOOGLE_CLOUD_LOCATION: z.string().default("us-central1"),
+  GOOGLE_CLOUD_LOCATION: z.string().default("global"),
   GOOGLE_APPLICATION_CREDENTIALS: z
     .string()
     .optional()

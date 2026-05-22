@@ -5,6 +5,7 @@ description = "LLM client + MCP-style tool definitions for the agent layer"
 requires-python = ">=3.12"
 dependencies = [
   "google-genai>=0.20.0",
+  "anthropic[vertex]>=0.40.0",
   "pydantic>=2.9.0",
 ]
 

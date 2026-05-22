@@ -6,12 +6,42 @@
  * write/read paths; resolved counts stay at 0 until the cron is up.
  */
 
+import { readFileSync } from "node:fs";
+
 import { GoogleGenAI } from "@google/genai";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { env } from "../lib/env.js";
 import { publicProcedure, router } from "./init.js";
+
+/**
+ * Pull `project_id` out of the SA JSON at the configured path. Cached
+ * per-process so we don't hit the disk on every analyzeRationale call.
+ *
+ * Falls back to the explicit GOOGLE_CLOUD_PROJECT env var if the SA
+ * file isn't readable — keeps the dev story tolerant of partially
+ * configured environments.
+ */
+let _cachedSaProjectId: string | null | undefined;
+function readSaProjectId(saPath: string | undefined): string | null {
+  if (_cachedSaProjectId !== undefined) return _cachedSaProjectId;
+  if (!saPath) {
+    _cachedSaProjectId = null;
+    return null;
+  }
+  try {
+    const raw = readFileSync(saPath, "utf8");
+    const parsed = JSON.parse(raw) as { project_id?: unknown };
+    _cachedSaProjectId =
+      typeof parsed.project_id === "string" && parsed.project_id.length > 0
+        ? parsed.project_id
+        : null;
+  } catch {
+    _cachedSaProjectId = null;
+  }
+  return _cachedSaProjectId;
+}
 
 const HORIZONS = ["1d", "1w", "1m"] as const;
 
@@ -547,25 +577,32 @@ ${input.rationale || "(비어 있음)"}
 
 JSON 만 출력해 주세요 (다른 텍스트 금지).`;
 
-      // Gemini 3 Flash. JSON-only mode + maxOutputTokens cap keeps the
-      // call cheap (≈ $0.005 per analyze) and shaped for the
-      // RationaleAnalysisSchema downstream zod validation.
+      // Gemini 3.5 Flash on Vertex AI. JSON-only mode + maxOutputTokens
+      // cap keeps the call cheap (≈ $0.005 per analyze) and shaped for
+      // the RationaleAnalysisSchema downstream zod validation.
       //
-      // Auth mode: Vertex AI when configured (uses ADC — the
-      // GOOGLE_APPLICATION_CREDENTIALS env var pointing at the SA JSON
-      // is picked up by google-auth-library transparently). Falls back
-      // to API key for dev contributors without GCP access.
+      // Auth mode: Vertex AI when configured. We prefer the explicit
+      // project_id from the SA JSON itself (matches the Python wrapper
+      // path) and fall back to GOOGLE_CLOUD_PROJECT. Credentials are
+      // picked up via google-auth-library through the
+      // GOOGLE_APPLICATION_CREDENTIALS env var. Falls back to API key
+      // for dev contributors without GCP access.
+      const saProjectId = vertexConfigured
+        ? readSaProjectId(cfg.GOOGLE_APPLICATION_CREDENTIALS)
+        : null;
+      const projectId =
+        saProjectId ?? (cfg.GOOGLE_CLOUD_PROJECT as string | undefined) ?? "";
       const ai = vertexConfigured
         ? new GoogleGenAI({
             vertexai: true,
-            project: cfg.GOOGLE_CLOUD_PROJECT!,
+            project: projectId,
             location: cfg.GOOGLE_CLOUD_LOCATION,
           })
         : new GoogleGenAI({ apiKey: cfg.GEMINI_API_KEY! });
       let text: string;
       try {
         const resp = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
+          model: "gemini-3.5-flash",
           contents: [{ role: "user", parts: [{ text: userPrompt }] }],
           config: {
             systemInstruction:

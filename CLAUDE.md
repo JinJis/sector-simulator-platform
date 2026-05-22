@@ -51,18 +51,19 @@
 - Python 3.12+
 
 ### Agent / LLM
-- Google Gemini (3.1-pro-preview / 3-flash-preview / 3.1-flash-lite) — model routing 필수
-- **인증**: Vertex AI (M34b 이후 기본). 서비스 어카운트 JSON을 `infra/secrets/vertex-ai-sa.json`에 두고 ADC로 자동 로드. 자세한 세팅은 `infra/secrets/README.md`.
-  - 필수 env (compose가 자동 주입): `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` (기본 `us-central1`), `GOOGLE_APPLICATION_CREDENTIALS=/secrets/vertex-ai-sa.json`
-  - GCP 접근 권한 없는 컨트리뷰터용 dev fallback: `GEMINI_API_KEY` (Google AI Studio)
+- **Dual-provider** (M35 이후): Anthropic Claude (opus 티어) + Google Gemini (sonnet/haiku 티어). 둘 다 같은 Vertex AI SA로 인증.
+- **인증**: Vertex AI. 서비스 어카운트 JSON을 `infra/secrets/vertex-ai-sa.json`에 두면 양쪽 SDK가 같은 키로 동작. `google-genai`는 `credentials=...` 명시 로드(`google.oauth2.service_account`), `anthropic[vertex]`는 ADC chain. `project_id`는 SA JSON에서 자동 추출 (env 미설정 시). 자세한 세팅은 `infra/secrets/README.md`.
+  - 필수 env (compose가 자동 주입): `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_LOCATION` (기본 `global`), `GOOGLE_APPLICATION_CREDENTIALS=/secrets/vertex-ai-sa.json`. `GOOGLE_CLOUD_PROJECT`는 옵셔널 (SA JSON에서 추출 가능).
+  - GCP 접근 권한 없는 컨트리뷰터용 dev fallback: `GEMINI_API_KEY` (Google AI Studio). 이 경로에선 opus 호출 불가 (Claude는 Vertex 전용 경로).
 - Tier mapping (`packages/agent-tools/llm_client.py`):
-  - `opus` → `gemini-3.5-flash` (critical reasoning — `gemini-3.1-pro-preview`은 Vertex AI에 미노출이라 3.5-flash로 라우팅)
-  - `sonnet` → `gemini-3-flash-preview` (balanced)
-  - `haiku` → `gemini-3.1-flash-lite` (cheapest)
+  - `opus` → `claude-opus-4-7` (AnthropicVertex; critical reasoning — Decomposition / EdgeInference / CodeGen / CodeReview)
+  - `sonnet` → `gemini-3.5-flash` (balanced; Research / DriverInference / prediction `analyzeRationale`)
+  - `haiku` → `gemini-3.5-flash-lite` (cheapest; extraction / routing / classification)
+- 모든 agent output은 Pydantic schema로 validation. Gemini는 native `response_schema`, Claude는 tool-use trick (`tool_choice` 강제 + `tools[0].input_schema = response_model.model_json_schema()`).
 - Temporal.io (long-running workflow)
 - Modal 또는 E2B (sandboxed code execution)
 - MCP tools (`packages/agent-tools`)
-- (Anthropic Claude는 M34 (2026-05-22)에서 전체 제거됨; `LLMClient.call()` 인터페이스는 그대로 유지. M34b (2026-05-22)에서 API key → Vertex AI 인증 전환)
+- History: Anthropic Claude는 M34 (2026-05-22)에서 전체 제거 후 M35 (2026-05-22)에서 opus 티어로 복귀. M34b (2026-05-22) Vertex AI 인증 전환은 그대로 유지.
 
 ### Data
 - PostgreSQL 16 + TimescaleDB extension + pgvector
@@ -266,15 +267,18 @@ class SimulationBase:
 - Coverage 목표: services 70%, apps 50%
 
 ### LLM calls
-- **항상** `packages/agent-tools/llm-client`를 통해 호출 (비용 로깅 내장)
-- 공급자: Google Gemini via Vertex AI (M34b 이후). `LLMClient.call(tier=...)` 인터페이스는 변경 없음.
-- 인증: Vertex AI는 ADC로 service account JSON을 자동 로드. 새 호출 사이트 추가 시 `LLMClient()` 만 생성하면 env에 따라 알맞은 클라이언트가 빌드됨.
-- Model routing (tier 이름은 historical — 의미는 그대로):
-  - **`haiku`** (= `gemini-3.1-flash-lite`): routing, extraction, simple classification
-  - **`sonnet`** (= `gemini-3-flash-preview`): reasoning, code gen, code review, report writing
-  - **`opus`** (= `gemini-3.5-flash`): critical decomposition, edge inference (높은 정확도 필요한 곳만 — `gemini-3.1-pro-preview` Vertex 미노출로 3.5-flash로 임시 라우팅)
-- 모든 agent output은 Pydantic schema로 validation (Gemini의 `response_schema` 기능 활용)
-- `adaptive_thinking=True`는 Gemini의 dynamic thinking budget (`-1`)으로 매핑됨 — overthinking 방지를 위해 opt-in
+- **항상** `packages/agent-tools/llm-client`를 통해 호출 (비용 로깅 내장, 공급자 분기 내부 처리)
+- 공급자: M35부터 dual — Anthropic Claude (opus 티어, via `anthropic[vertex]`) + Google Gemini (sonnet/haiku 티어, via `google-genai`). 둘 다 같은 Vertex AI SA JSON으로 인증, `location="global"`. `LLMClient.call(tier=...)` 인터페이스는 동일.
+- 인증: `LLMClient()` 만 생성하면 env에 따라 양쪽 클라이언트가 알맞게 빌드됨. SA JSON에서 `project_id` 자동 추출.
+- Model routing:
+  - **`haiku`** (= `gemini-3.5-flash-lite`): routing, extraction, classification
+  - **`sonnet`** (= `gemini-3.5-flash`): reasoning, research, driver inference, rationale analysis
+  - **`opus`** (= `claude-opus-4-7`): critical decomposition, edge inference, code gen, code review
+- 모든 agent output은 Pydantic schema로 validation. Gemini는 native `response_schema`, Claude는 tool-use trick (wrapper가 자동 처리 — caller는 `response_model=...`만 넘기면 됨).
+- `adaptive_thinking=True`:
+  - Gemini: dynamic thinking budget (`-1`)
+  - Claude: extended thinking 활성 (`thinking={"type": "enabled", "budget_tokens": min(max_tokens/2, 8192)}`)
+  - overthinking 방지 위해 opt-in
 
 ---
 
