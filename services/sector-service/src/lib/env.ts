@@ -74,7 +74,16 @@ const Env = z.object({
     .string()
     .optional()
     .transform((v) => (v && v.length > 0 ? v : undefined)),
-  GOOGLE_CLOUD_LOCATION: z.string().default("global"),
+  // `.default("global")` only kicks in for `undefined`; an empty string
+  // from `${VAR:-}` in compose would otherwise pass through and let the
+  // SDK fall back to us-central1. Coerce blank → "global".
+  GOOGLE_CLOUD_LOCATION: z
+    .string()
+    .optional()
+    .transform((v) => {
+      const trimmed = (v ?? "").trim();
+      return trimmed.length > 0 ? trimmed : "global";
+    }),
   GOOGLE_APPLICATION_CREDENTIALS: z
     .string()
     .optional()

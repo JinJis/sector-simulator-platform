@@ -637,7 +637,11 @@ def _build_default_clients(*, api_key: str | None) -> tuple[Any | None, Any | No
     with a clear message. Use this path only when you don't have GCP
     access — Anthropic models aren't reachable here.
     """
-    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
+    # `os.environ.get(key, default)` only returns the default when the key
+    # is missing — an empty string from `${VAR:-}` interpolation in compose
+    # slips through and would otherwise let the SDK fall back to its own
+    # baked-in default (us-central1 for Vertex AI). Coerce empty → "global".
+    location = (os.environ.get("GOOGLE_CLOUD_LOCATION") or "").strip() or "global"
     creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
     if not project_id and creds_path and os.path.exists(creds_path):
