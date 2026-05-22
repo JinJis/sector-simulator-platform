@@ -217,6 +217,13 @@ function RecentPredictionsCard({ feed }: { feed: CommunityFeed }) {
                     {p.score.toFixed(0)}점
                   </span>
                 )}
+                <Link
+                  href={`/predict/${p.id}`}
+                  className="text-[10px] text-cyan-500 hover:text-cyan-300"
+                  aria-label="이 예측의 상세 페이지로 이동"
+                >
+                  →
+                </Link>
               </li>
             );
           })}

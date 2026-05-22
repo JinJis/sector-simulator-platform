@@ -57,6 +57,14 @@ from data_pipeline.jobs.refresh_quote_history import (
     refresh_quote_history,
 )
 from data_pipeline.jobs.refresh_quotes import RefreshQuotesResult, refresh_quotes
+from data_pipeline.jobs.resolve_predictions import (
+    ResolvePredictionsResult,
+    resolve_due_predictions,
+)
+from data_pipeline.prediction_repo import (
+    PredictionResolverRepository,
+    build_resolver_repository,
+)
 from data_pipeline.repo import EquityRepository, build_repository
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -67,6 +75,10 @@ _DEFAULT_CRON = "30 8 * * *"  # 08:30 UTC = 17:30 KST
 # upstream means daily would burn rate limits with no value.
 _DEFAULT_FINANCIALS_CRON = "0 4 * * 0"
 _DEFAULT_FINANCIALS_QUARTERS = 8
+# Default prediction-resolve cron: 09:00 UTC daily. 30 min after the
+# 08:30 UTC quote refresh so the resolver sees today's freshly-ingested
+# closes when target_date is yesterday. (M33b)
+_DEFAULT_RESOLVE_PREDICTIONS_CRON = "0 9 * * *"
 
 
 def _build_source() -> DataSource:
@@ -118,6 +130,13 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
     if not hasattr(app.state, "repo"):
         repo = await build_repository(os.environ.get("DATABASE_URL"))
         app.state.repo = repo
+    if not hasattr(app.state, "resolver_repo"):
+        # Separate pool from `repo` so a long-running refresh-quotes job
+        # doesn't starve the resolver and vice versa. Tests pre-set
+        # `app.state.resolver_repo` to swap in an in-memory backing.
+        app.state.resolver_repo = await build_resolver_repository(
+            os.environ.get("DATABASE_URL")
+        )
     if not hasattr(app.state, "source"):
         app.state.source = _build_source()
     if not hasattr(app.state, "fx"):
@@ -130,6 +149,8 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         app.state.last_result = None
     if not hasattr(app.state, "last_financials_result"):
         app.state.last_financials_result = None
+    if not hasattr(app.state, "last_resolve_result"):
+        app.state.last_resolve_result = None
     app.state.throttle_ms = int(os.environ.get("INGEST_THROTTLE_MS", "200"))
     app.state.financials_quarters = int(
         os.environ.get("REFRESH_FINANCIALS_QUARTERS", str(_DEFAULT_FINANCIALS_QUARTERS))
@@ -171,6 +192,28 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
             )
             log.info("data-pipeline: financials-refresh armed (cron=%r UTC)", fin_cron)
 
+        # Daily prediction resolution (M33b).
+        resolve_cron = os.environ.get(
+            "RESOLVE_PREDICTIONS_CRON", _DEFAULT_RESOLVE_PREDICTIONS_CRON
+        )
+        try:
+            resolve_trigger = CronTrigger.from_crontab(resolve_cron, timezone="UTC")
+        except ValueError as e:
+            log.error(
+                "data-pipeline: bad RESOLVE_PREDICTIONS_CRON=%r (%s)", resolve_cron, e
+            )
+        else:
+            scheduler.add_job(
+                _run_resolve_predictions_job,
+                trigger=resolve_trigger,
+                kwargs={"app": app},
+                id="resolve_predictions_daily",
+                replace_existing=True,
+            )
+            log.info(
+                "data-pipeline: predictions-resolve armed (cron=%r UTC)", resolve_cron
+            )
+
         if scheduler.get_jobs():
             scheduler.start()
         else:
@@ -189,6 +232,9 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         repo = getattr(app.state, "repo", None)
         if repo is not None:
             await repo.close()
+        resolver_repo = getattr(app.state, "resolver_repo", None)
+        if resolver_repo is not None:
+            await resolver_repo.close()
 
 
 async def _run_refresh_job(*, app: FastAPI) -> RefreshQuotesResult:
@@ -197,6 +243,13 @@ async def _run_refresh_job(*, app: FastAPI) -> RefreshQuotesResult:
     throttle = int(app.state.throttle_ms)
     result = await refresh_quotes(source=source, repo=repo, throttle_ms=throttle)
     app.state.last_result = result
+    return result
+
+
+async def _run_resolve_predictions_job(*, app: FastAPI) -> ResolvePredictionsResult:
+    repo: PredictionResolverRepository = app.state.resolver_repo
+    result = await resolve_due_predictions(repo=repo)
+    app.state.last_resolve_result = result
     return result
 
 
@@ -247,6 +300,9 @@ def create_app() -> FastAPI:
                 next_runs[job.id] = (
                     job.next_run_time.isoformat() if job.next_run_time else None
                 )
+        last_resolve: ResolvePredictionsResult | None = getattr(
+            app.state, "last_resolve_result", None
+        )
         return {
             "status": "ok",
             "now": datetime.now(UTC).isoformat(),
@@ -254,6 +310,9 @@ def create_app() -> FastAPI:
             "next_runs": next_runs,
             "last_refresh": last.model_dump(mode="json") if last is not None else None,
             "last_financials_refresh": last_fin.model_dump(mode="json") if last_fin is not None else None,
+            "last_resolve_predictions": last_resolve.model_dump(mode="json")
+            if last_resolve is not None
+            else None,
         }
 
     @app.post("/jobs/refresh-quotes", response_model=RefreshQuotesResult)
@@ -340,6 +399,29 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status_code=404,
                 detail="no financials refresh has run since the process started",
+            )
+        return last
+
+    @app.post(
+        "/jobs/resolve-predictions",
+        response_model=ResolvePredictionsResult,
+    )
+    async def trigger_resolve_predictions() -> ResolvePredictionsResult:
+        log.info("data-pipeline: manual /jobs/resolve-predictions triggered")
+        return await _run_resolve_predictions_job(app=app)
+
+    @app.get(
+        "/jobs/resolve-predictions/last",
+        response_model=ResolvePredictionsResult,
+    )
+    async def last_resolve_predictions() -> ResolvePredictionsResult:
+        last: ResolvePredictionsResult | None = getattr(
+            app.state, "last_resolve_result", None
+        )
+        if last is None:
+            raise HTTPException(
+                status_code=404,
+                detail="no prediction-resolve has run since the process started",
             )
         return last
 

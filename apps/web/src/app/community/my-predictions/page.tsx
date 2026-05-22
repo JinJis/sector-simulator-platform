@@ -99,10 +99,18 @@ export default async function MyPredictionsPage() {
                   scenario={p.scenario}
                   sectorSlug={p.equity.sector_slug}
                 />
-                <div className="mt-2 text-[10px] text-neutral-600">
-                  {p.resolved && p.result
-                    ? `채점 완료 · 점수 ${p.result.score.toFixed(0)} (실제 ${p.result.actual_pct >= 0 ? "+" : ""}${p.result.actual_pct.toFixed(1)}%, 오차 ${p.result.abs_error.toFixed(1)}pp)`
-                    : `채점 대기 — 등록 후 ${horizonKo} 뒤에 자동 채점`}
+                <div className="mt-2 flex items-baseline justify-between gap-2 text-[10px] text-neutral-600">
+                  <span>
+                    {p.resolved && p.result
+                      ? `채점 완료 · 점수 ${p.result.score.toFixed(0)} (실제 ${p.result.actual_pct >= 0 ? "+" : ""}${p.result.actual_pct.toFixed(1)}%, 오차 ${p.result.abs_error.toFixed(1)}pp)`
+                      : `채점 대기 — 등록 후 ${horizonKo} 뒤에 자동 채점`}
+                  </span>
+                  <Link
+                    href={`/predict/${p.id}`}
+                    className="shrink-0 text-cyan-500 hover:text-cyan-300"
+                  >
+                    상세/공유 →
+                  </Link>
                 </div>
               </li>
             );

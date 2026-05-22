@@ -342,6 +342,49 @@ export const predictionRouter = router({
       })) as z.infer<typeof PredictionWithMetaOut>[];
     }),
 
+  /**
+   * M33b: per-prediction permalink. Public read — anyone with the link
+   * can see anyone else's prediction. Returns 404 when the ID doesn't
+   * resolve, so the permalink page can render a clean not-found state
+   * instead of falling through to a 500.
+   */
+  getOne: publicProcedure
+    .input(z.object({ id: z.string().min(1) }))
+    .output(PredictionWithMetaOut)
+    .query(async ({ ctx, input }) => {
+      const row = await ctx.prisma.prediction.findUnique({
+        where: { id: input.id },
+        include: {
+          user: { select: { name: true, email: true } },
+          equity: {
+            select: {
+              id: true,
+              ticker: true,
+              company_name: true,
+              company_name_local: true,
+              sector_slug: true,
+              iso_country: true,
+              currency: true,
+            },
+          },
+          result: true,
+        },
+      });
+      if (!row) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `prediction ${input.id} not found`,
+        });
+      }
+      const scenarioMap = await loadScenarios(ctx, [row.scenario_id]);
+      return {
+        ...row,
+        user_label: row.user.name ?? row.user.email,
+        rationale_analysis: parseStoredAnalysis(row.rationale_analysis),
+        scenario: row.scenario_id ? scenarioMap.get(row.scenario_id) ?? null : null,
+      } as z.infer<typeof PredictionWithMetaOut>;
+    }),
+
   leaderboard: publicProcedure
     .input(z.object({ limit: z.number().int().positive().max(100).default(20) }).default({}))
     .output(z.array(LeaderboardRowOut))

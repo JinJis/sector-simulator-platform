@@ -560,6 +560,12 @@ model UserScore {
   total_points         Float   @default(0) @map("total_points")
   predictions_made     Int     @default(0) @map("predictions_made")
   predictions_resolved Int     @default(0) @map("predictions_resolved")
+  // Lifetime hits (score >= 50). Stored denormalized so the resolver
+  // doesn't have to COUNT(*) over prediction_results on every write;
+  // hit_rate_pct stays consistent with hits/predictions_resolved with
+  // no float drift. Maintained by data-pipeline's resolve_predictions
+  // job (M33b).
+  hits                 Int     @default(0) @map("hits")
   // Lifetime hits / lifetime resolved as a percentage; "hit" = score >= 50.
   hit_rate_pct         Float   @default(0) @map("hit_rate_pct")
   current_streak       Int     @default(0) @map("current_streak")

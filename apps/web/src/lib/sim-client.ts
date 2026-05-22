@@ -514,6 +514,24 @@ export async function fetchMyPredictions(limit = 50): Promise<PredictionRow[]> {
   );
 }
 
+/**
+ * M33b — fetch a single prediction by ID for the permalink page.
+ * Returns null when the upstream returns NOT_FOUND (so the permalink
+ * page can call `notFound()` cleanly); rethrows on every other error.
+ */
+export async function fetchPrediction(id: string): Promise<PredictionRow | null> {
+  try {
+    return await trpc.prediction.getOne.query({ id });
+  } catch (e) {
+    if (e instanceof TRPCClientError) {
+      const code = (e.data as { code?: string } | null | undefined)?.code;
+      if (code === "NOT_FOUND") return null;
+      throw new Error(`fetchPrediction(${id}) failed: ${e.message}`);
+    }
+    throw e;
+  }
+}
+
 export async function fetchLeaderboard(limit = 20): Promise<LeaderboardRow[]> {
   return rethrow(
     () => trpc.prediction.leaderboard.query({ limit }),
