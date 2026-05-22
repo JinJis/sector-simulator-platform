@@ -1,11 +1,15 @@
 """Thin wrapper around the Google Gemini SDK (`google-genai`) with model
 routing, cost tracking, and Pydantic-validated outputs.
 
-History: this module wrapped Anthropic Claude through `LLMClient` until
-M34 (2026-05-22). We swapped to Gemini because (a) Gemini 2.5 Pro is
-roughly Sonnet-equivalent at a fraction of the cost, and (b) Anthropic's
-prompt-caching trick we relied on is not the right primitive for our
-workloads anyway (most prompts are <1 minute apart but rarely repeated).
+History:
+- pre-M34: wrapped Anthropic Claude.
+- M34 (2026-05-22): swapped to Gemini via the Google AI Studio API key.
+- M34b (2026-05-22): swapped auth to **Vertex AI** via Application
+  Default Credentials (service account JSON). Same `google-genai` SDK,
+  same `LLMClient.call(...)` surface — only the client construction
+  changed. Vertex AI gives us per-project quotas, GCP IAM, and bill
+  consolidation; the API-key path is kept only as a dev fallback for
+  contributors without GCP access.
 
 Design decisions
 ----------------
@@ -166,12 +170,7 @@ class LLMClient:
         if client is not None:
             self._client = client
         else:
-            # Prefer GEMINI_API_KEY; fall back to GOOGLE_API_KEY for SDK
-            # parity (google-genai reads either).
-            key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get(
-                "GOOGLE_API_KEY"
-            )
-            self._client = genai.Client(api_key=key)  # type: ignore[union-attr]
+            self._client = _build_default_client(api_key=api_key)
         self.cost_meter = cost_meter or _CostMeter()
 
     # ---- public helpers --------------------------------------------------
@@ -371,6 +370,47 @@ class LLMClient:
             "cache_creation_input_tokens": 0,
             "cache_read_input_tokens": cached,
         }
+
+
+def _truthy(val: str | None) -> bool:
+    return (val or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _build_default_client(*, api_key: str | None) -> Any:
+    """Pick the genai.Client construction mode from the environment.
+
+    Vertex AI (default in production): set ``GOOGLE_GENAI_USE_VERTEXAI=true``
+    along with ``GOOGLE_CLOUD_PROJECT``, ``GOOGLE_CLOUD_LOCATION``, and
+    ``GOOGLE_APPLICATION_CREDENTIALS`` pointing at a service account JSON.
+    The SDK picks up the credentials via google-auth's ADC chain — we
+    just pass ``vertexai=True`` so it routes through the Vertex endpoint.
+
+    API-key fallback (dev only): if Vertex isn't configured, fall back to
+    a ``GEMINI_API_KEY`` / ``GOOGLE_API_KEY`` direct call. This path
+    isn't used in compose anymore but keeps a no-GCP contributor unblocked.
+    """
+    if genai is None:  # pragma: no cover - import-time guard
+        raise RuntimeError("google-genai SDK not installed")
+
+    if _truthy(os.environ.get("GOOGLE_GENAI_USE_VERTEXAI")):
+        project = os.environ.get("GOOGLE_CLOUD_PROJECT")
+        location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+        if not project:
+            raise RuntimeError(
+                "Vertex AI mode requires GOOGLE_CLOUD_PROJECT. Set it in "
+                ".env (and ensure GOOGLE_APPLICATION_CREDENTIALS points "
+                "at a service-account JSON with the Vertex AI User role)."
+            )
+        return genai.Client(vertexai=True, project=project, location=location)  # type: ignore[union-attr]
+
+    key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if not key:
+        raise RuntimeError(
+            "No LLM auth configured. Either set GOOGLE_GENAI_USE_VERTEXAI=true "
+            "(with GOOGLE_CLOUD_PROJECT + GOOGLE_APPLICATION_CREDENTIALS) for "
+            "Vertex AI, or GEMINI_API_KEY for the direct Gemini API."
+        )
+    return genai.Client(api_key=key)  # type: ignore[union-attr]
 
 
 def _thinking_budget(

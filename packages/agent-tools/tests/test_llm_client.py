@@ -225,6 +225,86 @@ def test_tools_passed_through_when_supplied() -> None:
     assert fake.models.requests[-1]["config"]["tools"] == tools
 
 
+def test_default_client_picks_vertex_when_env_flag_set(monkeypatch) -> None:
+    """When GOOGLE_GENAI_USE_VERTEXAI=true + project is set, the
+    default-client builder should construct genai.Client with
+    vertexai=True and the configured project/location — NOT with an
+    api_key. Mocks `genai.Client` and asserts the kwargs."""
+    from agent_tools import llm_client as mod
+
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-proj")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-west1")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    captured: dict = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(mod, "genai", type("X", (), {"Client": _FakeClient}))
+    mod._build_default_client(api_key=None)
+    assert captured == {"vertexai": True, "project": "test-proj", "location": "us-west1"}
+
+
+def test_default_client_falls_back_to_api_key_when_vertex_disabled(monkeypatch) -> None:
+    """Without the Vertex flag, the builder should pick the API-key path."""
+    from agent_tools import llm_client as mod
+
+    monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "key-abc")
+
+    captured: dict = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(mod, "genai", type("X", (), {"Client": _FakeClient}))
+    mod._build_default_client(api_key=None)
+    assert captured == {"api_key": "key-abc"}
+
+
+def test_default_client_errors_with_no_auth_configured(monkeypatch) -> None:
+    """With neither path configured, the builder should raise loudly."""
+    import pytest
+
+    from agent_tools import llm_client as mod
+
+    monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+    monkeypatch.setattr(mod, "genai", type("X", (), {"Client": _FakeClient}))
+    with pytest.raises(RuntimeError, match="No LLM auth configured"):
+        mod._build_default_client(api_key=None)
+
+
+def test_default_client_vertex_without_project_errors(monkeypatch) -> None:
+    """Vertex mode without GOOGLE_CLOUD_PROJECT is a config bug, not a
+    silent fallback."""
+    import pytest
+
+    from agent_tools import llm_client as mod
+
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+    monkeypatch.setattr(mod, "genai", type("X", (), {"Client": _FakeClient}))
+    with pytest.raises(RuntimeError, match="GOOGLE_CLOUD_PROJECT"):
+        mod._build_default_client(api_key=None)
+
+
 def test_cache_read_tokens_billed_at_discounted_rate() -> None:
     """When the response reports cached_content_token_count, we should
     bill those tokens through the cache-read multiplier rather than the

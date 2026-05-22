@@ -52,7 +52,9 @@
 
 ### Agent / LLM
 - Google Gemini (3.1-pro-preview / 3-flash-preview / 3.1-flash-lite) — model routing 필수
-- 단일 API 키 사용 — `GEMINI_API_KEY` env 변수
+- **인증**: Vertex AI (M34b 이후 기본). 서비스 어카운트 JSON을 `infra/secrets/vertex-ai-sa.json`에 두고 ADC로 자동 로드. 자세한 세팅은 `infra/secrets/README.md`.
+  - 필수 env (compose가 자동 주입): `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` (기본 `us-central1`), `GOOGLE_APPLICATION_CREDENTIALS=/secrets/vertex-ai-sa.json`
+  - GCP 접근 권한 없는 컨트리뷰터용 dev fallback: `GEMINI_API_KEY` (Google AI Studio)
 - Tier mapping (`packages/agent-tools/llm_client.py`):
   - `opus` → `gemini-3.1-pro-preview` (critical reasoning)
   - `sonnet` → `gemini-3-flash-preview` (balanced)
@@ -60,7 +62,7 @@
 - Temporal.io (long-running workflow)
 - Modal 또는 E2B (sandboxed code execution)
 - MCP tools (`packages/agent-tools`)
-- (Anthropic Claude는 M34 (2026-05-22)에서 전체 제거됨 — `LLMClient.call()` 인터페이스는 그대로 유지)
+- (Anthropic Claude는 M34 (2026-05-22)에서 전체 제거됨; `LLMClient.call()` 인터페이스는 그대로 유지. M34b (2026-05-22)에서 API key → Vertex AI 인증 전환)
 
 ### Data
 - PostgreSQL 16 + TimescaleDB extension + pgvector
@@ -129,7 +131,8 @@
 ### 초기 세팅
 ```bash
 pnpm install
-cp .env.example .env            # 필수 env 채우기 (DATABASE_URL, GEMINI_API_KEY, ...)
+cp .env.example .env            # GOOGLE_CLOUD_PROJECT 등 채우기. 자세한 가이드: infra/secrets/README.md
+# Vertex AI 사용 시: 서비스 어카운트 JSON을 infra/secrets/vertex-ai-sa.json 에 위치
 pnpm db:migrate dev             # Prisma migrations
 pnpm seed                       # 시드 데이터 (1개 하드코딩 섹터)
 ```
@@ -264,7 +267,8 @@ class SimulationBase:
 
 ### LLM calls
 - **항상** `packages/agent-tools/llm-client`를 통해 호출 (비용 로깅 내장)
-- 공급자: Google Gemini (M34 이후). `LLMClient.call(tier=...)` 인터페이스는 변경 없음.
+- 공급자: Google Gemini via Vertex AI (M34b 이후). `LLMClient.call(tier=...)` 인터페이스는 변경 없음.
+- 인증: Vertex AI는 ADC로 service account JSON을 자동 로드. 새 호출 사이트 추가 시 `LLMClient()` 만 생성하면 env에 따라 알맞은 클라이언트가 빌드됨.
 - Model routing (tier 이름은 historical — 의미는 그대로):
   - **`haiku`** (= `gemini-3.1-flash-lite`): routing, extraction, simple classification
   - **`sonnet`** (= `gemini-3-flash-preview`): reasoning, code gen, code review, report writing

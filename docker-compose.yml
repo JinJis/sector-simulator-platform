@@ -97,15 +97,26 @@ services:
       context: .
       dockerfile: infra/docker/agent-orchestration.Dockerfile
     environment:
-      # GEMINI_API_KEY is opt-in — without it, only /health works (any
-      # call that constructs a real LLMClient at request time will fail).
-      # The fake-client codepath is for tests only.
-      # Renamed from ANTHROPIC_API_KEY in M34 (Claude → Gemini swap).
+      # M34b: Vertex AI auth via service-account JSON. The host file at
+      # infra/secrets/vertex-ai-sa.json is mounted read-only at /secrets
+      # below; google-auth's ADC picks it up via the GOOGLE_APPLICATION_*
+      # env var. Without GOOGLE_GENAI_USE_VERTEXAI=true the LLMClient
+      # falls back to GEMINI_API_KEY (dev-only).
+      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-true}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-us-central1}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-/secrets/vertex-ai-sa.json}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       PROMPTS_DIR: /repo/prompts
       # Persistence: when set, workflow records survive restarts.
       # Without it the service falls back to an in-memory dict.
       DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
+    volumes:
+      # Service-account JSON keys (read-only). Drop the file at
+      # infra/secrets/vertex-ai-sa.json on the host — see
+      # infra/secrets/README.md for setup. Both this service and
+      # sector-service mount the same dir.
+      - ./infra/secrets:/secrets:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -150,10 +161,16 @@ services:
       AGENT_ORCHESTRATION_URL: http://agent-orchestration:8002
       DATA_PIPELINE_URL: http://data-pipeline:8003
       DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
-      # M33 + M34 — sector-service uses GEMINI_API_KEY for one-shot
-      # Gemini 3 Flash calls (rationale analysis). Inherits from the
-      # host env so it's the same key the agent-orchestration uses.
+      # M33 + M34 + M34b — sector-service makes one-shot Gemini 3 Flash
+      # calls (rationale analysis). Same Vertex AI auth path as
+      # agent-orchestration; same /secrets bind mount below.
+      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-true}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-us-central1}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-/secrets/vertex-ai-sa.json}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    volumes:
+      - ./infra/secrets:/secrets:ro
     depends_on:
       simulation-service:
         condition: service_started

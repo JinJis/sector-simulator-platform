@@ -61,7 +61,7 @@ The platform answers, in one place: *"What's the upside on this stock if the sec
 
 ## 1. Current architecture (2026-05-21)
 
-**5 services + 2 Next.js apps**, all wired through `docker-compose`. Postgres-backed; Google Gemini (3.1-pro / 3-flash / 3.1-flash-lite) + yfinance consumed externally. Single LLM API key (`GEMINI_API_KEY`) since M34.
+**5 services + 2 Next.js apps**, all wired through `docker-compose`. Postgres-backed; Google Gemini (3.1-pro / 3-flash / 3.1-flash-lite) + yfinance consumed externally. LLM auth via **Vertex AI** (service-account JSON, ADC) since M34b; legacy `GEMINI_API_KEY` retained as dev-only fallback.
 
 ```
                             ┌───────────────────────────────────────┐
@@ -180,7 +180,10 @@ The platform answers, in one place: *"What's the upside on this stock if the sec
 ### One-shot Docker (all 7 services)
 
 ```bash
-cp .env.example .env       # set GEMINI_API_KEY if you want agent runs
+cp .env.example .env       # set GOOGLE_CLOUD_PROJECT (Vertex AI) or GEMINI_API_KEY
+# For Vertex AI: drop the service-account JSON at infra/secrets/vertex-ai-sa.json
+# (see infra/secrets/README.md). Without it, agent runs return a clear "not
+# configured" error and the AI-analyze button hides.
 docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 ```
 
@@ -195,7 +198,7 @@ Then open:
 # prereqs: Node 20+, pnpm 9+, Python 3.12+, uv, Postgres 16 reachable
 pnpm install
 uv sync
-cp .env.example .env       # set DATABASE_URL + GEMINI_API_KEY
+cp .env.example .env       # DATABASE_URL + Vertex AI (or GEMINI_API_KEY)
 pnpm db:migrate            # apply all migrations
 pnpm db:seed               # 3 sectors
 pnpm db:seed:equities      # 49 equity rows
@@ -284,7 +287,7 @@ curl -X POST http://localhost:8002/workflows/decompose \
 curl http://localhost:8002/workflows/<workflow_id>
 ```
 
-Needs `GEMINI_API_KEY` set in `.env`. Without it the endpoint returns the workflow record but the run errors out.
+Needs Vertex AI (`GOOGLE_GENAI_USE_VERTEXAI=true` + `GOOGLE_CLOUD_PROJECT` + service-account JSON at `infra/secrets/vertex-ai-sa.json`) or `GEMINI_API_KEY` set in `.env`. Without either the endpoint returns the workflow record but the run errors out.
 
 ### Quality gates
 
@@ -351,6 +354,7 @@ Current tally: **136 passing + 2 skipped** across all suites.
 | **M33** | Scenario-backed predictions + LLM rationale analysis. `predictions.rationale_analysis` JSONB. `prediction.analyzeRationale` tRPC calling claude-sonnet-4-6 (later swapped to gemini-3-flash-preview in M34). Predict form 5-step rework (sector → horizon → magnitude → 근거(scenario+text+AI) → submit). Shared `PredictionRationale` component on equity detail + my-predictions. Default horizon shifted from 1d to 1w. |
 | **M28** | Dormant agent prompts → live workflows. Four written prompts (`research` / `driver-inference` / `code-gen` / `code-review`) become live workflows with full Pydantic schemas and HTTP/tRPC surfaces. New `FullPipelineWorkflow` chains 6 agents end-to-end (Research → Decomposition → DriverInference → EdgeInference → CodeGen → CodeReview), producing a reviewed `SimulationBase` Python source file as a string (typical cost $0.50–$1.00). Admin `/agent-runs/new` gains the Full Pipeline pipeline picker; `/agent-runs/[id]` renders all six stage outputs (ResearchBrief / Decomposition / DriverInference / EdgeInference / CodeGenSource / CodeReviewFindings) with severity-tagged review badges. Generated source is shown for review only — NOT executed by the orchestrator (Modal sandbox is a future slice; CLAUDE.md security invariant preserved). 16 new pytest cases (9 workflow + 7 HTTP). |
 | **M34** | LLM provider swap (Claude → Gemini). Replace Anthropic SDK with `google-genai` (Python) + `@google/genai` (TS) across the entire platform. Single API key (`GEMINI_API_KEY`). Tier mapping: `opus` → `gemini-3.1-pro-preview`, `sonnet` → `gemini-3-flash-preview`, `haiku` → `gemini-3.1-flash-lite`. `LLMClient.call()` interface preserved — no workflow changes. Cost meter rebuilt with Gemini 3.x pricing ($2/$12 Pro, $0.50/$3 Flash, $0.25/$1.50 Flash-Lite per 1M tokens; cache-read 0.25×). Expected per-user monthly LLM bill drops ~80% vs Claude. 20 agent-tools tests, 56 agent-orchestration tests, 34 agent-evals — all green. |
+| **M34b** | LLM auth swap (API key → Vertex AI via service account). Same `google-genai` SDK, same `LLMClient.call()` surface — only the client construction changed. `_build_default_client()` (Python) + `prediction.analyzeRationale` (TS) now route through Vertex AI when `GOOGLE_GENAI_USE_VERTEXAI=true` + `GOOGLE_CLOUD_PROJECT` are set; API-key path kept as dev-only fallback. New `infra/secrets/` dir (gitignored except `.gitkeep` + `README.md`) is bind-mounted read-only into `agent-orchestration` + `sector-service` at `/secrets`. Service-account JSON path defaults to `/secrets/vertex-ai-sa.json`; google-auth's ADC chain picks it up via `GOOGLE_APPLICATION_CREDENTIALS`. env.ts schema updated to validate the four Vertex env vars; compose env passthrough + `.env.example` + `turbo.json` globalEnv updated. Tests untouched — fakes inject the client directly, bypassing both auth paths. |
 
 ### Planned next — M28b → M31
 
@@ -441,7 +445,11 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up admin web se
 | Var | Default | Purpose |
 |---|---|---|
 | `DATABASE_URL` | `postgresql://platform:platform@postgres:5432/platform_dev` | All services that talk to Postgres |
-| `GEMINI_API_KEY` | (unset) | Required for live agent runs + prediction.analyzeRationale; without it agent-orchestration only serves `/health` |
+| `GOOGLE_GENAI_USE_VERTEXAI` | `true` | M34b: switch to Vertex AI auth. Set to `false` to use the legacy `GEMINI_API_KEY` path |
+| `GOOGLE_CLOUD_PROJECT` | (unset) | GCP project ID with Vertex AI API enabled (required when Vertex mode is on) |
+| `GOOGLE_CLOUD_LOCATION` | `us-central1` | Vertex AI region |
+| `GOOGLE_APPLICATION_CREDENTIALS` | `/secrets/vertex-ai-sa.json` | In-container path to the service-account JSON; bind-mounted from `infra/secrets/` |
+| `GEMINI_API_KEY` | (unset) | Dev-only fallback when Vertex AI is unavailable; without either, agent-orchestration only serves `/health` |
 | `SECTOR_SERVICE_URL` | `http://sector-service:8001` | RSC-side fetch from web/admin |
 | `AGENT_ORCHESTRATION_URL` | `http://agent-orchestration:8002` | Admin → orchestration calls |
 | `INGEST_SOURCE` | local: `fake`, prod: `yfinance` | data-pipeline data source |

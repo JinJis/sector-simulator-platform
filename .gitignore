@@ -43,6 +43,12 @@ storybook-static/
 .env.local
 .env.*.local
 .doppler.yaml
+# Service account JSON keys land in infra/secrets/. The dir is tracked
+# (.gitkeep + README explain what to drop in) but every key file is
+# ignored — never commit a JSON credential.
+infra/secrets/*
+!infra/secrets/.gitkeep
+!infra/secrets/README.md
 
 # Terraform
 .terraform/

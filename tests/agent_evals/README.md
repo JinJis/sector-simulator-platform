@@ -15,6 +15,9 @@ Structured eval harness for the Phase 2 agent layer. Two tiers:
   against fixtures of (input, canned response, assertions). Offline by
   default — flip to live API with `GEMINI_EVAL_LIVE=1`
   (`ANTHROPIC_EVAL_LIVE=1` still accepted as a back-compat alias).
+  Live mode picks up Vertex AI auth (`GOOGLE_GENAI_USE_VERTEXAI=true`
+  + `GOOGLE_CLOUD_PROJECT` + ADC creds) the same way the platform
+  services do; falls back to `GEMINI_API_KEY` if Vertex is off.
 
 ## Running
 
@@ -22,9 +25,9 @@ Structured eval harness for the Phase 2 agent layer. Two tiers:
 # Default — offline, no API calls
 .venv/bin/python -m pytest tests/agent-evals -v
 
-# Live mode — real Gemini API. Requires GEMINI_API_KEY. Cost is
-# bounded per case (see CostBudget in harness.py); a case that exceeds
-# budget fails fast.
+# Live mode — real Gemini call (Vertex AI or API key, whichever is
+# configured in .env). Cost is bounded per case (see CostBudget in
+# harness.py); a case that exceeds budget fails fast.
 GEMINI_EVAL_LIVE=1 .venv/bin/python -m pytest tests/agent-evals -v
 ```
 

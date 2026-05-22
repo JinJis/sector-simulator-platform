@@ -408,12 +408,14 @@ export const predictionRouter = router({
     .output(RationaleAnalysisSchema)
     .mutation(async ({ ctx, input }) => {
       const user = requireUser(ctx);
-      const apiKey = env().GEMINI_API_KEY;
-      if (!apiKey) {
+      const cfg = env();
+      const vertexConfigured =
+        cfg.GOOGLE_GENAI_USE_VERTEXAI && !!cfg.GOOGLE_CLOUD_PROJECT;
+      if (!vertexConfigured && !cfg.GEMINI_API_KEY) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message:
-            "AI 분석이 아직 구성되지 않았습니다. (GEMINI_API_KEY 미설정 — 관리자에게 문의해 주세요.)",
+            "AI 분석이 아직 구성되지 않았습니다. (Vertex AI 또는 GEMINI_API_KEY 미설정 — 관리자에게 문의해 주세요.)",
         });
       }
 
@@ -505,7 +507,18 @@ JSON 만 출력해 주세요 (다른 텍스트 금지).`;
       // Gemini 3 Flash. JSON-only mode + maxOutputTokens cap keeps the
       // call cheap (≈ $0.005 per analyze) and shaped for the
       // RationaleAnalysisSchema downstream zod validation.
-      const ai = new GoogleGenAI({ apiKey });
+      //
+      // Auth mode: Vertex AI when configured (uses ADC — the
+      // GOOGLE_APPLICATION_CREDENTIALS env var pointing at the SA JSON
+      // is picked up by google-auth-library transparently). Falls back
+      // to API key for dev contributors without GCP access.
+      const ai = vertexConfigured
+        ? new GoogleGenAI({
+            vertexai: true,
+            project: cfg.GOOGLE_CLOUD_PROJECT!,
+            location: cfg.GOOGLE_CLOUD_LOCATION,
+          })
+        : new GoogleGenAI({ apiKey: cfg.GEMINI_API_KEY! });
       let text: string;
       try {
         const resp = await ai.models.generateContent({

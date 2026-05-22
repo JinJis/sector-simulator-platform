@@ -9,7 +9,14 @@ and live (`GEMINI_EVAL_LIVE=1`, real `genai.Client()` via LLMClient)
 modes. The Python contract is identical in both modes — only the
 LLMClient's internal client object differs.
 
-History: pre-M34 this faked Anthropic; M34 swapped to Gemini.
+In live mode the LLMClient construction follows the same auth path as
+the rest of the platform — Vertex AI when `GOOGLE_GENAI_USE_VERTEXAI=true`
+(plus `GOOGLE_CLOUD_PROJECT` + ADC credentials via
+`GOOGLE_APPLICATION_CREDENTIALS`), or the legacy `GEMINI_API_KEY` path
+otherwise. See `infra/secrets/README.md` for the service-account JSON.
+
+History: pre-M34 this faked Anthropic; M34 swapped to Gemini; M34b
+swapped Gemini auth from API key to Vertex AI service account.
 """
 
 from __future__ import annotations
@@ -151,7 +158,12 @@ class _FakeGenAI:
 
 def build_llm(case: Case) -> LLMClient:
     """Build an LLMClient suitable for one case. Lives here so tests can
-    construct it directly when they don't want the pytest fixture."""
+    construct it directly when they don't want the pytest fixture.
+
+    In live mode `LLMClient()` reads the same env contract as the rest
+    of the platform (Vertex AI first, GEMINI_API_KEY fallback). In
+    offline mode we inject a fake client — no env or auth needed.
+    """
     if is_live_mode():
-        return LLMClient()  # uses GEMINI_API_KEY from env
+        return LLMClient()
     return LLMClient(client=_FakeGenAI(case.canned_response))

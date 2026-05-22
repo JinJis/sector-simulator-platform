@@ -45,11 +45,40 @@ const Env = z.object({
   // agent procedures reads these.
   BUDGET_USD_MONTHLY_FREE: z.coerce.number().nonnegative().default(0),
   BUDGET_USD_MONTHLY_PREMIUM: z.coerce.number().nonnegative().default(20),
-  // M33 + M34 — direct synchronous Gemini call from sector-service
-  // for prediction.analyzeRationale. Unset → analysis endpoint
-  // returns a friendly "not configured" error and the UI hides the
-  // AI button. Renamed from ANTHROPIC_API_KEY in M34.
-  GEMINI_API_KEY: z.string().optional(),
+  // M33 + M34 + M34b — direct synchronous Gemini call from
+  // sector-service for prediction.analyzeRationale.
+  //
+  // Two auth modes:
+  // 1. **Vertex AI (preferred)**: set GOOGLE_GENAI_USE_VERTEXAI=true +
+  //    GOOGLE_CLOUD_PROJECT + GOOGLE_CLOUD_LOCATION +
+  //    GOOGLE_APPLICATION_CREDENTIALS (path to service-account JSON).
+  // 2. **API key (dev fallback)**: set GEMINI_API_KEY.
+  //
+  // When neither is configured, the analyze endpoint returns a
+  // PRECONDITION_FAILED and the UI hides the AI button.
+  GEMINI_API_KEY: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  // Accept any string; treat "true"/"1"/"yes"/"on" (case-insensitive)
+  // as enabled. Empty string from docker-compose ${VAR:-} interpolation
+  // resolves to disabled.
+  GOOGLE_GENAI_USE_VERTEXAI: z
+    .string()
+    .optional()
+    .transform((v) => {
+      const t = (v ?? "").trim().toLowerCase();
+      return t === "true" || t === "1" || t === "yes" || t === "on";
+    }),
+  GOOGLE_CLOUD_PROJECT: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  GOOGLE_CLOUD_LOCATION: z.string().default("us-central1"),
+  GOOGLE_APPLICATION_CREDENTIALS: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
   DATABASE_URL: z.string().min(1),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
