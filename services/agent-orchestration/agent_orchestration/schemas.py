@@ -427,3 +427,85 @@ class FullPipelineRequest(BaseModel):
     description: str = Field(..., min_length=10, max_length=4000)
     reference_data: str | None = Field(default=None, max_length=20000)
     focus_areas: list[str] = Field(default_factory=list)
+
+
+# =====================================================================
+# M39b — SignalExtractor (haiku tier, ~100-1000 calls/day)
+# =====================================================================
+
+
+class ActorKeywordSet(BaseModel):
+    """One actor's keyword set for extractor matching. Single Actor can
+    match multiple aliases — extractor returns `matched_actor_key` when
+    any alias matches with high confidence."""
+
+    actor_key: str
+    aliases: list[str] = Field(default_factory=list)
+
+
+class SignalExtractorRequest(BaseModel):
+    """Input to the SignalExtractor agent.
+
+    The agent decides per-dimension deltas (technical / economic /
+    regulatory / supply) within -10..+10 based on the signal's content +
+    the capability context. Confidence < 0.5 means "don't update the
+    score" — caller treats those deltas as null.
+    """
+
+    sector_slug: str
+    capability_key: str
+    capability_name: str = Field(..., description="For agent context.")
+    capability_description: str = Field(..., max_length=2000)
+    capability_rationale: str = Field(..., max_length=2000)
+    signal_title: str = Field(..., max_length=500)
+    signal_summary: str | None = Field(default=None, max_length=4000)
+    source_kind: str = Field(..., description="paper / patent / news / filing / ...")
+    # Actor keyword sets — extractor matches signal text against these
+    # to tag a single best actor. Keep ≤25 to fit in haiku context.
+    actor_keywords: list[ActorKeywordSet] = Field(default_factory=list, max_length=25)
+
+
+class SignalScoring(BaseModel):
+    """Output of the SignalExtractor agent.
+
+    Deltas are signed; nullable when the agent isn't confident the
+    signal moves that dimension. is_highlight=True promotes to the hero
+    "Live Signals" panel — reserve for signals with |delta| >= 3 or
+    high regulatory/political importance.
+    """
+
+    delta_technical: float | None = Field(default=None, ge=-10, le=10)
+    delta_economic: float | None = Field(default=None, ge=-10, le=10)
+    delta_regulatory: float | None = Field(default=None, ge=-10, le=10)
+    delta_supply: float | None = Field(default=None, ge=-10, le=10)
+    # Extractor's self-rated confidence in the scoring. Caller can drop
+    # all deltas to null when confidence < 0.5.
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    is_highlight: bool = Field(
+        default=False,
+        description="Promote to hero 'Live Signals' band. Reserve for high-magnitude signals.",
+    )
+    # Best-matching actor by key (only if confidence > 0.8 per REFACTOR
+    # §18.8). Caller is responsible for resolving to Actor.id.
+    matched_actor_key: str | None = None
+    # Brief rationale for the scoring — captured for audit/debugging.
+    rationale: str = Field(default="", max_length=500)
+
+
+class SignalExtractorRunResult(BaseModel):
+    """Combined result of one extractor run — workflow output + per-
+    workflow cost. Returned by `/signal-extractor/score` HTTP endpoint."""
+
+    scoring: SignalScoring
+    cost_usd: float
+    duration_ms: int
+
+
+# Re-export ActorKeywordSet from the request module so callers don't
+# have to chase the import path.
+__all_signal_extractor__ = (
+    "ActorKeywordSet",
+    "SignalExtractorRequest",
+    "SignalScoring",
+    "SignalExtractorRunResult",
+)

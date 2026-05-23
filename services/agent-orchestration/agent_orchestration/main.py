@@ -24,7 +24,9 @@ import os
 from contextlib import asynccontextmanager
 from datetime import timedelta
 
-from agent_tools import LLMClient
+import time
+
+from agent_tools import CostMeter, LLMClient
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -41,6 +43,8 @@ from agent_orchestration.schemas import (
     FullPipelineRequest,
     ProposeSectorRequest,
     ResearchRequest,
+    SignalExtractorRequest,
+    SignalExtractorRunResult,
     WorkflowRecord,
 )
 from agent_orchestration.workflows import (
@@ -51,6 +55,7 @@ from agent_orchestration.workflows import (
     FullPipelineWorkflow,
     ProposeSectorWorkflow,
     ResearchWorkflow,
+    SignalExtractorWorkflow,
     WorkflowRunner,
 )
 
@@ -234,6 +239,42 @@ def create_app() -> FastAPI:
             return await workflow.run(req, cost_meter=cost_meter)
 
         return await runner.start(kind=workflow.kind, request=req, run=run)
+
+    @app.post(
+        "/signal-extractor/score",
+        response_model=SignalExtractorRunResult,
+    )
+    async def signal_extractor_score(
+        req: SignalExtractorRequest,
+    ) -> SignalExtractorRunResult:
+        """Synchronous extractor endpoint — called by the signal_ingest
+        cron once per raw Signal. Single haiku call (~$0.001 each at
+        current pricing), so we run inline rather than through the
+        WorkflowRunner queue. Returns the scoring + cost roll-up.
+        """
+        llm: LLMClient = app.state.llm
+        workflow = SignalExtractorWorkflow(llm=llm)
+        cost_meter = CostMeter()
+        t0 = time.perf_counter()
+        try:
+            scoring = await workflow.run(req, cost_meter=cost_meter)
+        except Exception as e:
+            log.exception(
+                "signal-extractor failed for %s/%s: %s",
+                req.sector_slug,
+                req.capability_key,
+                e,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=f"extractor agent failed: {e}",
+            ) from e
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        return SignalExtractorRunResult(
+            scoring=scoring,
+            cost_usd=cost_meter.total_usd,
+            duration_ms=duration_ms,
+        )
 
     @app.get("/workflows/{wid}", response_model=WorkflowRecord)
     async def get_workflow(wid: str) -> WorkflowRecord:

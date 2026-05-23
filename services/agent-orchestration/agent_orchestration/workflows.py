@@ -47,6 +47,8 @@ from agent_orchestration.schemas import (
     ProposeSectorResult,
     ResearchBrief,
     ResearchRequest,
+    SignalExtractorRequest,
+    SignalScoring,
     WorkflowRecord,
     WorkflowStatus,
 )
@@ -867,4 +869,100 @@ class FullPipelineWorkflow:
             edge_inference=edge_inf,
             code_gen=code_gen,
             code_review=code_review,
+        )
+
+
+# =====================================================================
+# M39b — SignalExtractorWorkflow (haiku tier)
+# =====================================================================
+#
+# Highest-volume workflow in the platform — runs ~100-1000x/day (one
+# call per ingested signal). Lives on the haiku tier so total monthly
+# cost stays under the per-user $30 budget even at thousands of
+# signals.
+#
+# Output is structured (Pydantic SignalScoring). No adaptive_thinking
+# (haiku doesn't benefit much, and we want fast turnaround).
+# =====================================================================
+
+
+class SignalExtractorWorkflow:
+    """Score one signal against one capability across 4 dimensions.
+
+    Called by the signal_ingest cron (M39c) for every raw signal after
+    the adapter writes it. Output (per-dim deltas + confidence +
+    matched_actor_key) is written back to the signals row before the
+    extractor returns to the caller.
+
+    Prompt: `prompts/signal_extractor.md`. Conservative scoring —
+    when ambiguous, dims are null + confidence < 0.5; the score
+    updater (M40) drops these.
+    """
+
+    kind = "signal_extractor"
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+
+    async def run(
+        self, request: SignalExtractorRequest, *, cost_meter: CostMeter
+    ) -> SignalScoring:
+        llm = self._llm.clone(cost_meter=cost_meter)
+        system = load_prompt("signal_extractor")
+        user = self._format_user_turn(request)
+        result = await asyncio.to_thread(
+            llm.call,
+            tier="haiku",
+            system=system,
+            user=user,
+            max_tokens=1024,
+            # Haiku doesn't materially benefit from extended thinking on
+            # this size of task — keep it fast.
+            adaptive_thinking=False,
+            response_model=SignalScoring,
+        )
+        if result.parsed is None:
+            raise RuntimeError(
+                f"signal_extractor returned unparseable output (stop_reason={result.stop_reason})"
+            )
+        assert isinstance(result.parsed, SignalScoring)
+        # Defensive: when extractor's matched_actor_key isn't in the
+        # provided keyword set, drop it (the agent shouldn't hallucinate
+        # keys, but cheap to guard).
+        if result.parsed.matched_actor_key is not None:
+            valid_keys = {ak.actor_key for ak in request.actor_keywords}
+            if result.parsed.matched_actor_key not in valid_keys:
+                log.warning(
+                    "signal_extractor: dropping hallucinated actor_key %r (sector=%s cap=%s)",
+                    result.parsed.matched_actor_key,
+                    request.sector_slug,
+                    request.capability_key,
+                )
+                # Pydantic v2 model_copy with update is the clean path.
+                return result.parsed.model_copy(update={"matched_actor_key": None})
+        return result.parsed
+
+    @staticmethod
+    def _format_user_turn(request: SignalExtractorRequest) -> str:
+        actor_lines: list[str] = []
+        if request.actor_keywords:
+            actor_lines.append("\n## Actor keyword sets")
+            for ak in request.actor_keywords:
+                aliases = ", ".join(ak.aliases) if ak.aliases else "(none)"
+                actor_lines.append(f"- {ak.actor_key}: {aliases}")
+        summary_block = (
+            f"\n### Summary\n{request.signal_summary}"
+            if request.signal_summary
+            else ""
+        )
+        return (
+            f"## Capability — {request.capability_name} ({request.capability_key})\n\n"
+            f"**Description**: {request.capability_description}\n\n"
+            f"**Why it matters**: {request.capability_rationale}\n\n"
+            f"## Signal ({request.source_kind})\n\n"
+            f"### Title\n{request.signal_title}"
+            f"{summary_block}\n"
+            + "\n".join(actor_lines)
+            + "\n\nScore per-dimension deltas, confidence, and (optionally) "
+            "the matched actor key. Output only the SignalScoring schema."
         )
