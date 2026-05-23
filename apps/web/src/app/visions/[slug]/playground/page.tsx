@@ -1,40 +1,76 @@
 /**
- * /visions/[slug]/playground — the simulator-as-playground. M37 stub
- * with a pointer to the existing sector workspace; M37c relocates the
- * actual driver-slider workspace here (currently at /sectors/[slug]/manual).
- * M42 adds the WhatIfFeasibility callout that ties slider state to
- * vision composite shift.
+ * /visions/[slug]/playground — the simulator-as-playground. Driver
+ * sliders + outputs + saved scenarios. M37c migrates the existing
+ * /sectors/[slug]/manual workspace into the Vision URL space; M42 adds
+ * the WhatIfFeasibility callout that ties slider state to vision
+ * composite shift.
+ *
+ * Implementation strategy: this server component fetches the same data
+ * the legacy sector layout was using, then a thin client wrapper
+ * (PlaygroundClient) sets up SectorContext + renders the existing
+ * ManualPanel / ScenarioBar / ReportPanel / LiveStrip. We deliberately
+ * REUSE rather than duplicate the existing components — duplication
+ * would have to be merged again at M42, and the existing components
+ * already work.
  */
 
 import { notFound } from "next/navigation";
 
+import {
+  fetchLive,
+  fetchSensitivity,
+  fetchSim,
+  type LiveResponse,
+  type SensitivityResponse,
+  type SimMetadata,
+} from "@/lib/sim-client";
+
 import { getVisionFixture } from "../../_fixtures";
+
+import { PlaygroundClient } from "./playground-client";
 
 interface Props {
   params: Promise<{ slug: string }>;
 }
 
-export default async function PlaygroundIndexPage({ params }: Props) {
+export default async function PlaygroundPage({ params }: Props) {
   const { slug } = await params;
   const fixture = getVisionFixture(slug);
   if (!fixture) notFound();
 
+  // Fetch the same sim payloads the sector layout uses. If sim-service
+  // is unreachable, render an inline error rather than 500-ing the page.
+  let meta: SimMetadata;
+  let sensitivity: SensitivityResponse | null = null;
+  let initialLive: LiveResponse | null = null;
+  try {
+    meta = await fetchSim(slug);
+    [sensitivity, initialLive] = await Promise.all([
+      fetchSensitivity(slug).catch(() => null),
+      fetchLive(slug).catch(() => null),
+    ]);
+  } catch (err) {
+    return (
+      <section className="rounded-xl border border-amber-500/50 bg-amber-950/20 p-6 text-sm">
+        <p className="font-medium text-amber-300">
+          Couldn't load simulation metadata for <code>{slug}</code>.
+        </p>
+        <p className="mt-2 text-amber-200/80">
+          {err instanceof Error ? err.message : String(err)}
+        </p>
+        <p className="mt-3 text-xs text-amber-200/60">
+          The hero page above still works — only the Playground sliders
+          require simulation-service to be reachable.
+        </p>
+      </section>
+    );
+  }
+
   return (
-    <section className="rounded-xl border border-dashed border-neutral-800 bg-neutral-900/30 p-8 text-center">
-      <h2 className="text-sm font-medium uppercase tracking-wider text-neutral-400">
-        Playground
-      </h2>
-      <p className="mt-2 text-sm text-neutral-400">
-        Driver sliders + what-if Feasibility projection. Migrating here from
-        the existing workspace in <strong>M37c</strong>.
-      </p>
-      <p className="mt-4 text-xs text-neutral-500">
-        For now, the legacy workspace is still at{" "}
-        <a className="text-cyan-400 hover:underline" href={`/sectors/${slug}/manual`}>
-          /sectors/{slug}/manual
-        </a>
-        .
-      </p>
-    </section>
+    <PlaygroundClient
+      meta={meta}
+      sensitivity={sensitivity}
+      initialLive={initialLive}
+    />
   );
 }
