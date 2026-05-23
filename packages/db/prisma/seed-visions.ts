@@ -231,12 +231,40 @@ async function seedVision(seed: VisionSeed): Promise<void> {
     });
   }
 
-  // 5. Vision feasibility snapshot. Demote prior current, insert new.
+  // 5. Vision feasibility — wipe + reseed time series so the trajectory
+  //    sparkline has 26 weekly snapshots. M40's daily cron replaces this
+  //    once the scoring engine is online; for now a synthetic curve
+  //    converging on the seed's current composite gives the hero a
+  //    realistic-looking history.
+  await prisma.visionFeasibility.deleteMany({ where: { sector_slug: seed.slug } });
   const f = seed.feasibility;
-  await prisma.visionFeasibility.updateMany({
-    where: { sector_slug: seed.slug, is_current: true },
-    data: { is_current: false },
-  });
+  const TRAJECTORY_WEEKS = 26;
+  const targetComposite = f.composite;
+  // Start ~delta_90d below today's score 90 days ago, slope up over the
+  // window with a small sinusoidal jitter so it doesn't look linear.
+  const baseStart = targetComposite - (f.delta_90d ?? 0) * 2;
+  for (let i = TRAJECTORY_WEEKS; i >= 1; i -= 1) {
+    const t = (TRAJECTORY_WEEKS - i) / TRAJECTORY_WEEKS; // 0 → 1
+    const compositeHistorical =
+      baseStart + (targetComposite - baseStart) * t + Math.sin(t * 7) * 1.5;
+    const bandWidth = 4 + 4 * t;
+    await prisma.visionFeasibility.create({
+      data: {
+        sector_slug: seed.slug,
+        as_of: daysAgo(i * 7 + f.as_of_days_ago),
+        is_current: false,
+        composite: Number(compositeHistorical.toFixed(1)),
+        composite_p10: Number((compositeHistorical - bandWidth).toFixed(1)),
+        composite_p90: Number((compositeHistorical + bandWidth).toFixed(1)),
+        binding_capability_key: f.binding_capability_key,
+        eta_median_years: f.eta_median_years,
+        eta_p10_years: f.eta_p10_years,
+        eta_p90_years: f.eta_p90_years,
+        delta_90d: null,
+        rationale: null,
+      },
+    });
+  }
   await prisma.visionFeasibility.create({
     data: {
       sector_slug: seed.slug,

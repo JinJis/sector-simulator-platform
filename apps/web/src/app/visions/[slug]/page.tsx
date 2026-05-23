@@ -2,9 +2,14 @@
  * /visions/[slug] — the Hero Overview page. The 5-second-comprehension
  * landing for one technology vision.
  *
- * M37: fixture-backed; pulls everything from `getVisionFixture(slug)`.
- * M38c: swap fixture import for `fetchVisionOverview(slug)` +
- * `fetchFeasibilityHistory(slug)`. Identical type contract.
+ * M37 shipped fixture-backed. M38b swaps to real DB via
+ * `fetchVisionOverview` + `fetchFeasibilityHistory`. The vision-client
+ * inferred types match the fixture shape exactly, so the diff is
+ * purely the import source.
+ *
+ * If the tRPC call fails (sector-service unreachable), the page falls
+ * back to the fixture so dev / preview environments still render
+ * something rather than 500-ing.
  */
 
 import {
@@ -23,6 +28,13 @@ import {
 } from "@platform/ui";
 import { TrajectorySparkline } from "@platform/ui";
 import { notFound } from "next/navigation";
+
+import {
+  fetchFeasibilityHistory,
+  fetchVisionOverview,
+  type FeasibilityHistoryPoint,
+  type VisionOverview,
+} from "@/lib/vision-client";
 
 import { getVisionFixture } from "../_fixtures";
 
@@ -65,14 +77,54 @@ const ECONOMICS_CURVES: Record<
   sofc: null,
 };
 
+/**
+ * Load Vision data. Server-side: try real DB via tRPC first; fall back
+ * to fixture if sector-service is unreachable so dev / preview
+ * environments still render. M37 fixtures stay in repo as backstop
+ * through M44.
+ */
+async function loadVisionData(slug: string): Promise<{
+  overview: VisionOverview;
+  history: FeasibilityHistoryPoint[];
+  source: "db" | "fixture";
+} | null> {
+  try {
+    const [overview, history] = await Promise.all([
+      fetchVisionOverview(slug),
+      fetchFeasibilityHistory(slug).catch(() => [] as FeasibilityHistoryPoint[]),
+    ]);
+    return { overview, history, source: "db" };
+  } catch {
+    const fixture = getVisionFixture(slug);
+    if (!fixture) return null;
+    // Adapt fixture trajectory to FeasibilityHistoryPoint shape.
+    const history: FeasibilityHistoryPoint[] = fixture.trajectory.map((p) => ({
+      as_of: p.as_of,
+      composite: p.composite,
+      composite_p10: p.p10,
+      composite_p90: p.p90,
+      binding_capability_key: null,
+      eta_median_years: null,
+    }));
+    return { overview: fixture.overview, history, source: "fixture" };
+  }
+}
+
 export default async function VisionOverviewPage({ params }: Props) {
   const { slug } = await params;
-  const fixture = getVisionFixture(slug);
-  if (!fixture) notFound();
-  const { overview, trajectory } = fixture;
+  const data = await loadVisionData(slug);
+  if (!data) notFound();
+  const { overview, history, source } = data;
   const { vision, capabilities, risks, recent_signals, actors } = overview;
   const feas = vision.feasibility;
   const economics = ECONOMICS_CURVES[slug];
+  // TrajectorySparkline expects { as_of, composite, p10?, p90? }; map.
+  const trajectory = history.map((h) => ({
+    as_of: h.as_of,
+    composite: h.composite,
+    p10: h.composite_p10,
+    p90: h.composite_p90,
+  }));
 
   return (
     <div className="space-y-8">
@@ -390,6 +442,12 @@ export default async function VisionOverviewPage({ params }: Props) {
           </p>
         </section>
       )}
+
+      {/* Data source diagnostic — small footer for dev so we know when */}
+      {/* we're reading DB vs fixture. Drop in M44 polish. */}
+      <p className="text-right text-[10px] text-neutral-600">
+        data source: {source === "db" ? "live DB" : "M37 fixture (sector-service unreachable)"}
+      </p>
     </div>
   );
 }
