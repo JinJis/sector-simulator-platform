@@ -1,5 +1,15 @@
 # Tech Sector Simulator Platform
 
+> ⚠️ **2026-05-23 PIVOT in progress (M36→M44).** Reshaping from "Sector
+> Simulator + investment tools" to a **Vision Feasibility Monitor** —
+> a single-page, source-grounded readout for bold technology visions
+> (orbital data centers, fusion power, …). Investment-side features
+> (Equity / Prediction / Watchlist / Community) move behind
+> `ENABLE_LEGACY_INVESTMENT_FEATURES` at M43. Read
+> [docs/PIVOT.md](./docs/PIVOT.md) (strategy memo + milestones) and
+> [docs/REFACTOR.md](./docs/REFACTOR.md) (file-by-file refactor
+> inventory) before working on anything in M36-M44.
+
 > Turn industries into simulatable causal graphs, drive them with live market data, see how every key listed equity reacts in real time.
 
 For product vision / personas / business model see [DESIGN.md](./DESIGN.md). For day-to-day coding conventions see [CLAUDE.md](./CLAUDE.md). For the per-slice work log see [docs/tasks/current.md](./docs/tasks/current.md).

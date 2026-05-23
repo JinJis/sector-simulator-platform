@@ -4,6 +4,15 @@
 **Owner**: Ayoung
 **Status**: Pre-development
 **Last updated**: 2026-05-20
+
+> ⚠️ **2026-05-23 PIVOT**: this document is being superseded section-by-
+> section by [docs/PIVOT.md](./docs/PIVOT.md). High-level vision (§1) still
+> holds; §9 (roadmap), §10 (business model), and §14 (Equities domain) are
+> deprecated. New canonical strategy memo lives in PIVOT.md; file-by-file
+> code refactor inventory in [docs/REFACTOR.md](./docs/REFACTOR.md);
+> decision record in [docs/adr/0001-pivot-vision-monitor.md](./docs/adr/0001-pivot-vision-monitor.md).
+> A full rewrite of DESIGN.md is planned for M44 once the pivot direction
+> is validated.
  
 > 운영/개발 컨텍스트는 [CLAUDE.md](./CLAUDE.md) 참조. 이 문서는 제품/비즈니스/디자인 의사결정의 source of truth입니다.
  
@@ -814,6 +823,15 @@ LLM 비용이 가장 큰 cost driver. 다음 전략:
 ---
  
 ## 14. Equities & Market Factors (new domain)
+
+> 🛑 **DEPRECATED 2026-05-23 (PIVOT)**. This entire section is archived
+> as part of the pivot to Vision Feasibility Monitor. See
+> [docs/PIVOT.md §1.5](./docs/PIVOT.md) for context. Tables remain in
+> Prisma with `@deprecated` comments; UI hidden behind
+> `ENABLE_LEGACY_INVESTMENT_FEATURES` flag at M43. Equity ingest crons
+> default to off after M43. Reactivation is a config change, not a code
+> rollback. May be deleted entirely after M44 + 60 days if no user
+> needs it back.
 
 > Phase 2.5 신규 도메인. 섹터(시뮬레이션 단위)와 글로벌 상장 종목(투자
 > 의사결정 단위) 사이에 다리를 놓는다. 사용자 요청 (2026-05-20):

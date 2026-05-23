@@ -18,13 +18,30 @@
 
 ## Current Phase
 
-**Phase 0 — Foundation** (Week 1-4)
+**Phase 3 — Vision Feasibility Monitor (PIVOT, M36→M44)**.
 
-목표: 모노레포 + 인프라 + 1개 하드코딩 시뮬레이션 end-to-end 동작 (관리자가 손으로 작성한 시뮬레이션 → 사용자가 슬라이더로 조작 → 차트 변경).
+2026-05-23 pivot. The product flips from "Sector Simulator + Investment
+tools" back to its original intent — a single-page Feasibility Monitor
+for bold technology visions (orbital data centers, fusion power, …).
+Strategy memo: `docs/PIVOT.md`. File-by-file refactor inventory:
+`docs/REFACTOR.md`. Decision record: `docs/adr/0001-pivot-vision-monitor.md`.
 
-자동화/에이전트는 **Phase 2부터**. 지금은 손으로 만들고 인터페이스만 정확하게 잡으세요.
+Mission reframe — three layers:
 
-다음 작업은 `docs/tasks/current.md` 참조. 새 작업 받으면 이 파일을 먼저 보고, 끝나면 업데이트하세요.
+1. **Vision** = a bold question ("Will X happen, and when?"). 1 row in
+   the `Sector` table (DB column name unchanged) with
+   `is_vision_eligible = true`.
+2. **Capabilities** required for the vision, each with 4-dim readiness
+   scores (technical / economic / regulatory / supply) and dependencies.
+3. **Signals** — source-grounded events (arXiv / patents / news /
+   filings) that update capability scores through an extractor agent.
+
+Investment-side features (Equity / Prediction / Watchlist / Community)
+move behind `ENABLE_LEGACY_INVESTMENT_FEATURES` flag at M43. Sim
+infrastructure stays — it becomes a Playground sub-tab.
+
+다음 작업은 `docs/tasks/current.md` 참조. 매 milestone 시작 전 PIVOT.md §5
+해당 entry → REFACTOR.md 관련 섹션 → §16 PR sequence 순서로 읽고 진행.
 
 ---
 
