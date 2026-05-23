@@ -1,0 +1,188 @@
+{
+  "slug": "sofc",
+  "vision_question": "Can SOFCs deliver grid-parity LCOE by 2035?",
+  "feasibility": {
+    "composite": 42,
+    "composite_p10": 32,
+    "composite_p90": 52,
+    "binding_capability_key": "stack_durability",
+    "eta_median_years": 12,
+    "eta_p10_years": 9,
+    "eta_p90_years": 20,
+    "delta_90d": 1,
+    "as_of_days_ago": 0,
+    "rationale": "AI data center power demand creates a real customer pull, but stack durability + system cost are still gating mass adoption."
+  },
+  "capabilities": [
+    {
+      "key": "stack_durability",
+      "name": "Stack durability + degradation",
+      "short_name": "Stack life",
+      "description": "Cell + stack operating life under continuous duty; degradation rate target < 0.2%/1000hr.",
+      "rationale": "Stack replacement frequency drives LCOE; binding constraint on grid-parity timeline.",
+      "display_order": 10,
+      "weight": 0.22,
+      "primary_driver_name": "stack_life_hours",
+      "score": {
+        "technical": 35,
+        "economic": 30,
+        "regulatory": 70,
+        "supply": 50,
+        "composite": 38,
+        "composite_p10": 30,
+        "composite_p90": 46,
+        "rationale": "Bloom Energy: 4-year stack life proven; degradation 0.3%/1000hr — not yet sufficient.",
+        "as_of_days_ago": 8
+      }
+    },
+    {
+      "key": "system_cost_curve",
+      "name": "System cost ($/kW) trajectory",
+      "short_name": "$/kW cost",
+      "description": "Installed system cost decline driven by manufacturing scale + BoP simplification.",
+      "rationale": "Each 50% cost-down doubles the addressable customer base; learning rate ~12-15% per doubling.",
+      "display_order": 20,
+      "weight": 0.18,
+      "primary_driver_name": "system_capex_usd_per_kw",
+      "score": {
+        "technical": 50,
+        "economic": 35,
+        "regulatory": 75,
+        "supply": 48,
+        "composite": 45,
+        "composite_p10": 38,
+        "composite_p90": 52,
+        "rationale": "Current $6.5k/kW; need $3.5k/kW for grid parity at typical NG prices.",
+        "as_of_days_ago": 11
+      }
+    },
+    {
+      "key": "datacenter_power_demand",
+      "name": "AI data center primary/backup power demand",
+      "short_name": "DC power pull",
+      "description": "Hyperscaler RFPs for distributed SOFC primary or backup power at MW class.",
+      "rationale": "Demand-pull from AI DCs could leapfrog SOFC past traditional utility-scale adoption gates.",
+      "display_order": 30,
+      "weight": 0.15,
+      "primary_driver_name": "datacenter_kw_demand",
+      "score": {
+        "technical": 70,
+        "economic": 65,
+        "regulatory": 80,
+        "supply": 60,
+        "composite": 68,
+        "composite_p10": 60,
+        "composite_p90": 76,
+        "rationale": "Multiple hyperscaler announcements; Bloom Energy / Microsoft pilot at 100MW class.",
+        "as_of_days_ago": 6
+      }
+    },
+    {
+      "key": "fuel_economics",
+      "name": "Fuel economics (NG → H2 transition)",
+      "short_name": "Fuel cost",
+      "description": "Fuel input cost track: natural gas baseline → green hydrogen target.",
+      "rationale": "Carbon-credit eligibility depends on H2 transition; without it SOFCs remain a parity-gas play.",
+      "display_order": 40,
+      "weight": 0.12,
+      "primary_driver_name": "fuel_cost_usd_per_mmbtu",
+      "score": {
+        "technical": 55,
+        "economic": 40,
+        "regulatory": 65,
+        "supply": 50,
+        "composite": 50,
+        "composite_p10": 42,
+        "composite_p90": 58,
+        "rationale": "Green H2 still 3-4× higher than NG on energy basis; trending down but slow.",
+        "as_of_days_ago": 14
+      }
+    },
+    {
+      "key": "manufacturing_capacity",
+      "name": "Manufacturing capacity ramp",
+      "short_name": "Mfg ramp",
+      "description": "Annual gigawatt-class stack manufacturing capacity online and in pipeline.",
+      "rationale": "Without manufacturing scale, learning-rate-based cost-down doesn't materialize.",
+      "display_order": 50,
+      "weight": 0.13,
+      "primary_driver_name": "mfg_capacity_gw_per_year",
+      "score": {
+        "technical": 60,
+        "economic": 50,
+        "regulatory": 80,
+        "supply": 45,
+        "composite": 55,
+        "composite_p10": 48,
+        "composite_p90": 62,
+        "rationale": "Bloom + Ceres expanding; aggregate industry ramp ~0.5 GW/y today, need ~5 GW/y by 2030.",
+        "as_of_days_ago": 20
+      }
+    },
+    {
+      "key": "permitting_interconnection",
+      "name": "Utility permitting + grid interconnection",
+      "short_name": "Permitting",
+      "description": "Utility permit + grid interconnection timelines for distributed SOFC at scale.",
+      "rationale": "Permit timeline is a known DCMA bottleneck; can add 18-36 months to project economics.",
+      "display_order": 60,
+      "weight": 0.1,
+      "primary_driver_name": null,
+      "score": {
+        "technical": 70,
+        "economic": 60,
+        "regulatory": 35,
+        "supply": 65,
+        "composite": 55,
+        "composite_p10": 48,
+        "composite_p90": 64,
+        "rationale": "FERC + state PUC reform progressing slowly; California pilot programs underway.",
+        "as_of_days_ago": 30
+      }
+    }
+  ],
+  "dependencies": [
+    { "source": "stack_durability", "target": "system_cost_curve", "rationale": "Longer stack life amortizes replacement capex." },
+    { "source": "manufacturing_capacity", "target": "system_cost_curve", "rationale": "Scale drives learning curve." },
+    { "source": "fuel_economics", "target": "system_cost_curve", "rationale": "Fuel cost is the second-biggest LCOE input." },
+    { "source": "permitting_interconnection", "target": "datacenter_power_demand", "rationale": "Permit timelines gate hyperscaler deployment." }
+  ],
+  "risks": [
+    {
+      "key": "h2_infrastructure_delay",
+      "category": "supply",
+      "name": "Green hydrogen infrastructure delay",
+      "description": "Green H2 production + distribution scale-up is sub-linear vs forecasts; could miss the 2030 cost target.",
+      "severity": "high",
+      "likelihood": "high",
+      "time_horizon": "5y",
+      "mitigations": "Maintain NG-compatible architecture; lobby for hydrogen tax credits.",
+      "affected_capability_keys": ["fuel_economics"],
+      "display_order": 10
+    },
+    {
+      "key": "ng_carbon_pricing",
+      "category": "political",
+      "name": "Natural gas carbon pricing uncertainty",
+      "description": "EU CBAM + US state-level carbon pricing volatility makes NG-fed SOFC economics unpredictable.",
+      "severity": "medium",
+      "likelihood": "medium",
+      "time_horizon": "3y",
+      "mitigations": "Lock in carbon-cost passthrough clauses with utility customers.",
+      "affected_capability_keys": ["fuel_economics"],
+      "display_order": 20
+    },
+    {
+      "key": "stack_supply_chain",
+      "category": "supply",
+      "name": "Cathode/anode rare-earth supply",
+      "description": "Yttria-stabilized zirconia + LSM cathode rare-earth supply chain concentrated in China.",
+      "severity": "medium",
+      "likelihood": "medium",
+      "time_horizon": "3y",
+      "mitigations": "Qualify non-China suppliers; substitute with cobalt-based formulations.",
+      "affected_capability_keys": ["stack_durability", "manufacturing_capacity"],
+      "display_order": 30
+    }
+  ]
+}

@@ -53,7 +53,11 @@ services:
     command:
       - sh
       - -c
-      - "pnpm --filter @platform/db migrate:deploy && pnpm --filter @platform/db seed && pnpm --filter @platform/db seed:equities && pnpm --filter @platform/db seed:equity-quotes && pnpm --filter @platform/db seed:equity-financials"
+      # M38 (pivot): seed:visions adds capabilities + risks + feasibility
+      # snapshots for the 3 reference visions. seed:equities and friends
+      # are kept in the chain through M43; M43 default-flips
+      # ENABLE_LEGACY_INVESTMENT_FEATURES to false and we drop them.
+      - "pnpm --filter @platform/db migrate:deploy && pnpm --filter @platform/db seed && pnpm --filter @platform/db seed:visions && pnpm --filter @platform/db seed:equities && pnpm --filter @platform/db seed:equity-quotes && pnpm --filter @platform/db seed:equity-financials"
     working_dir: /repo
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}

@@ -1,0 +1,188 @@
+{
+  "slug": "memory-semi",
+  "vision_question": "Does the AI HBM cycle hold for the next 5 years?",
+  "feasibility": {
+    "composite": 64,
+    "composite_p10": 55,
+    "composite_p90": 73,
+    "binding_capability_key": "hbm_yield_curve",
+    "eta_median_years": 4,
+    "eta_p10_years": 2,
+    "eta_p90_years": 7,
+    "delta_90d": 3,
+    "as_of_days_ago": 0,
+    "rationale": "AI compute demand pull is real; HBM yield + Korea export concentration are the binding constraints."
+  },
+  "capabilities": [
+    {
+      "key": "ai_hbm_demand_durability",
+      "name": "AI HBM demand durability",
+      "short_name": "AI demand pull",
+      "description": "Sustained HBM consumption per AI training+inference deployment over 5 years.",
+      "rationale": "Without sustained demand, ASP collapses on the next supply step-up — historical commodity DRAM pattern.",
+      "display_order": 10,
+      "weight": 0.18,
+      "primary_driver_name": "ai_dram_demand_pb_y0",
+      "score": {
+        "technical": 78,
+        "economic": 70,
+        "regulatory": 80,
+        "supply": 72,
+        "composite": 75,
+        "composite_p10": 68,
+        "composite_p90": 82,
+        "rationale": "Hyperscaler 2026 capex guides intact; inference share growing.",
+        "as_of_days_ago": 5
+      }
+    },
+    {
+      "key": "hbm_yield_curve",
+      "name": "HBM3/HBM4 yield curve",
+      "short_name": "HBM yield",
+      "description": "Stack yield improvement rate from HBM3e → HBM4 → HBM4e.",
+      "rationale": "Yield directly determines net supply; binding constraint on industry-wide HBM availability.",
+      "display_order": 20,
+      "weight": 0.2,
+      "primary_driver_name": "hbm_yield_pct",
+      "score": {
+        "technical": 55,
+        "economic": 48,
+        "regulatory": 70,
+        "supply": 42,
+        "composite": 52,
+        "composite_p10": 45,
+        "composite_p90": 60,
+        "rationale": "SK Hynix HBM4 yield ~50%; Samsung qualification slipping.",
+        "as_of_days_ago": 7
+      }
+    },
+    {
+      "key": "ddr_pricing_power",
+      "name": "Commodity DRAM pricing power",
+      "short_name": "DDR pricing",
+      "description": "ASP cycle for commodity DDR — drives the non-AI half of memory maker P&L.",
+      "rationale": "AI HBM is the headline but commodity DDR still dominates revenue mix.",
+      "display_order": 30,
+      "weight": 0.12,
+      "primary_driver_name": "ddr_asp_index",
+      "score": {
+        "technical": 70,
+        "economic": 60,
+        "regulatory": 75,
+        "supply": 65,
+        "composite": 67,
+        "composite_p10": 60,
+        "composite_p90": 74,
+        "rationale": "DDR5 mix lifting blended ASP; smartphone demand soft.",
+        "as_of_days_ago": 10
+      }
+    },
+    {
+      "key": "node_migration",
+      "name": "Node migration execution (1z/1a/1b/1c)",
+      "short_name": "Node execution",
+      "description": "Memory makers' ability to migrate to leading-edge DRAM nodes on schedule.",
+      "rationale": "Each shrink lowers bit cost ~15%; missed nodes erode margin permanently.",
+      "display_order": 40,
+      "weight": 0.13,
+      "primary_driver_name": null,
+      "score": {
+        "technical": 65,
+        "economic": 60,
+        "regulatory": 80,
+        "supply": 68,
+        "composite": 66,
+        "composite_p10": 60,
+        "composite_p90": 72,
+        "rationale": "1c node ramp on schedule at SK Hynix; Samsung 1c uncertain.",
+        "as_of_days_ago": 12
+      }
+    },
+    {
+      "key": "korea_supply_concentration",
+      "name": "Korea supply chain concentration",
+      "short_name": "Korea concentration",
+      "description": "Korea (SK Hynix + Samsung) holds ~70% of global HBM supply.",
+      "rationale": "Geopolitical risk (China tension, US export controls, KR labor strikes) could disrupt the entire HBM supply chain.",
+      "display_order": 50,
+      "weight": 0.12,
+      "primary_driver_name": null,
+      "score": {
+        "technical": 80,
+        "economic": 70,
+        "regulatory": 45,
+        "supply": 50,
+        "composite": 62,
+        "composite_p10": 54,
+        "composite_p90": 70,
+        "rationale": "Concentration unchanged; regulatory headwinds from US-China tension continue.",
+        "as_of_days_ago": 15
+      }
+    },
+    {
+      "key": "capex_efficiency",
+      "name": "Memory capex efficiency",
+      "short_name": "Capex/Gb",
+      "description": "Capex required per Gb of incremental capacity. Trending up with EUV intensification.",
+      "rationale": "Higher capex/Gb compresses returns; overinvestment risk on AI cycle ending.",
+      "display_order": 60,
+      "weight": 0.1,
+      "primary_driver_name": "capex_intensity_pct",
+      "score": {
+        "technical": 60,
+        "economic": 50,
+        "regulatory": 80,
+        "supply": 60,
+        "composite": 60,
+        "composite_p10": 52,
+        "composite_p90": 68,
+        "rationale": "EUV intensity +20% per node; capex discipline tested.",
+        "as_of_days_ago": 18
+      }
+    }
+  ],
+  "dependencies": [
+    { "source": "hbm_yield_curve", "target": "ai_hbm_demand_durability", "rationale": "Net supply scarcity sustains ASP — feeds back into demand durability." },
+    { "source": "node_migration", "target": "ddr_pricing_power", "rationale": "Cost-down via node migration shapes commodity DRAM unit economics." },
+    { "source": "korea_supply_concentration", "target": "hbm_yield_curve", "rationale": "Korea hosts the binding HBM capacity." },
+    { "source": "capex_efficiency", "target": "ddr_pricing_power", "rationale": "Capex efficiency determines whether marginal supply is profitable." }
+  ],
+  "risks": [
+    {
+      "key": "us_china_export",
+      "category": "political",
+      "name": "US-China export controls on AI memory",
+      "description": "Tightening US export restrictions on HBM to China could compress demand visibility.",
+      "severity": "high",
+      "likelihood": "high",
+      "time_horizon": "1y",
+      "mitigations": "Diversify customer mix; comply with allowed-spec carve-outs.",
+      "affected_capability_keys": ["ai_hbm_demand_durability", "korea_supply_concentration"],
+      "display_order": 10
+    },
+    {
+      "key": "samsung_hbm_recovery",
+      "category": "supply",
+      "name": "Samsung HBM qualification recovery",
+      "description": "Samsung HBM3e qualification at NVIDIA repeatedly delayed; sustained miss could shift industry HBM share.",
+      "severity": "medium",
+      "likelihood": "medium",
+      "time_horizon": "1y",
+      "mitigations": "Track quarterly qualification milestones.",
+      "affected_capability_keys": ["hbm_yield_curve", "korea_supply_concentration"],
+      "display_order": 20
+    },
+    {
+      "key": "ai_demand_compression",
+      "category": "financial",
+      "name": "AI capex compression",
+      "description": "Hyperscaler capex moderation could compress HBM demand growth to single digits.",
+      "severity": "medium",
+      "likelihood": "medium",
+      "time_horizon": "1y",
+      "mitigations": "Diversify into automotive + edge AI memory.",
+      "affected_capability_keys": ["ai_hbm_demand_durability"],
+      "display_order": 30
+    }
+  ]
+}

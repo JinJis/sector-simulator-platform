@@ -13,6 +13,7 @@
     "migrate:deploy": "prisma migrate deploy",
     "migrate:reset": "prisma migrate reset",
     "seed": "tsx prisma/seed.ts",
+    "seed:visions": "tsx prisma/seed-visions.ts",
     "seed:equities": "tsx prisma/seed-equities.ts",
     "seed:equity-quotes": "tsx prisma/seed-equity-quotes.ts",
     "seed:equity-financials": "tsx prisma/seed-equity-financials.ts",
