@@ -31,6 +31,8 @@ from data_pipeline.signal_repo import (
 )
 from data_pipeline.signals.arxiv import ArxivSource
 from data_pipeline.signals.base import RawSignal, SignalSource
+from data_pipeline.signals.newsapi import NewsApiSource
+from data_pipeline.signals.uspto import UsptoSource
 
 log = logging.getLogger(__name__)
 
@@ -157,7 +159,11 @@ async def run_signal_ingest(
         IngestStats summary.
     """
     if sources is None:
-        sources = [ArxivSource()]
+        # Default lineup: arXiv (always available, no key), NewsAPI (no-op
+        # when NEWSAPI_KEY unset), USPTO (no-op when USPTO_API_KEY unset).
+        # Adapters self-skip via env so dev/preview without keys still
+        # works for the arXiv-only path.
+        sources = [ArxivSource(), NewsApiSource(), UsptoSource()]
     if agent_url is None:
         agent_url = os.environ.get("AGENT_ORCHESTRATION_URL", _DEFAULT_AGENT_URL)
 

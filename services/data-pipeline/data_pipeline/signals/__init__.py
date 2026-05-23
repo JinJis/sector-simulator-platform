@@ -10,6 +10,15 @@ per-dimension deltas + optional actor_id tag.
 See docs/PIVOT.md §5 M39 + docs/REFACTOR.md §5 for the full plan.
 """
 
+from .arxiv import ArxivSource
 from .base import RawSignal, SignalSource
+from .newsapi import NewsApiSource
+from .uspto import UsptoSource
 
-__all__ = ["RawSignal", "SignalSource"]
+__all__ = [
+    "ArxivSource",
+    "NewsApiSource",
+    "RawSignal",
+    "SignalSource",
+    "UsptoSource",
+]
