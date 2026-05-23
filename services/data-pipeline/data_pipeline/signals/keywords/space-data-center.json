@@ -1,0 +1,63 @@
+{
+  "_": "Per-capability keyword sets for arXiv / patent / news search. Adapters join with OR. Tune iteratively in M39 once real signals start flowing (and false-positives surface). M46 community proposals (ADD_DATA_SOURCE) edit this file via approve→apply pipeline.",
+  "capabilities": {
+    "rad_hard_compute": [
+      "radiation hardened semiconductor",
+      "single event upset",
+      "rad-hard processor",
+      "space radiation electronics",
+      "total ionizing dose",
+      "space-qualified GPU"
+    ],
+    "in_orbit_assembly": [
+      "in-orbit assembly",
+      "on-orbit servicing",
+      "space robotic assembly",
+      "orbital construction",
+      "OSAM"
+    ],
+    "insurance_availability": [
+      "space insurance",
+      "orbital underwriting",
+      "satellite insurance market"
+    ],
+    "tier3_reliability": [
+      "space data center reliability",
+      "orbital uptime",
+      "in-orbit redundancy",
+      "spacecraft fault tolerance"
+    ],
+    "thermal_rejection": [
+      "spacecraft radiator",
+      "in-orbit thermal control",
+      "vacuum heat rejection",
+      "space data center cooling",
+      "two-phase loop space"
+    ],
+    "in_orbit_power": [
+      "spacecraft solar array",
+      "perovskite space solar",
+      "high efficiency space photovoltaics",
+      "satellite power generation"
+    ],
+    "downlink_bandwidth": [
+      "optical satellite communication",
+      "laser downlink",
+      "space-ground optical link",
+      "Ka-band satellite communication",
+      "Q-band satellite"
+    ],
+    "spectrum_allocation": [
+      "ITU spectrum coordination",
+      "satellite spectrum allocation",
+      "orbital spectrum"
+    ],
+    "launch_economics": [
+      "reusable launch vehicle",
+      "Starship economics",
+      "launch cost per kilogram",
+      "small launch vehicle",
+      "rocket reusability"
+    ]
+  }
+}
