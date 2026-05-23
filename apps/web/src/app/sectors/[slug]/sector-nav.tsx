@@ -25,9 +25,14 @@ interface NavItem {
 
 export function SectorNav({ slug }: Props) {
   const base = `/sectors/${slug}`;
+  // M37d (pivot): "종목" (equities) tab removed — investment surface
+  // archived behind ENABLE_LEGACY_INVESTMENT_FEATURES at M43. The
+  // /sectors/[slug]/equities and /sectors/[slug]/compare-stocks routes
+  // remain reachable by direct URL until M43; they're just no longer
+  // surfaced from the sub-nav. The legacy /sectors/* family itself
+  // stays alive through M43 alongside /visions/*.
   const primary: NavItem[] = [
     { label: "개요", href: base, caption: "왜 성장하나요?" },
-    { label: "종목", href: `${base}/equities`, caption: "어떤 주식이 수혜?" },
     { label: "시뮬레이션", href: `${base}/simulate`, caption: "내 가정으로 테스트" },
   ];
   const advanced: NavItem[] = [
