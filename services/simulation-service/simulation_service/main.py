@@ -302,3 +302,173 @@ async def sim_live(slug: str) -> LiveResponse:
             for name, out in outputs.items()
         ],
     )
+
+
+# =====================================================================
+# M40 — Feasibility recompute endpoint
+#
+# Reads current capability scores from the DB, aggregates per-capability
+# composites and the vision composite (with binding-constraint logic),
+# fits an ETA from recent vision_feasibility history, and writes a new
+# VisionFeasibility row (is_current=true, prior demoted).
+#
+# Called by:
+#   - data-pipeline's recompute_feasibility cron (daily, after signal
+#     ingest + ScoreUpdater agent has written new capability_scores)
+#   - admin manual trigger via sector-service's `feasibility.recompute`
+#     tRPC mutation
+# =====================================================================
+
+
+@app.post("/feasibility/recompute/{slug}", status_code=200)
+async def feasibility_recompute(slug: str) -> dict:
+    """Recompute vision feasibility from current capability scores.
+
+    Returns:
+        Snapshot summary { composite, p10, p90, binding_capability_key,
+        eta_median_years }. Caller uses this for logs + observability;
+        the durable record is in vision_feasibility.
+    """
+    from simulation_service.db_loader import get_pool
+    from simulation_service.feasibility import (
+        CapabilityForVision,
+        aggregate_vision,
+        compute_delta_90d,
+        estimate_eta,
+    )
+    from simulation_service.feasibility.eta import TrajectoryPoint
+
+    pool = await get_pool()
+    if pool is None:
+        raise HTTPException(
+            status_code=503,
+            detail="DATABASE_URL unset — feasibility recompute requires DB",
+        )
+
+    async with pool.acquire() as conn:
+        sector = await conn.fetchrow(
+            "SELECT slug FROM sectors WHERE slug = $1", slug
+        )
+        if not sector:
+            raise HTTPException(status_code=404, detail=f"vision {slug} not found")
+
+        # Current capability composites + weights.
+        cap_rows = await conn.fetch(
+            """
+            SELECT c.key, c.weight,
+                   cs.composite, cs.composite_p10, cs.composite_p90
+            FROM capabilities c
+            LEFT JOIN capability_scores cs
+              ON cs.capability_id = c.id AND cs.is_current = TRUE
+            WHERE c.sector_slug = $1
+            """,
+            slug,
+        )
+        caps = [
+            CapabilityForVision(
+                key=r["key"],
+                weight=r["weight"],
+                composite=r["composite"],
+                composite_p10=r["composite_p10"],
+                composite_p90=r["composite_p90"],
+            )
+            for r in cap_rows
+        ]
+
+        # Aggregate.
+        agg = aggregate_vision(caps)
+        if agg is None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"vision {slug} has no capabilities with current scores — "
+                    "score updater hasn't run yet"
+                ),
+            )
+
+        # Pull prior trajectory for ETA + delta_90d. Look back 1 year.
+        traj_rows = await conn.fetch(
+            """
+            SELECT as_of, composite, composite_p10, composite_p90
+            FROM vision_feasibility
+            WHERE sector_slug = $1
+              AND as_of >= NOW() - INTERVAL '365 days'
+            ORDER BY as_of ASC
+            """,
+            slug,
+        )
+        # asyncpg returns naive datetimes from TIMESTAMP columns; force
+        # UTC-aware so we can mix with datetime.now(UTC) for the synthetic
+        # "current point" without TypeError on sort.
+        trajectory = [
+            TrajectoryPoint(
+                as_of=(
+                    r["as_of"].replace(tzinfo=UTC)
+                    if r["as_of"].tzinfo is None
+                    else r["as_of"]
+                ),
+                composite=r["composite"],
+                composite_p10=r["composite_p10"],
+                composite_p90=r["composite_p90"],
+            )
+            for r in traj_rows
+        ]
+
+        # Synthesize "current point" — what ETA + delta treat as today.
+        now_point = TrajectoryPoint(
+            as_of=datetime.now(UTC),
+            composite=agg.composite,
+            composite_p10=agg.composite_p10,
+            composite_p90=agg.composite_p90,
+        )
+        eta = estimate_eta(trajectory + [now_point])
+        delta_90d = compute_delta_90d(trajectory + [now_point])
+
+        # Demote prior current + insert new in one tx.
+        async with conn.transaction():
+            await conn.execute(
+                """
+                UPDATE vision_feasibility
+                SET is_current = FALSE
+                WHERE sector_slug = $1 AND is_current = TRUE
+                """,
+                slug,
+            )
+            await conn.execute(
+                """
+                INSERT INTO vision_feasibility (
+                  id, sector_slug, as_of, is_current,
+                  composite, composite_p10, composite_p90,
+                  binding_capability_key,
+                  eta_median_years, eta_p10_years, eta_p90_years,
+                  delta_90d, rationale, created_at
+                )
+                VALUES (
+                  gen_random_uuid()::text, $1, NOW(), TRUE,
+                  $2, $3, $4, $5,
+                  $6, $7, $8, $9, $10, NOW()
+                )
+                """,
+                slug,
+                agg.composite,
+                agg.composite_p10,
+                agg.composite_p90,
+                agg.binding_capability_key,
+                eta.median_years,
+                eta.p10_years,
+                eta.p90_years,
+                delta_90d,
+                f"M40 recompute over {len(caps)} capabilities",
+            )
+
+    return {
+        "composite": agg.composite,
+        "composite_p10": agg.composite_p10,
+        "composite_p90": agg.composite_p90,
+        "binding_capability_key": agg.binding_capability_key,
+        "eta_median_years": eta.median_years,
+        "eta_p10_years": eta.p10_years,
+        "eta_p90_years": eta.p90_years,
+        "delta_90d": delta_90d,
+        "capability_count": len(caps),
+    }
