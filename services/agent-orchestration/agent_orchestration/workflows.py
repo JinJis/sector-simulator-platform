@@ -31,12 +31,15 @@ from pydantic import BaseModel
 from agent_orchestration.prompts import load_prompt
 from agent_orchestration.repo import InMemoryWorkflowRepository, WorkflowRepository
 from agent_orchestration.schemas import (
+    CapabilityKeywordSet,
     CapabilityScoreUpdate,
     CapabilityScoreUpdaterRequest,
     CodeGenRequest,
     CodeGenResult,
     CodeReviewRequest,
     CodeReviewResult,
+    DataSourceConfigDraft,
+    DataSourceSelectorRequest,
     Decomposition,
     DecompositionRequest,
     DriverInferenceRequest,
@@ -53,6 +56,8 @@ from agent_orchestration.schemas import (
     SignalExtractorRequest,
     SignalScoring,
     VisionBuilderPromptRequest,
+    VisionDecompositionRequest,
+    VisionDecompositionResult,
     WorkflowRecord,
     WorkflowStatus,
 )
@@ -1166,3 +1171,202 @@ class PromptValidatorWorkflow:
             f"{existing_block}\n\n"
             "Validate, then return the PromptValidationResult schema."
         )
+
+
+# =====================================================================
+# M41 — VisionDecompositionWorkflow (opus tier — the heart of M41)
+# =====================================================================
+#
+# Stage-3 of the Vision Builder pipeline. Takes a validated prompt and
+# emits a full vision draft: capabilities (+4-dim initial scores),
+# dependencies (DAG edges), risks, actors, capability-actor wiring,
+# and an initial feasibility estimate.
+#
+# Why opus: this single call produces the entire structured shape of
+# a new vision — magnitude calibration, capability decomposition,
+# realistic actor selection across geographies, and DAG construction
+# all at once. Skimping here cascades into bad downstream UX.
+#
+# Prompt: prompts/vision_decomposition.md
+# =====================================================================
+
+
+class VisionDecompositionWorkflow:
+    """Decompose a validated prompt into a full structured vision draft.
+
+    Opus tier with adaptive_thinking — this is the most expensive single
+    LLM call in the platform. Cost per run target: <$0.50 (admin-gated
+    so we don't run it on every page load).
+    """
+
+    kind = "vision_decomposition"
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+
+    async def run(
+        self,
+        request: VisionDecompositionRequest,
+        *,
+        cost_meter: CostMeter,
+    ) -> VisionDecompositionResult:
+        llm = self._llm.clone(cost_meter=cost_meter)
+        system = load_prompt("vision_decomposition")
+        user = self._format_user_turn(request)
+        result = await asyncio.to_thread(
+            llm.call,
+            tier="opus",
+            system=system,
+            user=user,
+            max_tokens=16_000,
+            adaptive_thinking=True,
+            response_model=VisionDecompositionResult,
+        )
+        if result.parsed is None:
+            raise RuntimeError(
+                "vision-decomposition returned unparseable output "
+                f"(stop_reason={result.stop_reason})"
+            )
+        assert isinstance(result.parsed, VisionDecompositionResult)
+        draft = result.parsed
+
+        # Defensive overrides: agent occasionally drifts from the
+        # validator's pinned slug / name / domain. Force-restore those
+        # so downstream FK integrity is guaranteed.
+        if draft.slug != request.suggested_slug:
+            log.info(
+                "vision-decomposition: restoring slug %r over agent's %r",
+                request.suggested_slug,
+                draft.slug,
+            )
+            draft = draft.model_copy(update={"slug": request.suggested_slug})
+
+        return draft
+
+    @staticmethod
+    def _format_user_turn(request: VisionDecompositionRequest) -> str:
+        parts = [
+            "## Validated prompt context",
+            f"- Refined question: {request.refined_question}",
+            f"- Vision slug (pinned): {request.suggested_slug}",
+            f"- Vision name (pinned): {request.suggested_name}",
+            f"- Domain: {request.domain_label}",
+            f"- Scope: {request.scope}",
+            f"- Target capability count: {request.target_capability_count}",
+            f"- Target actor count: {request.target_actor_count}",
+        ]
+        if request.existing_actor_keys:
+            existing = ", ".join(sorted(request.existing_actor_keys)[:100])
+            extra = (
+                f" (+{len(request.existing_actor_keys) - 100} more not shown)"
+                if len(request.existing_actor_keys) > 100
+                else ""
+            )
+            parts.append("")
+            parts.append("## Existing global actor keys (reuse — do NOT duplicate)")
+            parts.append(existing + extra)
+        if request.research_brief:
+            parts.append("")
+            parts.append("## Research brief")
+            parts.append(request.research_brief)
+        parts.append("")
+        parts.append(
+            "Produce the full VisionDecompositionResult. Pin slug and"
+            " name as given above. Every dependency.source_key /"
+            " target_key MUST match one of the capabilities[].key you"
+            " produced. Every capability_actors[].capability_key must"
+            " match a capabilities[].key, and every"
+            " capability_actors[].actor_key must match an actors[].key."
+            " initial_feasibility.binding_capability_key must match one"
+            " of the capabilities[].key."
+        )
+        return "\n".join(parts)
+
+
+# =====================================================================
+# M41 — DataSourceSelectorWorkflow (sonnet tier)
+# =====================================================================
+#
+# Stage-4 of the Vision Builder pipeline. Given the decomposition's
+# capabilities, emit per-capability keyword sets that the M39 signal
+# ingest cron will use to fetch arXiv / USPTO / News results.
+#
+# Why sonnet: keyword generation is narrower than decomposition, but
+# domain vocab matters enough that haiku produces overly generic
+# terms. Sonnet hits the sweet spot.
+#
+# Prompt: prompts/data_source_selector.md
+# =====================================================================
+
+
+class DataSourceSelectorWorkflow:
+    """Generate per-capability arXiv/USPTO/News keyword sets."""
+
+    kind = "data_source_selector"
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+
+    async def run(
+        self,
+        request: DataSourceSelectorRequest,
+        *,
+        cost_meter: CostMeter,
+    ) -> DataSourceConfigDraft:
+        llm = self._llm.clone(cost_meter=cost_meter)
+        system = load_prompt("data_source_selector")
+        user = self._format_user_turn(request)
+        result = await asyncio.to_thread(
+            llm.call,
+            tier="sonnet",
+            system=system,
+            user=user,
+            max_tokens=4096,
+            adaptive_thinking=False,
+            response_model=DataSourceConfigDraft,
+        )
+        if result.parsed is None:
+            raise RuntimeError(
+                "data-source-selector returned unparseable output "
+                f"(stop_reason={result.stop_reason})"
+            )
+        assert isinstance(result.parsed, DataSourceConfigDraft)
+        config = result.parsed
+
+        # Defensive: drop any keyword sets referring to capabilities
+        # that weren't in the input. This blocks the agent from
+        # hallucinating keys.
+        valid_keys = {c.key for c in request.capabilities}
+        cleaned: list[CapabilityKeywordSet] = []
+        for kws in config.keywords_by_capability:
+            if kws.capability_key in valid_keys:
+                cleaned.append(kws)
+            else:
+                log.info(
+                    "data-source-selector: dropping keyword set for unknown capability %r",
+                    kws.capability_key,
+                )
+        if not cleaned:
+            raise RuntimeError(
+                "data-source-selector emitted zero keyword sets that match input capabilities"
+            )
+        return config.model_copy(update={"keywords_by_capability": cleaned})
+
+    @staticmethod
+    def _format_user_turn(request: DataSourceSelectorRequest) -> str:
+        parts = [
+            f"## Vision: {request.slug} ({request.domain_label})",
+            "",
+            "## Capabilities",
+        ]
+        for c in request.capabilities:
+            parts.append(f"### {c.key} — {c.name}")
+            parts.append(f"  Description: {c.description}")
+            parts.append(f"  Rationale: {c.rationale}")
+            parts.append("")
+        parts.append(
+            "For each capability above, produce one CapabilityKeywordSet "
+            "with arxiv_keywords, uspto_keywords, news_keywords. "
+            "Total keyword sets MUST equal the capability count."
+        )
+        return "\n".join(parts)

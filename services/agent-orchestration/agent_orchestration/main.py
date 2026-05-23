@@ -40,6 +40,8 @@ from agent_orchestration.schemas import (
     CapabilityScoreUpdaterRunResult,
     CodeGenRequest,
     CodeReviewRequest,
+    DataSourceSelectorRequest,
+    DataSourceSelectorRunResult,
     DecompositionRequest,
     DriverInferenceRequest,
     FullPipelineRequest,
@@ -49,12 +51,15 @@ from agent_orchestration.schemas import (
     SignalExtractorRequest,
     SignalExtractorRunResult,
     VisionBuilderPromptRequest,
+    VisionDecompositionRequest,
+    VisionDecompositionRunResult,
     WorkflowRecord,
 )
 from agent_orchestration.workflows import (
     CapabilityScoreUpdaterWorkflow,
     CodeGenWorkflow,
     CodeReviewWorkflow,
+    DataSourceSelectorWorkflow,
     DecompositionWorkflow,
     DriverInferenceWorkflow,
     FullPipelineWorkflow,
@@ -62,6 +67,7 @@ from agent_orchestration.workflows import (
     ProposeSectorWorkflow,
     ResearchWorkflow,
     SignalExtractorWorkflow,
+    VisionDecompositionWorkflow,
     WorkflowRunner,
 )
 
@@ -311,6 +317,67 @@ def create_app() -> FastAPI:
         duration_ms = int((time.perf_counter() - t0) * 1000)
         return PromptValidatorRunResult(
             validation=validation,
+            cost_usd=cost_meter.total_usd,
+            duration_ms=duration_ms,
+        )
+
+    @app.post(
+        "/vision-builder/decompose",
+        response_model=VisionDecompositionRunResult,
+    )
+    async def vision_builder_decompose(
+        req: VisionDecompositionRequest,
+    ) -> VisionDecompositionRunResult:
+        """Stage 3 of the Vision Builder pipeline — full structured
+        decomposition (capabilities + dependencies + risks + actors +
+        initial feasibility). Opus tier; cost target <$0.50 per call.
+        Admin must approve the resulting draft before it's persisted.
+        """
+        llm: LLMClient = app.state.llm
+        workflow = VisionDecompositionWorkflow(llm=llm)
+        cost_meter = CostMeter()
+        t0 = time.perf_counter()
+        try:
+            draft = await workflow.run(req, cost_meter=cost_meter)
+        except Exception as e:
+            log.exception("vision-decomposition failed: %s", e)
+            raise HTTPException(
+                status_code=502, detail=f"vision-decomposition failed: {e}"
+            ) from e
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        return VisionDecompositionRunResult(
+            draft=draft,
+            cost_usd=cost_meter.total_usd,
+            duration_ms=duration_ms,
+        )
+
+    @app.post(
+        "/vision-builder/select-data-sources",
+        response_model=DataSourceSelectorRunResult,
+    )
+    async def vision_builder_select_data_sources(
+        req: DataSourceSelectorRequest,
+    ) -> DataSourceSelectorRunResult:
+        """Stage 4 of the Vision Builder pipeline — per-capability
+        keyword sets for arXiv / USPTO / News adapters. Sonnet tier;
+        cheap (~$0.005 per vision). Output gets persisted into each
+        Capability.signal_keywords column so the M39 ingest cron
+        picks them up on the next run.
+        """
+        llm: LLMClient = app.state.llm
+        workflow = DataSourceSelectorWorkflow(llm=llm)
+        cost_meter = CostMeter()
+        t0 = time.perf_counter()
+        try:
+            config = await workflow.run(req, cost_meter=cost_meter)
+        except Exception as e:
+            log.exception("data-source-selector failed: %s", e)
+            raise HTTPException(
+                status_code=502, detail=f"data-source-selector failed: {e}"
+            ) from e
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        return DataSourceSelectorRunResult(
+            config=config,
             cost_usd=cost_meter.total_usd,
             duration_ms=duration_ms,
         )

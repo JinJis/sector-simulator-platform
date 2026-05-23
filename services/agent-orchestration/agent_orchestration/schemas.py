@@ -675,3 +675,201 @@ class PromptValidatorRunResult(BaseModel):
     validation: PromptValidationResult
     cost_usd: float
     duration_ms: int
+
+
+# ---- Stage 3: Vision decomposition (opus tier — biggest call) ----------
+
+
+class CapabilityDraft(BaseModel):
+    """One capability proposal. Pydantic enforces every field's bounds
+    so the validation gate has less to do. `key` follows the DB layer's
+    snake_case rule."""
+
+    key: str = Field(..., pattern=r"^[a-z][a-z0-9_]*$", max_length=64)
+    name: str = Field(..., min_length=2, max_length=120)
+    short_name: str | None = Field(default=None, max_length=40)
+    description: str = Field(..., min_length=20, max_length=600)
+    rationale: str = Field(..., min_length=20, max_length=600)
+    weight: float = Field(..., ge=0.02, le=0.30)
+    display_order: int = Field(..., ge=10, le=10_000)
+    primary_driver_name: str | None = Field(default=None, max_length=80)
+    initial_technical: float | None = Field(default=None, ge=0, le=100)
+    initial_economic: float | None = Field(default=None, ge=0, le=100)
+    initial_regulatory: float | None = Field(default=None, ge=0, le=100)
+    initial_supply: float | None = Field(default=None, ge=0, le=100)
+    confidence: float = Field(default=0.7, ge=0.0, le=1.0)
+
+
+class CapabilityDependencyDraft(BaseModel):
+    """One DAG edge between capabilities."""
+
+    source_key: str = Field(..., max_length=64)
+    target_key: str = Field(..., max_length=64)
+    rationale: str = Field(..., min_length=10, max_length=400)
+
+
+class RiskDraft(BaseModel):
+    key: str = Field(..., pattern=r"^[a-z][a-z0-9_]*$", max_length=64)
+    category: Literal[
+        "political",
+        "legal",
+        "supply",
+        "safety",
+        "environmental",
+        "financial",
+        "social",
+    ]
+    name: str = Field(..., min_length=2, max_length=120)
+    description: str = Field(..., min_length=20, max_length=600)
+    severity: Literal["low", "medium", "high", "critical"]
+    likelihood: Literal["low", "medium", "high"]
+    time_horizon: Literal["immediate", "1y", "3y", "5y", "10y"]
+    mitigations: str | None = Field(default=None, max_length=600)
+    affected_capability_keys: list[str] = Field(default_factory=list, max_length=10)
+    display_order: int = Field(..., ge=10, le=10_000)
+
+
+class ActorDraft(BaseModel):
+    """Global actor — company / lab / govt body. Fresh keys go to the
+    Actor table; matches by `key` on existing rows."""
+
+    key: str = Field(..., pattern=r"^[a-z][a-z0-9_]*$", max_length=64)
+    name: str = Field(..., min_length=2, max_length=160)
+    short_name: str | None = Field(default=None, max_length=80)
+    name_local: str | None = Field(default=None, max_length=160)
+    iso_country: str = Field(..., pattern=r"^[A-Z]{2}$")
+    category: Literal[
+        "public_corp",
+        "private_startup",
+        "government_lab",
+        "national_lab",
+        "academic_lab",
+        "standards_body",
+        "ngo",
+    ]
+    ticker: str | None = Field(default=None, max_length=20)
+    exchange: str | None = Field(default=None, max_length=20)
+    blurb: str = Field(..., min_length=10, max_length=280)
+    description: str | None = Field(default=None, max_length=2000)
+    stage: Literal["research", "pilot", "commercial", "scaling"]
+    website: str | None = Field(default=None, max_length=300)
+    signal_keywords: list[str] = Field(..., min_length=1, max_length=20)
+    relevance: float = Field(..., ge=0, le=100)
+    rationale: str = Field(..., min_length=10, max_length=600)
+    display_order: int = Field(..., ge=10, le=10_000)
+
+
+class CapabilityActorAssignmentDraft(BaseModel):
+    """Wiring between one capability and one actor with a role."""
+
+    capability_key: str = Field(..., max_length=64)
+    actor_key: str = Field(..., max_length=64)
+    role: Literal["lead", "competitor", "supplier", "customer", "regulator"]
+    rationale: str | None = Field(default=None, max_length=400)
+
+
+class VisionFeasibilityDraft(BaseModel):
+    """Agent's initial vision-level feasibility estimate.
+
+    The M40 recompute cron will overwrite it the next day from real
+    capability scores — this is just a Day-0 placeholder."""
+
+    initial_composite: float = Field(..., ge=0, le=100)
+    initial_p10: float | None = Field(default=None, ge=0, le=100)
+    initial_p90: float | None = Field(default=None, ge=0, le=100)
+    binding_capability_key: str = Field(..., max_length=64)
+    eta_median_years: float | None = Field(default=None, ge=0, le=50)
+    eta_p10_years: float | None = Field(default=None, ge=0, le=50)
+    eta_p90_years: float | None = Field(default=None, ge=0, le=50)
+    rationale: str = Field(..., min_length=20, max_length=600)
+
+
+class VisionDecompositionRequest(BaseModel):
+    """Input to stage-3 decomposition. Carries the validator output so
+    the agent doesn't re-derive question / slug / sizing."""
+
+    refined_question: str = Field(..., max_length=240)
+    suggested_name: str = Field(..., max_length=80)
+    suggested_slug: str = Field(
+        ..., pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$", max_length=64
+    )
+    domain_label: str = Field(..., max_length=40)
+    scope: Literal["narrow", "balanced", "broad"]
+    target_capability_count: int = Field(..., ge=3, le=15)
+    target_actor_count: int = Field(..., ge=3, le=30)
+    research_brief: str | None = Field(default=None, max_length=20_000)
+    existing_actor_keys: list[str] = Field(default_factory=list, max_length=500)
+
+
+class VisionDecompositionResult(BaseModel):
+    """The full vision draft — output of stage 3."""
+
+    slug: str = Field(
+        ..., pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$", max_length=64
+    )
+    name: str = Field(..., max_length=80)
+    vision_question: str = Field(..., max_length=240)
+    description: str = Field(..., min_length=50, max_length=2000)
+    domain_label: str = Field(..., max_length=40)
+
+    capabilities: list[CapabilityDraft] = Field(..., min_length=3, max_length=15)
+    dependencies: list[CapabilityDependencyDraft] = Field(default_factory=list, max_length=50)
+    risks: list[RiskDraft] = Field(..., min_length=2, max_length=12)
+    actors: list[ActorDraft] = Field(..., min_length=3, max_length=30)
+    capability_actors: list[CapabilityActorAssignmentDraft] = Field(
+        ..., min_length=1, max_length=100
+    )
+    initial_feasibility: VisionFeasibilityDraft
+
+    rationale: str = Field(..., min_length=50, max_length=4000)
+    confidence: float = Field(..., ge=0.0, le=1.0)
+
+
+class VisionDecompositionRunResult(BaseModel):
+    """HTTP envelope for /vision-builder/decompose."""
+
+    draft: VisionDecompositionResult
+    cost_usd: float
+    duration_ms: int
+
+
+# ---- Stage 4: Data source selector (sonnet) ----------------------------
+
+
+class CapabilityKeywordSet(BaseModel):
+    """Per-capability keyword set for the signal ingest pipeline.
+    Three lists because arXiv (academic), USPTO (patent vocab), and
+    NewsAPI (business news) idioms differ enough that one flat list
+    misses material. Adapters OR-join within their list."""
+
+    capability_key: str = Field(..., max_length=64)
+    arxiv_keywords: list[str] = Field(..., min_length=1, max_length=20)
+    uspto_keywords: list[str] = Field(default_factory=list, max_length=20)
+    news_keywords: list[str] = Field(default_factory=list, max_length=20)
+
+
+class DataSourceSelectorRequest(BaseModel):
+    """Input to stage 4 — the decomposition output for context."""
+
+    slug: str = Field(..., max_length=64)
+    domain_label: str = Field(..., max_length=40)
+    capabilities: list[CapabilityDraft] = Field(..., min_length=1, max_length=15)
+
+
+class DataSourceConfigDraft(BaseModel):
+    """Per-capability keyword sets. The Conductor persists these into
+    Capability.signal_keywords so the signal_ingest cron picks them
+    up on next run."""
+
+    keywords_by_capability: list[CapabilityKeywordSet] = Field(
+        ..., min_length=1, max_length=15
+    )
+    rationale: str = Field(default="", max_length=2000)
+
+
+class DataSourceSelectorRunResult(BaseModel):
+    """HTTP envelope for /vision-builder/select-data-sources."""
+
+    config: DataSourceConfigDraft
+    cost_usd: float
+    duration_ms: int
