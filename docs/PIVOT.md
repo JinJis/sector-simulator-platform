@@ -1322,4 +1322,253 @@ monorepo 이름 안 바꾼다.
 
 ---
 
-*End of PIVOT.md. Next action: get user sign-off, then start M36.*
+## 11. Extension Milestones — Actor domain + Community 2.0 (M45-M47)
+
+**Added 2026-05-23 (post-M37 close)** after founder review identified two
+gaps in the M36-M44 plan:
+
+1. **Actor analysis layer missing**. The Hero shows capabilities,
+   signals, risks, and economics — but not the *who*. Each capability has
+   companies, labs, and government bodies competing to advance it; that
+   competitive landscape is the strongest "is this real?" signal a user
+   can read at a glance. Country + ticker (when listed) make this
+   immediately actionable for VCs / corp dev / journalists.
+
+2. **Community in current state is a stock-prediction game**.
+   `/community/predict` is residue of the investment surface. The right
+   community mechanic for a Vision Monitor is per-vision *proposals*
+   (new actor, new data source, capability score challenge, …) with
+   voting + admin-applied changes. This is Wikipedia-meets-Polymarket
+   for tech visions — a moat over time as community curation
+   compounds.
+
+Both extensions slot into the existing pivot direction; neither requires
+revisiting M36-M44 fundamentals. They add 3 new milestones after M44 (or
+M45a slotted before M38 for the Hero demo lift — see §11.4).
+
+### 11.1 Actor — domain model
+
+```
+Actor                                       "SpaceX"
+  ├─ key, name, country, category            "spacex, SpaceX, US, public_corp"
+  ├─ ticker + exchange (when public)         "SPCX, NYSE" (mock for now)
+  ├─ stage                                   "scaling"
+  ├─ blurb / description / website / logo
+  └─ signal_keywords[]                       ["SpaceX", "Starship", "Starlink"]
+
+VisionActor                                  Vision ↔ Actor M2M
+  ├─ relevance (0-100)
+  ├─ rationale                               "Starship is the cheap-launch
+                                              story — primary catalyst for
+                                              orbital DC economics"
+  └─ display_order
+
+CapabilityActor                              Capability ↔ Actor M2M
+  ├─ role                                    "lead | competitor | supplier |
+                                              customer | regulator"
+  ├─ stage (override)
+  └─ rationale
+
+Signal                                       extends existing
+  └─ actor_id (FK, nullable, single-actor)   tagged by extractor agent
+```
+
+**Schema notes**:
+- `Actor` is a *global* entity (one row per real-world company/lab).
+  Same Actor can be relevant to multiple Visions via VisionActor.
+- `CapabilityActor` is the per-Capability wiring — lets the hero show
+  "In-orbit thermal: Starcloud + ESA + JPL" at the bottom of the
+  thermal capability card.
+- The deprecated `SectorEquity` table is NOT repurposed; Actor is
+  schema-fresh. Backfill from existing SectorEquity rows is a manual
+  one-shot script at M45b (we keep what's useful: ticker, exchange,
+  iso_country, company_name).
+- `signal_keywords` powers the M47 extractor enhancement that tags
+  signals with `actor_id`.
+
+### 11.2 Community 2.0 — domain model
+
+Replaces the archived stock-prediction game with a structured
+proposal/voting mechanism + free-form discussion threads, both anchored
+to each Vision.
+
+```
+VisionProposal                              per-vision change request
+  ├─ sector_slug, user_id
+  ├─ kind                                   "ADD_ACTOR | ADD_DATA_SOURCE |
+                                             ADD_CAPABILITY |
+                                             REVISE_CAPABILITY_SCORE |
+                                             FLAG_SIGNAL | REWORD_RISK |
+                                             ADD_RISK | ADD_NEW_VISION"
+  ├─ title, body
+  ├─ payload                                JSONB kind-specific detail
+  │                                         (e.g. proposed Actor draft,
+  │                                          score evidence URLs, ...)
+  ├─ status                                 "open | review | approved |
+                                             rejected | applied | withdrawn"
+  ├─ score                                  net votes (denormalized)
+  ├─ applied_audit_log_id                   set when admin applies → links
+  │                                         to the resulting mutation
+  └─ admin_decision_reason                  set on approve/reject
+
+VisionProposalVote                          one row per (user, proposal)
+  ├─ value                                  +1 | -1
+
+VisionDiscussion                            free-form per-vision thread
+  ├─ sector_slug, user_id
+  ├─ title, body
+  ├─ score, pinned, locked
+  └─ comments[]
+
+DiscussionComment                           reply on a discussion
+  ├─ parent_comment_id (nullable)
+  ├─ body
+  └─ score
+
+DiscussionVote                              user vote on thread or comment
+```
+
+**Flow**:
+1. User submits Proposal (e.g. ADD_ACTOR with payload `{key, name,
+   country, ticker, capabilities[]}`)
+2. Other users vote (+1 / -1)
+3. Hits threshold (default +5 net) → status "review"
+4. Admin sees in queue at `/admin/proposals`
+5. Admin approves → tRPC mutation applies the change (`actor.upsert`,
+   `capability.upsertScore`, etc.) + writes audit log + Proposal row
+   gets `status=applied`, `applied_audit_log_id=...`
+6. Admin rejects → status "rejected" with reason
+
+For kinds that don't need admin (e.g., FLAG_SIGNAL, which just hides
+the signal pending review), auto-apply when threshold hit. Each kind
+has a configurable approval policy.
+
+**Discussion** is separate from proposals — Reddit-style threads + nested
+comments + up/down votes. Discussions can be a SOURCE for proposals
+("we've been arguing about this for a week; let me submit a formal
+proposal").
+
+### 11.3 New milestones
+
+**M45 — Actor domain + Hero integration**
+
+Two sub-PRs split by demo lift vs DB depth:
+
+- **M45a** (executable BEFORE M38 for Hero demo lift, optional dependency
+  on it): Actor schema + tRPC routers + Hero "Actors" band + Capability
+  card "active actors" footer + sub-nav "Actors" tab. Fixture-backed for
+  SDC so the Hero shows ~10 actors immediately. 4-5 days.
+- **M45b** (after M38, depends on capability data): manual Actor seed
+  for 3 visions + CapabilityActor wiring + replace fixture with DB.
+  Includes optional backfill script from deprecated SectorEquity rows.
+  2-3 days.
+
+Files: `packages/db/prisma/schema.prisma` (3 new models), Prisma
+migration, `services/sector-service/src/trpc/actor.ts` (new), Hero page
++ Capability card updates, `packages/ui/actor-card.tsx` (new),
+`packages/db/prisma/seed-actors.ts` (new), `seed-data/actors/<vision>.json`.
+
+**M46 — Community 2.0: VisionProposal schema + voting + admin queue**
+
+- Prisma models: VisionProposal, VisionProposalVote (the existing
+  deprecated `SectorSuggestion` stays archived).
+- tRPC: `proposal.list / get / create / vote / withdraw / adminApprove /
+  adminReject`.
+- Routes:
+  - `/visions/[slug]/community` (vision-anchored proposal hub)
+  - `/visions/[slug]/community/new` (proposal submit form, kind picker)
+  - `/visions/[slug]/community/[id]` (proposal detail + voting)
+  - `/admin/proposals` (admin queue, group by status)
+- The "approve → apply" pipeline for each `kind`:
+  - `ADD_ACTOR`: extract Actor draft from payload, call `actor.upsert`
+  - `ADD_DATA_SOURCE`: append to per-vision `signal_keywords` JSON
+    config (M39 ingest re-reads on next cron)
+  - `ADD_CAPABILITY`: call `capability.upsert` with payload contents
+  - `REVISE_CAPABILITY_SCORE`: write a new CapabilityScore row with
+    `rationale` referencing the proposal id; old score → `is_current=false`
+  - `FLAG_SIGNAL`: set `Signal.is_hidden=true` (new column)
+  - `REWORD_RISK`: call `risk.upsert`
+  - `ADD_RISK`: call `risk.upsert` (create)
+  - `ADD_NEW_VISION`: kick off Vision Builder agent (M41) with the
+    proposal text — heavyweight, admin sets priority
+- 5-7 days.
+
+**M47 — Discussions + reputation system (optional polish)**
+
+- VisionDiscussion + DiscussionComment + DiscussionVote tables.
+- `/visions/[slug]/community/discuss` thread index + detail pages.
+- Reputation: per-user proposal-approval-rate + comment-score average →
+  voting weight multiplier (1.0× default → up to 2× for top
+  contributors). Applied in M46's score aggregation.
+- Optional badges UI ("contributor", "top author") on user mentions.
+- 4-5 days.
+
+### 11.4 Execution sequence
+
+The 8-week M36-M44 plan extends to 12-13 weeks with M45-M47.
+
+| Week | Milestone | Demo lift |
+|---|---|---|
+| 1 | M36 ✅ | foundation |
+| 2 | M37 ✅ | hero demo |
+| **3** | **M45a — Actor Hero band (fixtures)** | "now I can see WHO is building this" |
+| 3-4 | M38 — capability + actor manual seed (incl. M45b) | hero on real DB |
+| 5-6 | M39 — signal ingest + actor tagging | live data |
+| 6-7 | M40 — feasibility engine | scores move automatically |
+| 7-8 | M41 — Vision Builder agent (incl. actor generation) | any vision in 24h |
+| 9 | M42 — Playground re-position | what-if feasibility |
+| 9 | M43 — archive legacy investment | one product message |
+| 10 | M44 — Fusion + polish | public launch ready |
+| **11-12** | **M46 — Community 2.0: proposals + voting + admin** | community-curated |
+| **13** | **M47 — discussions + reputation (optional)** | engagement layer |
+
+Net effect: Actor work integrates **into** M38 (capability seed), M39
+(signal pipeline), M41 (Vision Builder agent) — those milestones grow
+slightly in scope but don't lengthen calendar time materially (the
+existing Capability data structures inform the Actor parallels — fewer
+unknowns).
+
+Community 2.0 is a clean two-milestone train after the foundation
+ships (M44). Doing it earlier risks shipping a community surface with
+no community yet.
+
+### 11.5 Why not just resurrect the equity surface?
+
+The existing `SectorEquity` table has ticker + exchange + iso_country —
+~80% of what Actor needs. Why not just un-deprecate it?
+
+Reasons we go with a fresh Actor model:
+- **`driver_links` JSONB** (per-equity revenue exposure to drivers) is
+  investment-frame and irrelevant to the Vision narrative.
+- **`sector_exposure_pct`** is also investment-frame (what % of revenue
+  comes from this sector); for Actor we want "relevance" not "exposure."
+- **No good place to put labs / govt / standards bodies** in
+  SectorEquity — it requires a `ticker` which doesn't apply to NASA or
+  KAIST.
+- **Per-capability wiring** doesn't exist in the equity surface
+  (driver_links links to drivers, not capabilities).
+- **Migration churn**: renaming columns + dropping JSONB columns +
+  adding new relations is *more* work than starting fresh, given the
+  schema is purpose-built.
+
+So Actor is a new model. M45b includes a one-shot backfill script that
+reads SectorEquity rows and proposes Actor drafts (admin reviews +
+saves). Existing SectorEquity rows stay frozen behind the legacy flag.
+
+### 11.6 Why community is *after* the rest
+
+Order argument:
+- Actor seed adds the "WHO" — concrete and visible
+- Community proposals require actors/capabilities/data sources to
+  PROPOSE INTO. Building community before the data layer is mature
+  yields shallow proposals.
+- Community is most valuable when there's signal that the platform is
+  going somewhere — M44 (4 visions, fusion + SDC published) is the
+  natural moment.
+- Reputation system (M47) requires real proposal flow data — needs ≥4
+  weeks of M46 in production to calibrate weights.
+
+---
+
+*End of PIVOT.md §11 extension. Next action: write REFACTOR.md §18-§19
+for M45-M47 file-by-file disposition, then start M45a.*

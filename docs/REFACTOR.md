@@ -889,4 +889,200 @@ So scope is clear:
 
 ---
 
+## Section 18 — Actor domain (M45 file-by-file)
+
+Companion to PIVOT.md §11.1 and §11.3. M45a = Hero demo lift with
+fixtures; M45b = real DB seed + capability wiring.
+
+### 18.1 Prisma — 3 new models + Signal extension
+
+| Path | Disposition | Milestone |
+|---|---|---|
+| `packages/db/prisma/schema.prisma` | EDIT | M45a | add Actor, VisionActor, CapabilityActor models + Signal.actor_id FK |
+| `packages/db/prisma/migrations/20260530_actor_domain/migration.sql` | NEW | M45a | additive (no destructive ops) |
+| `packages/db/prisma/seed-actors.ts` | NEW | M45b | per-vision actor seed |
+| `packages/db/prisma/seed-data/actors/space-data-center.json` | NEW | M45b | ~12 actors (SpaceX / Lonestar / Starcloud / AMD / NASA / etc.) |
+| `packages/db/prisma/seed-data/actors/memory-semi.json` | NEW | M45b | ~10 actors (Samsung / SK hynix / Micron / TSMC / NVIDIA / etc.) |
+| `packages/db/prisma/seed-data/actors/sofc.json` | NEW | M45b | ~8 actors (Bloom Energy / Plug Power / Ceres / etc.) |
+| `packages/db/prisma/seed-data/actors/fusion-power-grid-parity.json` | NEW | M44b/M45b | seeded with the Fusion vision in M44 |
+
+### 18.2 tRPC
+
+| Path | Disposition | Milestone |
+|---|---|---|
+| `services/sector-service/src/trpc/actor.ts` | NEW | M45a | `actor.list / get / upsert / delete / linkToCapability / unlinkFromCapability` + vision-scoped reads |
+| `services/sector-service/src/trpc/router.ts` | EDIT | M45a | wire actorRouter |
+| `services/sector-service/src/trpc/vision.ts` | EDIT | M45a | `vision.getOverview` extended payload: `actors[]` (top-N by relevance), `capabilities[].active_actors[]` (sub-N per cap) |
+| `services/sector-service/src/trpc/capability.ts` | EDIT | M45a | `capability.get` includes `actors[]` array |
+| `services/sector-service/tests/actor.test.ts` | NEW | M45a | parallel to vision.test.ts — CRUD, link/unlink, role enforcement |
+
+### 18.3 UI — packages/ui
+
+| Path | Disposition | Milestone |
+|---|---|---|
+| `packages/ui/src/actor-card.tsx` | NEW | M45a | compact card: logo + name + flag + stage pill + latest signal one-liner |
+| `packages/ui/src/actor-pill.tsx` | NEW | M45a | inline pill ("SpaceX · 🇺🇸") used inside capability cards + signal rows |
+| `packages/ui/src/index.ts` | EDIT | M45a | re-export |
+| `packages/ui/package.json` | EDIT | M45a | add subpath exports |
+
+### 18.4 UI — apps/web
+
+| Path | Disposition | Milestone |
+|---|---|---|
+| `apps/web/src/lib/vision-client.ts` | EDIT | M45a | infer `ActorInOverview` type from vision.getOverview output; add fetchActors / fetchActor wrappers |
+| `apps/web/src/app/visions/_fixtures/space-data-center.ts` | EDIT | M45a | extend with actors[] for the Hero demo |
+| `apps/web/src/app/visions/_fixtures/memory-semi.ts` | EDIT | M45a | add actors[] (minimal) |
+| `apps/web/src/app/visions/_fixtures/sofc.ts` | EDIT | M45a | add actors[] (minimal) |
+| `apps/web/src/app/visions/[slug]/page.tsx` | EDIT | M45a | new "Actors" band between Capabilities and Economics; CapabilityCard's `latestSignal` slot extends to also show top-3 active actors |
+| `apps/web/src/app/visions/[slug]/layout.tsx` | EDIT | M45a | add "Actors" sub-nav tab between Risks and Economics |
+| `apps/web/src/app/visions/[slug]/actors/page.tsx` | NEW | M45a | actor list per vision — group by category + country |
+| `apps/web/src/app/visions/[slug]/actors/[key]/page.tsx` | NEW | M45a/b | actor detail: capability list (where this actor is active), recent signals about this actor, external links |
+| `apps/web/src/app/visions/[slug]/capabilities/[key]/page.tsx` | EDIT (when M38 lands) | M45b | capability detail shows the capability_actors mapping with roles |
+
+### 18.5 Signal pipeline — extractor extension
+
+| Path | Disposition | Milestone |
+|---|---|---|
+| `services/agent-orchestration/agent_orchestration/workflows/signal_extractor.py` | EDIT | M45b (or M39+M45 combined slice) | extractor input now includes `vision.actors[]` with their `signal_keywords`; output schema adds `actor_id`; populates Signal.actor_id when an actor's keywords match |
+| `prompts/signal_extractor.md` | EDIT | M45b | per-vision actor list injected as prompt context |
+| `services/agent-orchestration/agent_orchestration/schemas.py` | EDIT | M45b | SignalScoring.actor_key added (resolved to actor_id at write time) |
+| `services/agent-orchestration/tests/test_signal_extractor.py` | EDIT | M45b | add 3 eval cases where actor tag is expected |
+
+### 18.6 Backfill script (one-shot)
+
+| Path | Disposition | Milestone |
+|---|---|---|
+| `packages/db/prisma/scripts/backfill-actors-from-equities.ts` | NEW (one-shot, do not wire into db-migrate) | M45b | reads existing SectorEquity rows → emits draft Actor JSON for admin review; admin runs `seed-actors.ts` after editing |
+
+### 18.7 Documentation
+
+| Path | Disposition | Milestone |
+|---|---|---|
+| `DESIGN.md` | EDIT | M45a | add §15 "Actors" — domain definition + relationship to capabilities |
+| `README.md` | EDIT | M45a | feature row "Actor analysis (M45)" |
+| `docs/adr/0002-actor-domain.md` | NEW | M45a | decision record: why fresh Actor model not equity repurpose |
+| `prompts/vision_decomposition.md` | EDIT | M41+ (Vision Builder) | also emit Actor drafts when decomposing a new vision |
+
+### 18.8 Risk callouts (Actor)
+
+**R-1**: Actor key collisions across visions ("samsung_electronics" could
+appear in memory-semi + SoFC). Mitigation: Actor is global; VisionActor
+join carries per-vision context.
+
+**R-2**: Signal extractor false-positives — "SpaceX" appearing in unrelated
+papers. Mitigation: extractor agent scores actor-tag confidence; we only
+set Signal.actor_id when confidence > 0.8. M45b includes per-vision eval
+suite (10 hand-labeled signals).
+
+**R-3**: Logo URLs are external — could 404 or change. Mitigation: graceful
+fallback to a colored initial-letter avatar in `ActorCard`. Don't host
+logos ourselves (licensing).
+
+---
+
+## Section 19 — Community 2.0 (M46 + M47 file-by-file)
+
+Companion to PIVOT.md §11.2 and §11.3.
+
+### 19.1 Prisma — 2 new domains
+
+| Path | Disposition | Milestone |
+|---|---|---|
+| `packages/db/prisma/schema.prisma` | EDIT | M46 | add VisionProposal, VisionProposalVote models; legacy SectorSuggestion stays deprecated |
+| `packages/db/prisma/schema.prisma` | EDIT | M47 | add VisionDiscussion, DiscussionComment, DiscussionVote models |
+| `packages/db/prisma/migrations/20260620_vision_proposals/` | NEW | M46 | |
+| `packages/db/prisma/migrations/20260628_vision_discussions/` | NEW | M47 | |
+
+### 19.2 tRPC
+
+| Path | Disposition | Milestone |
+|---|---|---|
+| `services/sector-service/src/trpc/proposal.ts` | NEW | M46 | `proposal.list / get / create / vote / withdraw / adminApprove / adminReject / adminApply` |
+| `services/sector-service/src/trpc/discussion.ts` | NEW | M47 | `discussion.list / get / create / vote / comment.create / comment.vote` |
+| `services/sector-service/src/trpc/router.ts` | EDIT | M46/M47 | wire |
+| `services/sector-service/src/lib/proposal-applier.ts` | NEW | M46 | per-kind apply logic — calls capability.upsert / actor.upsert / risk.upsert etc. with audit-log linkage |
+| `services/sector-service/tests/proposal.test.ts` | NEW | M46 | CRUD + voting + apply pipeline integration |
+| `services/sector-service/tests/discussion.test.ts` | NEW | M47 | threads + comments + votes |
+
+### 19.3 UI — apps/web
+
+| Path | Disposition | Milestone |
+|---|---|---|
+| `apps/web/src/app/visions/[slug]/community/page.tsx` | NEW | M46 | vision-anchored community hub (proposal list + recent discussions) |
+| `apps/web/src/app/visions/[slug]/community/proposals/page.tsx` | NEW | M46 | full proposal list, filter by kind/status |
+| `apps/web/src/app/visions/[slug]/community/proposals/new/page.tsx` | NEW | M46 | submit form with kind picker + dynamic payload editor per kind |
+| `apps/web/src/app/visions/[slug]/community/proposals/[id]/page.tsx` | NEW | M46 | detail page + voting + comment timeline |
+| `apps/web/src/app/visions/[slug]/community/discussions/page.tsx` | NEW | M47 | discussion thread list |
+| `apps/web/src/app/visions/[slug]/community/discussions/[id]/page.tsx` | NEW | M47 | discussion thread + comments |
+| `apps/web/src/app/visions/[slug]/layout.tsx` | EDIT | M46 | add "Community" sub-nav tab |
+| `apps/web/src/lib/vision-client.ts` | EDIT | M46/M47 | wrappers for proposal.* and discussion.* |
+
+### 19.4 UI — apps/admin
+
+| Path | Disposition | Milestone |
+|---|---|---|
+| `apps/admin/src/app/proposals/page.tsx` | NEW | M46 | admin queue grouped by status (open / review / approved / rejected) |
+| `apps/admin/src/app/proposals/[id]/page.tsx` | NEW | M46 | proposal detail with Approve + Apply button (calls adminApprove + adminApply) |
+| `apps/admin/src/app/layout.tsx` | EDIT | M46 | add Proposals nav link |
+
+### 19.5 UI — packages/ui
+
+| Path | Disposition | Milestone |
+|---|---|---|
+| `packages/ui/src/proposal-card.tsx` | NEW | M46 | proposal summary card (used in community list) |
+| `packages/ui/src/proposal-status-pill.tsx` | NEW | M46 | colored status indicator |
+| `packages/ui/src/vote-buttons.tsx` | NEW | M46 | +/- vote control with optimistic state |
+| `packages/ui/src/discussion-thread.tsx` | NEW | M47 | nested comment rendering |
+
+### 19.6 Reputation system (M47)
+
+| Path | Disposition | Milestone |
+|---|---|---|
+| `services/sector-service/src/lib/reputation.ts` | NEW | M47 | compute per-user voting weight from proposal-approval rate + discussion score |
+| `services/sector-service/src/trpc/proposal.ts` | EDIT | M47 | vote.value multiplied by user's weight; UserScore-like rollup table |
+| `packages/db/prisma/schema.prisma` | EDIT | M47 | add UserReputation table (user_id PK + computed metrics) |
+
+### 19.7 Risk callouts (Community 2.0)
+
+**R-1**: Vote brigading / sockpuppets. Mitigation: vote weight starts at
+1.0 for everyone; M47 reputation system gates weights; rate-limit votes
+per user per minute.
+
+**R-2**: Bad proposal text → bad applied DB rows. Mitigation: admin
+approval gate (default policy). Auto-apply only for non-destructive kinds
+(FLAG_SIGNAL hides; doesn't delete).
+
+**R-3**: Spam proposals. Mitigation: 1 open proposal per user per vision
+at a time; user-level rate limit; honeypot honestly first, captcha if
+escalates.
+
+**R-4**: Discussion thread moderation. Mitigation: admin can lock or
+delete threads; deleted threads soft-delete with `deleted_at` so audit
+survives.
+
+---
+
+## Section 20 — Summary table (all milestones M36-M47)
+
+| ID | Title | Status | PR count | Duration | Key risk |
+|---|---|---|---|---|---|
+| M36 | Capability schema + product language migration | ✅ shipped | 3 | 2.5d | low |
+| M37 | Hero page (hardcoded SDC showcase) | ✅ shipped | 5 | 5d | medium (design) |
+| M38 | Capability decomposition (manual seed, 3 sectors) | pending | 3 | 3.5d | medium (curation) |
+| M39 | Signal ingest pipeline (arXiv + USPTO + News) | pending | 6 | 6.5d | high (adapter flakiness) |
+| M40 | Feasibility scoring engine | pending | 3 | 4d | medium |
+| M41 | Vision Builder agent (one-liner → full capability tree) | pending | 5 | 6.5d | high (LLM hallucination) |
+| M42 | Simulation → Playground re-positioning | pending | 2 | 2.5d | low |
+| M43 | Archive investment features behind flag | pending | 2 | 1.5d | low |
+| M44 | Fusion Power showcase + polish | pending | 4 | 4.5d | medium (agent quality) |
+| **M45** | **Actor domain + Hero integration** | **NEW** | 4 (M45a×3 + M45b×1) | 6-8d | medium (integration scope) |
+| **M46** | **Community 2.0: proposals + voting + admin** | **NEW** | 5 | 5-7d | medium (apply-pipeline kinds) |
+| **M47** | **Discussions + reputation** | **NEW** (optional) | 3 | 4-5d | medium (reputation calibration) |
+
+Total: ~45-55 days at 1-person + Claude pace → 9-11 weeks for full
+M36-M47 ship. M45 inserts BEFORE M38 (M45a) and AFTER M38 (M45b) per
+PIVOT.md §11.4.
+
+---
+
 *End of REFACTOR.md. Cross-link with PIVOT.md per milestone.*

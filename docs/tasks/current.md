@@ -77,9 +77,57 @@ sequencing → execute slice-by-slice.
       `/visions` landing with 4 visions. Twitter/X demo thread. 4-6 days.
       See PIVOT.md §5 M44.
 
-**Total**: ~32-45 days. Realistic 8-10 weeks.
+### Extension milestones (added 2026-05-23 post-M37 close)
 
-## Deferred (resume after M44)
+Two gaps surfaced after M37 demo-gate review (PIVOT.md §11):
+1. The Hero shows capabilities/signals/risks but no **WHO** — companies
+   and labs competing on each capability. Country + ticker info expected.
+2. `/community` is a stock-prediction game that doesn't fit the Vision
+   Monitor. The right mechanic is per-vision **proposals + voting +
+   admin-apply** (data sources, actors, capability score challenges).
+
+- [ ] **M45 — Actor domain + Hero integration**. The WHO layer. 3 new
+      Prisma models (Actor / VisionActor / CapabilityActor) + Signal
+      .actor_id. M45a (BEFORE M38, 4-5d): schema + tRPC + Hero "Actors"
+      band + capability card "active actors" footer + sub-nav tab,
+      fixture-backed. M45b (AFTER M38, 2-3d): manual seed for 3
+      visions + capability_actor wiring + signal extractor agent tags
+      `Signal.actor_id` when company keywords match. See PIVOT.md §11.1
+      / REFACTOR.md §18.
+- [ ] **M46 — Community 2.0: proposals + voting + admin apply**. After
+      M44. Replaces the archived prediction game. VisionProposal +
+      VisionProposalVote tables. Per-vision `/visions/[slug]/community`
+      hub. 7 proposal kinds (ADD_ACTOR / ADD_DATA_SOURCE /
+      ADD_CAPABILITY / REVISE_CAPABILITY_SCORE / FLAG_SIGNAL /
+      REWORD_RISK / ADD_RISK / ADD_NEW_VISION). Threshold-driven admin
+      queue at /admin/proposals → approve→apply pipeline calls the
+      relevant tRPC mutations with audit log linkage. Auto-apply for
+      non-destructive kinds (FLAG_SIGNAL). 5-7 days. See PIVOT.md §11.2
+      / REFACTOR.md §19.
+- [ ] **M47 — Discussions + reputation system** (optional polish).
+      VisionDiscussion + DiscussionComment + DiscussionVote (Reddit-
+      style threads + nested replies + up/down votes). UserReputation
+      table → vote.value multiplied by user's weight (default 1.0×, up
+      to 2× for top contributors). Calibrate after ≥4 weeks of M46
+      production data. 4-5 days. See PIVOT.md §11.2 / REFACTOR.md §19.6.
+
+**Total** (M36-M47): ~45-55 days at 1-person pace. Realistic 9-11 weeks.
+
+## Order of operations
+
+```
+M36 ✅ → M37 ✅ → M45a (Actor Hero, fixtures) → M38 (capability seed)
+       → M45b (Actor DB seed) → M39 (signals + actor tagging)
+       → M40 (feasibility) → M41 (Vision Builder w/ actors)
+       → M42 (Playground) → M43 (archive) → M44 (Fusion polish)
+       → M46 (Community 2.0) → M47 (discussions + reputation)
+```
+
+M45 inserts in two places per PIVOT.md §11.4 — M45a goes BEFORE M38 so
+the Hero demo immediately gains the WHO layer; M45b runs AFTER M38 so
+real capability rows are available to wire capability_actor mappings to.
+
+## Deferred (resume after M47)
 
 - M29 — OAuth providers (Google / GitHub)
 - M30 — Multi-tenant scoping (tenant_id + Postgres RLS)
