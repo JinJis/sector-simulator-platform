@@ -45,12 +45,14 @@ from agent_orchestration.schemas import (
     EdgeInferenceResult,
     FullPipelineRequest,
     FullPipelineResult,
+    PromptValidationResult,
     ProposeSectorRequest,
     ProposeSectorResult,
     ResearchBrief,
     ResearchRequest,
     SignalExtractorRequest,
     SignalScoring,
+    VisionBuilderPromptRequest,
     WorkflowRecord,
     WorkflowStatus,
 )
@@ -1072,3 +1074,95 @@ class CapabilityScoreUpdaterWorkflow:
             "leave a dim null when no signal flow justifies a change."
         )
         return "\n".join(parts)
+
+
+# =====================================================================
+# M41 — PromptValidatorWorkflow (haiku tier)
+# =====================================================================
+#
+# Stage-1 gate of the Vision Builder pipeline. Cheap classification +
+# refinement so we don't burn opus budget on nonsense, off-topic, or
+# duplicate prompts. Output drives whether the pipeline proceeds and
+# sizes the downstream decomposition.
+# =====================================================================
+
+
+class PromptValidatorWorkflow:
+    """Sanity-check a user vision prompt before the expensive pipeline
+    stages run. Cheap (haiku) — runs once per user submission.
+    Prompt: prompts/prompt_validator.md.
+    """
+
+    kind = "prompt_validator"
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+
+    async def run(
+        self,
+        request: VisionBuilderPromptRequest,
+        *,
+        cost_meter: CostMeter,
+    ) -> PromptValidationResult:
+        llm = self._llm.clone(cost_meter=cost_meter)
+        system = load_prompt("prompt_validator")
+        user = self._format_user_turn(request)
+        result = await asyncio.to_thread(
+            llm.call,
+            tier="haiku",
+            system=system,
+            user=user,
+            max_tokens=1024,
+            adaptive_thinking=False,
+            response_model=PromptValidationResult,
+        )
+        if result.parsed is None:
+            raise RuntimeError(
+                f"prompt-validator returned unparseable output (stop_reason={result.stop_reason})"
+            )
+        assert isinstance(result.parsed, PromptValidationResult)
+
+        # Defensive: agent sometimes ignores duplicate check. If the
+        # suggested_slug already exists, force rejection here.
+        if (
+            result.parsed.is_valid
+            and result.parsed.suggested_slug in request.existing_vision_slugs
+        ):
+            log.info(
+                "prompt-validator: forcing duplicate rejection on slug %r",
+                result.parsed.suggested_slug,
+            )
+            return result.parsed.model_copy(
+                update={
+                    "is_valid": False,
+                    "rejection_kind": "duplicate",
+                    "rejection_reason": (
+                        f"Slug '{result.parsed.suggested_slug}' is already registered."
+                        " Refine the question to a different scope."
+                    ),
+                }
+            )
+
+        return result.parsed
+
+    @staticmethod
+    def _format_user_turn(request: VisionBuilderPromptRequest) -> str:
+        existing_block = ""
+        if request.existing_vision_slugs:
+            slugs = ", ".join(request.existing_vision_slugs[:50])
+            extra = (
+                f" (+{len(request.existing_vision_slugs) - 50} more)"
+                if len(request.existing_vision_slugs) > 50
+                else ""
+            )
+            existing_block = (
+                f"\n\n## Existing vision slugs\n{slugs}{extra}\n\n"
+                "If the user's prompt would duplicate one of these, return "
+                "rejection_kind='duplicate' and reference the existing slug "
+                "in rejection_reason."
+            )
+        return (
+            f"## User prompt\n\n{request.prompt}"
+            f"{existing_block}\n\n"
+            "Validate, then return the PromptValidationResult schema."
+        )

@@ -721,6 +721,16 @@ model Capability {
   // wire the what-if-feasibility projection (M42).
   primary_driver_name String? @map("primary_driver_name")
 
+  // M41 — Agent-generated keyword set for the signal ingest pipeline.
+  // For curated reference visions (SDC / memory-semi / sofc) the
+  // canonical keyword list lives in
+  // services/data-pipeline/data_pipeline/signals/keywords/<slug>.json
+  // (admin-edited file). For agent-built visions (M41 Vision Builder)
+  // the keywords are written here at vision creation time, so the
+  // signal ingest job needs no filesystem write. Ingest reads JSON
+  // file first (override), then falls back to this column.
+  signal_keywords String[] @default([]) @map("signal_keywords")
+
   created_at DateTime @default(now()) @map("created_at")
   updated_at DateTime @updatedAt @map("updated_at")
 

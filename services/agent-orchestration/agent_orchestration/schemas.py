@@ -577,3 +577,101 @@ class CapabilityScoreUpdaterRunResult(BaseModel):
     update: CapabilityScoreUpdate
     cost_usd: float
     duration_ms: int
+
+
+# =====================================================================
+# M41 — Vision Builder pipeline schemas
+#
+# Six-stage flow:
+#   1. PromptValidator (haiku)        — sanity-check user prompt
+#   2. VisionResearch (sonnet)        — context gathering (existing
+#                                       ResearchWorkflow reused)
+#   3. VisionDecomposition (opus)     — full vision draft
+#   4. DataSourceSelector (sonnet)    — per-capability keyword sets
+#   5. ValidationGate (pure Python)   — DAG + uniqueness + FK checks
+#   6. Conductor → admin → persist    — atomic create
+#
+# Every LLM stage outputs a Pydantic schema. Each schema enforces
+# bounds (0-100 for scores, ≤enum values for categories) so the
+# downstream validation gate has less to do.
+# =====================================================================
+
+
+# ---- Stage 1: Prompt validation ----------------------------------------
+
+
+class VisionBuilderPromptRequest(BaseModel):
+    """Raw user prompt + optional context. The validator does the
+    sanity check before any expensive opus call burns budget."""
+
+    prompt: str = Field(
+        ...,
+        min_length=10,
+        max_length=2000,
+        description="User's natural-language vision request.",
+    )
+    # Existing slugs the validator should check for duplicate framing.
+    existing_vision_slugs: list[str] = Field(default_factory=list, max_length=200)
+
+
+class PromptValidationResult(BaseModel):
+    """Stage-1 output. is_valid=False short-circuits the pipeline; the
+    admin UI surfaces the rejection_reason + the refined_question as a
+    "try this instead" suggestion."""
+
+    is_valid: bool
+    rejection_kind: (
+        Literal[
+            "off_topic",
+            "too_vague",
+            "too_narrow",
+            "policy_violation",
+            "duplicate",
+        ]
+        | None
+    ) = None
+    rejection_reason: str | None = Field(
+        default=None,
+        max_length=500,
+        description="Plain-language explanation for the user.",
+    )
+
+    # Even on rejection, the refined_question gives the user a hint at
+    # what kind of question would have worked.
+    refined_question: str = Field(
+        ...,
+        max_length=240,
+        description="Canonical 'By when will X happen?' framing.",
+    )
+    suggested_name: str = Field(..., max_length=80)
+    suggested_slug: str = Field(
+        ...,
+        pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+        max_length=64,
+        description="Lowercase kebab-case URL slug.",
+    )
+
+    # Sizing guidance for the downstream decomposition.
+    domain_label: str = Field(
+        ...,
+        max_length=40,
+        description="Coarse category: Space, Energy, Compute, Bio, ...",
+    )
+    scope: Literal["narrow", "balanced", "broad"]
+    suggested_capability_count: int = Field(..., ge=3, le=15)
+    suggested_actor_count: int = Field(..., ge=3, le=30)
+
+    # Things the admin should double-check at the review step.
+    review_notes: list[str] = Field(default_factory=list, max_length=10)
+
+    # Confidence in the validation itself. <0.5 → admin should pay
+    # extra attention to review_notes before approving.
+    confidence: float = Field(..., ge=0.0, le=1.0)
+
+
+class PromptValidatorRunResult(BaseModel):
+    """HTTP envelope for /vision-builder/validate-prompt."""
+
+    validation: PromptValidationResult
+    cost_usd: float
+    duration_ms: int

@@ -43,10 +43,12 @@ from agent_orchestration.schemas import (
     DecompositionRequest,
     DriverInferenceRequest,
     FullPipelineRequest,
+    PromptValidatorRunResult,
     ProposeSectorRequest,
     ResearchRequest,
     SignalExtractorRequest,
     SignalExtractorRunResult,
+    VisionBuilderPromptRequest,
     WorkflowRecord,
 )
 from agent_orchestration.workflows import (
@@ -56,6 +58,7 @@ from agent_orchestration.workflows import (
     DecompositionWorkflow,
     DriverInferenceWorkflow,
     FullPipelineWorkflow,
+    PromptValidatorWorkflow,
     ProposeSectorWorkflow,
     ResearchWorkflow,
     SignalExtractorWorkflow,
@@ -275,6 +278,39 @@ def create_app() -> FastAPI:
         duration_ms = int((time.perf_counter() - t0) * 1000)
         return SignalExtractorRunResult(
             scoring=scoring,
+            cost_usd=cost_meter.total_usd,
+            duration_ms=duration_ms,
+        )
+
+    @app.post(
+        "/vision-builder/validate-prompt",
+        response_model=PromptValidatorRunResult,
+    )
+    async def vision_builder_validate_prompt(
+        req: VisionBuilderPromptRequest,
+    ) -> PromptValidatorRunResult:
+        """Stage 1 of the Vision Builder pipeline — sanity-check the
+        user's natural-language prompt before kicking off the
+        expensive decomposition stages. Cheap (haiku tier, ~$0.0005
+        per call). Returns rejection details + a refined_question
+        suggestion that the admin UI surfaces as "did you mean…?".
+        """
+        from agent_orchestration.schemas import PromptValidatorRunResult
+
+        llm: LLMClient = app.state.llm
+        workflow = PromptValidatorWorkflow(llm=llm)
+        cost_meter = CostMeter()
+        t0 = time.perf_counter()
+        try:
+            validation = await workflow.run(req, cost_meter=cost_meter)
+        except Exception as e:
+            log.exception("prompt-validator failed: %s", e)
+            raise HTTPException(
+                status_code=502, detail=f"prompt-validator failed: {e}"
+            ) from e
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        return PromptValidatorRunResult(
+            validation=validation,
             cost_usd=cost_meter.total_usd,
             duration_ms=duration_ms,
         )
