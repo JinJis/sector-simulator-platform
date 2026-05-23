@@ -11,6 +11,9 @@
 import { ActorCard, type ActorCategory, type ActorStage } from "@platform/ui";
 import { notFound } from "next/navigation";
 
+import { fetchVisions } from "@/lib/vision-client";
+import { trpc } from "@/lib/sim-client";
+
 import { getVisionFixture } from "../../_fixtures";
 
 interface Props {
@@ -39,9 +42,45 @@ const CATEGORY_LABEL: Record<string, string> = {
 
 export default async function ActorsIndexPage({ params }: Props) {
   const { slug } = await params;
-  const fixture = getVisionFixture(slug);
-  if (!fixture) notFound();
-  const { actors } = fixture.overview;
+
+  // Try DB first via actor.listForVision; fall back to fixture if the
+  // tRPC client can't reach sector-service. Maps the VisionActor join
+  // shape into the same VisionActorInOverview shape the fixture provides.
+  let actors: Array<{
+    actor_key: string;
+    name: string;
+    short_name: string | null;
+    iso_country: string;
+    category: string;
+    stage: string;
+    blurb: string;
+    ticker: string | null;
+    exchange: string | null;
+    logo_url: string | null;
+    relevance: number | null;
+    display_order: number;
+  }>;
+  try {
+    const rows = await trpc.actor.listForVision.query({ sector_slug: slug });
+    actors = rows.map((va) => ({
+      actor_key: va.actor.key,
+      name: va.actor.name,
+      short_name: va.actor.short_name,
+      iso_country: va.actor.iso_country,
+      category: va.actor.category,
+      stage: va.actor.stage,
+      blurb: va.actor.blurb,
+      ticker: va.actor.ticker,
+      exchange: va.actor.exchange,
+      logo_url: va.actor.logo_url,
+      relevance: va.relevance,
+      display_order: va.display_order,
+    }));
+  } catch {
+    const fixture = getVisionFixture(slug);
+    if (!fixture) notFound();
+    actors = fixture.overview.actors;
+  }
 
   if (actors.length === 0) {
     return (

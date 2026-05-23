@@ -10,6 +10,8 @@
 import { ActorPill, countryFlag, type ActorStage } from "@platform/ui";
 import { notFound } from "next/navigation";
 
+import { trpc } from "@/lib/sim-client";
+
 import { getVisionFixture } from "../../../_fixtures";
 
 interface Props {
@@ -35,19 +37,85 @@ const STAGE_LABEL: Record<string, string> = {
 
 export default async function ActorDetailPage({ params }: Props) {
   const { slug, key } = await params;
-  const fixture = getVisionFixture(slug);
-  if (!fixture) notFound();
 
-  const actor = fixture.overview.actors.find((a) => a.actor_key === key);
+  // Try DB via actor.get + cross-reference vision.getOverview for
+  // per-vision relevance + which capabilities. Fall back to fixture.
+  type ActorView = {
+    actor_key: string;
+    name: string;
+    iso_country: string;
+    category: string;
+    stage: string;
+    blurb: string;
+    ticker: string | null;
+    exchange: string | null;
+    relevance: number | null;
+    rationale: string | null;
+  };
+  let actor: ActorView | null = null;
+  let activeOn: Array<{
+    capability: { key: string; short_name: string | null; name: string };
+    role: string;
+  }> = [];
+
+  try {
+    const overview = await trpc.vision.getOverview.query({ slug, actor_limit: 200 });
+    const a = overview.actors.find((x) => x.actor_key === key);
+    if (!a) notFound();
+    actor = {
+      actor_key: a.actor_key,
+      name: a.name,
+      iso_country: a.iso_country,
+      category: a.category,
+      stage: a.stage,
+      blurb: a.blurb,
+      ticker: a.ticker,
+      exchange: a.exchange,
+      relevance: a.relevance,
+      rationale: a.rationale,
+    };
+    activeOn = overview.capabilities
+      .map((c) => {
+        const match = c.active_actors.find((aa) => aa.actor_key === key);
+        return match
+          ? {
+              capability: { key: c.key, short_name: c.short_name, name: c.name },
+              role: match.role,
+            }
+          : null;
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+  } catch {
+    const fixture = getVisionFixture(slug);
+    if (!fixture) notFound();
+    const a = fixture.overview.actors.find((x) => x.actor_key === key);
+    if (!a) notFound();
+    actor = {
+      actor_key: a.actor_key,
+      name: a.name,
+      iso_country: a.iso_country,
+      category: a.category,
+      stage: a.stage,
+      blurb: a.blurb,
+      ticker: a.ticker,
+      exchange: a.exchange,
+      relevance: a.relevance,
+      rationale: a.rationale,
+    };
+    activeOn = fixture.overview.capabilities
+      .map((c) => {
+        const match = c.active_actors.find((aa) => aa.actor_key === key);
+        return match
+          ? {
+              capability: { key: c.key, short_name: c.short_name, name: c.name },
+              role: match.role,
+            }
+          : null;
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+  }
+
   if (!actor) notFound();
-
-  // Find capabilities where this actor appears.
-  const activeOn = fixture.overview.capabilities
-    .map((c) => {
-      const match = c.active_actors.find((a) => a.actor_key === key);
-      return match ? { capability: c, role: match.role } : null;
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null);
 
   return (
     <div className="space-y-6">
