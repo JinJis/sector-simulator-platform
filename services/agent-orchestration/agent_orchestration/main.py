@@ -36,6 +36,8 @@ from agent_orchestration.repo import (
     utc_now,
 )
 from agent_orchestration.schemas import (
+    CapabilityScoreUpdaterRequest,
+    CapabilityScoreUpdaterRunResult,
     CodeGenRequest,
     CodeReviewRequest,
     DecompositionRequest,
@@ -48,6 +50,7 @@ from agent_orchestration.schemas import (
     WorkflowRecord,
 )
 from agent_orchestration.workflows import (
+    CapabilityScoreUpdaterWorkflow,
     CodeGenWorkflow,
     CodeReviewWorkflow,
     DecompositionWorkflow,
@@ -272,6 +275,42 @@ def create_app() -> FastAPI:
         duration_ms = int((time.perf_counter() - t0) * 1000)
         return SignalExtractorRunResult(
             scoring=scoring,
+            cost_usd=cost_meter.total_usd,
+            duration_ms=duration_ms,
+        )
+
+    @app.post(
+        "/capability-score-updater/score",
+        response_model=CapabilityScoreUpdaterRunResult,
+    )
+    async def capability_score_updater(
+        req: CapabilityScoreUpdaterRequest,
+    ) -> CapabilityScoreUpdaterRunResult:
+        """Synchronous score-updater endpoint — called by the
+        recompute_feasibility cron once per (vision × capability) per
+        day. Single sonnet call with extended thinking; ~$0.01-0.03
+        each at current pricing. Returns the update + cost roll-up.
+        """
+        llm: LLMClient = app.state.llm
+        workflow = CapabilityScoreUpdaterWorkflow(llm=llm)
+        cost_meter = CostMeter()
+        t0 = time.perf_counter()
+        try:
+            update = await workflow.run(req, cost_meter=cost_meter)
+        except Exception as e:
+            log.exception(
+                "capability-score-updater failed for %s/%s: %s",
+                req.sector_slug,
+                req.capability_key,
+                e,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=f"score-updater agent failed: {e}",
+            ) from e
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        return CapabilityScoreUpdaterRunResult(
+            update=update,
             cost_usd=cost_meter.total_usd,
             duration_ms=duration_ms,
         )

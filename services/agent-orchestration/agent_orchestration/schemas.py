@@ -509,3 +509,71 @@ __all_signal_extractor__ = (
     "SignalScoring",
     "SignalExtractorRunResult",
 )
+
+
+# =====================================================================
+# M40b — CapabilityScoreUpdater (sonnet tier)
+# =====================================================================
+
+
+class RecentSignal(BaseModel):
+    """One scored signal to feed the score updater. Trimmed to the
+    fields that matter for re-scoring — the actual Signal row carries
+    more (source_url, ingested_at, etc.) but we don't need those here."""
+
+    title: str
+    summary: str | None = None
+    source_kind: str
+    published_at: datetime
+    delta_technical: float | None = None
+    delta_economic: float | None = None
+    delta_regulatory: float | None = None
+    delta_supply: float | None = None
+    actor_short_name: str | None = None
+
+
+class CapabilityScoreUpdaterRequest(BaseModel):
+    """Input to the ScoreUpdater agent. Carries the current capability
+    state + the recent signal feed so the agent can reason over the
+    delta + apply temporal decay."""
+
+    sector_slug: str
+    capability_key: str
+    capability_name: str
+    capability_description: str = Field(..., max_length=2000)
+    capability_rationale: str = Field(..., max_length=2000)
+    # Current scores — None when not assessed yet.
+    current_technical: float | None = Field(default=None, ge=0, le=100)
+    current_economic: float | None = Field(default=None, ge=0, le=100)
+    current_regulatory: float | None = Field(default=None, ge=0, le=100)
+    current_supply: float | None = Field(default=None, ge=0, le=100)
+    # Recent signals — trimmed to ≤50 for context budget. Caller
+    # orders newest-first.
+    recent_signals: list[RecentSignal] = Field(default_factory=list, max_length=50)
+
+
+class CapabilityScoreUpdate(BaseModel):
+    """Output of the ScoreUpdater agent.
+
+    All 4 dims are nullable — agent leaves a dim unchanged by returning
+    None for it. Caller (recompute cron) preserves the prior value via
+    COALESCE when writing.
+    """
+
+    technical: float | None = Field(default=None, ge=0, le=100)
+    economic: float | None = Field(default=None, ge=0, le=100)
+    regulatory: float | None = Field(default=None, ge=0, le=100)
+    supply: float | None = Field(default=None, ge=0, le=100)
+    # Free-text agent-written explanation of what moved + why.
+    rationale: str = Field(default="", max_length=1000)
+    # Confidence in this update overall (0..1). Caller can skip writing
+    # when below threshold.
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+class CapabilityScoreUpdaterRunResult(BaseModel):
+    """HTTP envelope for /capability-score-updater/score."""
+
+    update: CapabilityScoreUpdate
+    cost_usd: float
+    duration_ms: int

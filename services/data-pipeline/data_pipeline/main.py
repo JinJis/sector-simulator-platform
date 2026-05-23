@@ -85,6 +85,11 @@ _DEFAULT_RESOLVE_PREDICTIONS_CRON = "0 9 * * *"
 # scheduled independently of the legacy equity cron family.
 _DEFAULT_SIGNAL_INGEST_CRON = "0 9 * * *"
 
+# M40b — recompute_feasibility cron. 09:30 UTC = 30 min after signal
+# ingest so the freshly-written signals have time to settle before the
+# score updater reads them.
+_DEFAULT_FEASIBILITY_RECOMPUTE_CRON = "30 9 * * *"
+
 
 def _build_source() -> DataSource:
     name = os.environ.get("INGEST_SOURCE", "yfinance").lower()
@@ -158,6 +163,8 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         app.state.last_resolve_result = None
     if not hasattr(app.state, "last_signal_ingest_result"):
         app.state.last_signal_ingest_result = None
+    if not hasattr(app.state, "last_feasibility_recompute_result"):
+        app.state.last_feasibility_recompute_result = None
     # Signal ingest gets its own asyncpg pool (separate from `repo` and
     # `resolver_repo`) so its writes don't compete with refresh jobs.
     # Tests pre-wire `app.state.signal_repo` to swap in InMemory.
@@ -282,6 +289,31 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
                     "data-pipeline: signal-ingest armed (cron=%r UTC)", sig_cron
                 )
 
+            # M40b — recompute_feasibility, runs 30 min after signal-ingest.
+            rf_cron = os.environ.get(
+                "FEASIBILITY_RECOMPUTE_CRON", _DEFAULT_FEASIBILITY_RECOMPUTE_CRON
+            )
+            try:
+                rf_trigger = CronTrigger.from_crontab(rf_cron, timezone="UTC")
+            except ValueError as e:
+                log.error(
+                    "data-pipeline: bad FEASIBILITY_RECOMPUTE_CRON=%r (%s)",
+                    rf_cron,
+                    e,
+                )
+            else:
+                scheduler.add_job(
+                    _run_recompute_feasibility_job,
+                    trigger=rf_trigger,
+                    kwargs={"app": app},
+                    id="recompute_feasibility_daily",
+                    replace_existing=True,
+                )
+                log.info(
+                    "data-pipeline: feasibility-recompute armed (cron=%r UTC)",
+                    rf_cron,
+                )
+
         if scheduler.get_jobs():
             scheduler.start()
         else:
@@ -352,6 +384,21 @@ async def _run_signal_ingest_job(*, app: FastAPI):  # noqa: ANN201
     visions: list[str] = app.state.signal_ingest_visions
     stats = await run_signal_ingest(sector_slugs=visions, repo=repo)
     app.state.last_signal_ingest_result = stats
+    return stats
+
+
+async def _run_recompute_feasibility_job(*, app: FastAPI):  # noqa: ANN201
+    """M40b — daily feasibility recompute. Calls ScoreUpdater agent per
+    capability, then triggers sim-service vision-level aggregation."""
+    from data_pipeline.jobs.recompute_feasibility import run_recompute_feasibility
+
+    repo = app.state.signal_repo
+    if repo is None:
+        log.warning("recompute-feasibility: repo not configured — skipping")
+        return None
+    visions: list[str] = app.state.signal_ingest_visions
+    stats = await run_recompute_feasibility(sector_slugs=visions, repo=repo)
+    app.state.last_feasibility_recompute_result = stats
     return stats
 
 
@@ -553,6 +600,56 @@ def create_app() -> FastAPI:
             "extractor_failures": last.extractor_failures,
             "signals_written": last.signals_written,
             "extractor_total_cost_usd": last.extractor_total_cost_usd,
+            "errors": last.errors,
+        }
+
+    # M40b — feasibility recompute manual + last endpoints.
+    @app.post("/jobs/recompute-feasibility")
+    async def manual_recompute_feasibility() -> dict:  # noqa: ANN201
+        if app.state.signal_repo is None:
+            raise HTTPException(
+                status_code=503,
+                detail="recompute-feasibility unavailable — DATABASE_URL not configured",
+            )
+        log.info("data-pipeline: manual /jobs/recompute-feasibility triggered")
+        stats = await _run_recompute_feasibility_job(app=app)
+        if stats is None:
+            raise HTTPException(
+                status_code=503, detail="recompute-feasibility skipped"
+            )
+        return {
+            "started_at": stats.started_at.isoformat(),
+            "finished_at": stats.finished_at.isoformat() if stats.finished_at else None,
+            "visions_processed": stats.visions_processed,
+            "capabilities_processed": stats.capabilities_processed,
+            "score_updater_calls": stats.score_updater_calls,
+            "score_updater_failures": stats.score_updater_failures,
+            "score_writes": stats.score_writes,
+            "score_writes_skipped_low_confidence": stats.score_writes_skipped_low_confidence,
+            "feasibility_writes": stats.feasibility_writes,
+            "score_updater_total_cost_usd": stats.score_updater_total_cost_usd,
+            "errors": stats.errors,
+        }
+
+    @app.get("/jobs/recompute-feasibility/last")
+    async def last_recompute_feasibility() -> dict:  # noqa: ANN201
+        last = app.state.last_feasibility_recompute_result
+        if last is None:
+            raise HTTPException(
+                status_code=404,
+                detail="no feasibility-recompute has run since the process started",
+            )
+        return {
+            "started_at": last.started_at.isoformat(),
+            "finished_at": last.finished_at.isoformat() if last.finished_at else None,
+            "visions_processed": last.visions_processed,
+            "capabilities_processed": last.capabilities_processed,
+            "score_updater_calls": last.score_updater_calls,
+            "score_updater_failures": last.score_updater_failures,
+            "score_writes": last.score_writes,
+            "score_writes_skipped_low_confidence": last.score_writes_skipped_low_confidence,
+            "feasibility_writes": last.feasibility_writes,
+            "score_updater_total_cost_usd": last.score_updater_total_cost_usd,
             "errors": last.errors,
         }
 

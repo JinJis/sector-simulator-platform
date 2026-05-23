@@ -63,9 +63,52 @@ class SignalInsert:
     is_highlight: bool
 
 
+@dataclass(frozen=True, slots=True)
+class CurrentCapabilityScore:
+    """Current 4-dim score for one capability — read by recompute_
+    feasibility before calling the ScoreUpdater agent."""
+
+    capability_id: str
+    capability_key: str
+    technical: float | None
+    economic: float | None
+    regulatory: float | None
+    supply: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class RecentSignalForScoring:
+    """Signal in scoring window — fed to ScoreUpdater agent."""
+
+    title: str
+    summary: str | None
+    source_kind: str
+    published_at: datetime
+    delta_technical: float | None
+    delta_economic: float | None
+    delta_regulatory: float | None
+    delta_supply: float | None
+    actor_short_name: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityScoreWrite:
+    """New CapabilityScore row to insert (after demoting prior current)."""
+
+    capability_id: str
+    technical: float | None
+    economic: float | None
+    regulatory: float | None
+    supply: float | None
+    composite: float | None
+    composite_p10: float | None
+    composite_p90: float | None
+    rationale: str | None
+
+
 class SignalRepository(Protocol):
-    """Surface the ingest job needs. Production = Postgres; tests use
-    InMemorySignalRepository so they don't need a live DB."""
+    """Surface the ingest + recompute jobs need. Production = Postgres;
+    tests use InMemorySignalRepository so they don't need a live DB."""
 
     async def list_vision_capabilities(
         self, sector_slug: str
@@ -73,28 +116,40 @@ class SignalRepository(Protocol):
 
     async def list_vision_actors(self, sector_slug: str) -> list[ActorHandle]: ...
 
-    async def upsert_signal(self, signal: SignalInsert) -> str:
-        """Idempotent on (source_url, capability_id). Returns the
-        signal id (new or existing)."""
-        ...
+    async def upsert_signal(self, signal: SignalInsert) -> str: ...
+
+    # M40b — recompute support
+    async def get_current_capability_score(
+        self, capability_id: str
+    ) -> CurrentCapabilityScore | None: ...
+
+    async def list_recent_signals_for_capability(
+        self, capability_id: str, *, since: datetime, limit: int = 50
+    ) -> list[RecentSignalForScoring]: ...
+
+    async def write_capability_score(self, score: CapabilityScoreWrite) -> str: ...
 
     async def close(self) -> None: ...
 
 
 class InMemorySignalRepository:
-    """Test-only in-memory store. Tracks upserts by (source_url,
-    capability_id) so re-runs are idempotent."""
+    """Test-only in-memory store."""
 
     def __init__(
         self,
         *,
         capabilities: dict[str, list[CapabilityHandle]] | None = None,
         actors: dict[str, list[ActorHandle]] | None = None,
+        current_scores: dict[str, CurrentCapabilityScore] | None = None,
+        recent_signals: dict[str, list[RecentSignalForScoring]] | None = None,
     ) -> None:
         self._capabilities = capabilities or {}
         self._actors = actors or {}
-        self._signals: dict[tuple[str, str], str] = {}  # (source_url, cap_id) → id
+        self._signals: dict[tuple[str, str], str] = {}
         self._next_id = 1
+        self._current_scores = current_scores or {}
+        self._recent_signals_by_cap = recent_signals or {}
+        self._capability_score_writes: list[CapabilityScoreWrite] = []
 
     async def list_vision_capabilities(
         self, sector_slug: str
@@ -112,6 +167,37 @@ class InMemorySignalRepository:
         sid = f"sig_{self._next_id}"
         self._next_id += 1
         self._signals[key] = sid
+        return sid
+
+    async def get_current_capability_score(
+        self, capability_id: str
+    ) -> CurrentCapabilityScore | None:
+        return self._current_scores.get(capability_id)
+
+    async def list_recent_signals_for_capability(
+        self, capability_id: str, *, since: datetime, limit: int = 50
+    ) -> list[RecentSignalForScoring]:
+        return [
+            s
+            for s in self._recent_signals_by_cap.get(capability_id, [])
+            if s.published_at >= since
+        ][:limit]
+
+    async def write_capability_score(self, score: CapabilityScoreWrite) -> str:
+        self._capability_score_writes.append(score)
+        sid = f"cs_{len(self._capability_score_writes)}"
+        # Update current_scores in place so subsequent reads see the latest.
+        self._current_scores[score.capability_id] = CurrentCapabilityScore(
+            capability_id=score.capability_id,
+            capability_key=self._current_scores.get(
+                score.capability_id,
+                CurrentCapabilityScore(score.capability_id, "", None, None, None, None),
+            ).capability_key,
+            technical=score.technical,
+            economic=score.economic,
+            regulatory=score.regulatory,
+            supply=score.supply,
+        )
         return sid
 
     async def close(self) -> None:
@@ -132,6 +218,47 @@ JOIN vision_actors va ON va.actor_id = a.id
 WHERE va.sector_slug = $1
 ORDER BY va.relevance DESC NULLS LAST, va.display_order ASC
 LIMIT 25
+"""
+
+_GET_CURRENT_CAP_SCORE_SQL = """
+SELECT c.key AS capability_key,
+       cs.technical, cs.economic, cs.regulatory, cs.supply
+FROM capabilities c
+LEFT JOIN capability_scores cs
+  ON cs.capability_id = c.id AND cs.is_current = TRUE
+WHERE c.id = $1
+"""
+
+_LIST_RECENT_SIGNALS_FOR_CAP_SQL = """
+SELECT s.title, s.summary, s.source_kind, s.published_at,
+       s.delta_technical, s.delta_economic, s.delta_regulatory, s.delta_supply,
+       a.short_name AS actor_short_name
+FROM signals s
+LEFT JOIN actors a ON a.id = s.actor_id
+WHERE s.capability_id = $1 AND s.published_at >= $2
+ORDER BY s.published_at DESC
+LIMIT $3
+"""
+
+_WRITE_CAP_SCORE_SQL = """
+WITH demote AS (
+  UPDATE capability_scores
+  SET is_current = FALSE
+  WHERE capability_id = $1 AND is_current = TRUE
+)
+INSERT INTO capability_scores (
+  id, capability_id,
+  technical, economic, regulatory, supply,
+  composite, composite_p10, composite_p90,
+  as_of, is_current, rationale, created_at
+)
+VALUES (
+  gen_random_uuid()::text, $1,
+  $2, $3, $4, $5,
+  $6, $7, $8,
+  NOW(), TRUE, $9, NOW()
+)
+RETURNING id
 """
 
 _UPSERT_SIGNAL_SQL = """
@@ -223,6 +350,65 @@ class PostgresSignalRepository:
                 signal.delta_supply,
                 signal.is_highlight,
             )
+        assert row is not None
+        return row["id"]
+
+    async def get_current_capability_score(
+        self, capability_id: str
+    ) -> CurrentCapabilityScore | None:
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(_GET_CURRENT_CAP_SCORE_SQL, capability_id)
+        if row is None:
+            return None
+        return CurrentCapabilityScore(
+            capability_id=capability_id,
+            capability_key=row["capability_key"],
+            technical=row["technical"],
+            economic=row["economic"],
+            regulatory=row["regulatory"],
+            supply=row["supply"],
+        )
+
+    async def list_recent_signals_for_capability(
+        self, capability_id: str, *, since: datetime, limit: int = 50
+    ) -> list[RecentSignalForScoring]:
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                _LIST_RECENT_SIGNALS_FOR_CAP_SQL,
+                capability_id,
+                since.replace(tzinfo=None) if since.tzinfo else since,
+                limit,
+            )
+        return [
+            RecentSignalForScoring(
+                title=r["title"],
+                summary=r["summary"],
+                source_kind=r["source_kind"],
+                published_at=r["published_at"],
+                delta_technical=r["delta_technical"],
+                delta_economic=r["delta_economic"],
+                delta_regulatory=r["delta_regulatory"],
+                delta_supply=r["delta_supply"],
+                actor_short_name=r["actor_short_name"],
+            )
+            for r in rows
+        ]
+
+    async def write_capability_score(self, score: CapabilityScoreWrite) -> str:
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    _WRITE_CAP_SCORE_SQL,
+                    score.capability_id,
+                    score.technical,
+                    score.economic,
+                    score.regulatory,
+                    score.supply,
+                    score.composite,
+                    score.composite_p10,
+                    score.composite_p90,
+                    score.rationale,
+                )
         assert row is not None
         return row["id"]
 

@@ -31,6 +31,8 @@ from pydantic import BaseModel
 from agent_orchestration.prompts import load_prompt
 from agent_orchestration.repo import InMemoryWorkflowRepository, WorkflowRepository
 from agent_orchestration.schemas import (
+    CapabilityScoreUpdate,
+    CapabilityScoreUpdaterRequest,
     CodeGenRequest,
     CodeGenResult,
     CodeReviewRequest,
@@ -966,3 +968,107 @@ class SignalExtractorWorkflow:
             + "\n\nScore per-dimension deltas, confidence, and (optionally) "
             "the matched actor key. Output only the SignalScoring schema."
         )
+
+
+# =====================================================================
+# M40b — CapabilityScoreUpdaterWorkflow (sonnet tier)
+# =====================================================================
+#
+# One call per (capability × recompute cycle). Reasoning-heavy: agent
+# weighs the recent signal feed against current scores with temporal
+# decay. Sonnet tier (gemini-3.5-flash) — middle of the road for both
+# cost and judgment.
+# =====================================================================
+
+
+class CapabilityScoreUpdaterWorkflow:
+    """Update a capability's 4-dim scores from recent signals.
+
+    Called by data-pipeline's recompute_feasibility cron once per
+    (vision × capability) per day. Prompt: prompts/score_updater.md.
+    """
+
+    kind = "capability_score_updater"
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+
+    async def run(
+        self,
+        request: CapabilityScoreUpdaterRequest,
+        *,
+        cost_meter: CostMeter,
+    ) -> CapabilityScoreUpdate:
+        llm = self._llm.clone(cost_meter=cost_meter)
+        system = load_prompt("score_updater")
+        user = self._format_user_turn(request)
+        result = await asyncio.to_thread(
+            llm.call,
+            tier="sonnet",
+            system=system,
+            user=user,
+            max_tokens=2048,
+            # Sonnet benefits from extended thinking on multi-signal
+            # reasoning. Caller pays ~$0.01-0.03 per call vs ~$0.005
+            # without — worth it for the judgment quality.
+            adaptive_thinking=True,
+            response_model=CapabilityScoreUpdate,
+        )
+        if result.parsed is None:
+            raise RuntimeError(
+                f"score-updater returned unparseable output (stop_reason={result.stop_reason})"
+            )
+        assert isinstance(result.parsed, CapabilityScoreUpdate)
+        return result.parsed
+
+    @staticmethod
+    def _format_user_turn(request: CapabilityScoreUpdaterRequest) -> str:
+        parts: list[str] = []
+        parts.append(
+            f"## Capability — {request.capability_name} ({request.capability_key})"
+        )
+        parts.append(f"\n**Description**: {request.capability_description}")
+        parts.append(f"\n**Why it matters**: {request.capability_rationale}")
+        parts.append("\n## Current scores")
+        for label, val in [
+            ("technical", request.current_technical),
+            ("economic", request.current_economic),
+            ("regulatory", request.current_regulatory),
+            ("supply", request.current_supply),
+        ]:
+            parts.append(
+                f"- {label}: {val if val is not None else 'null (not assessed)'}"
+            )
+        parts.append("\n## Recent signals (newest first)")
+        if not request.recent_signals:
+            parts.append("- (no signals in window)")
+        else:
+            for s in request.recent_signals:
+                deltas = []
+                for dim, v in [
+                    ("tech", s.delta_technical),
+                    ("econ", s.delta_economic),
+                    ("reg", s.delta_regulatory),
+                    ("sup", s.delta_supply),
+                ]:
+                    if v is not None:
+                        sign = "+" if v >= 0 else ""
+                        deltas.append(f"{dim}={sign}{v}")
+                deltas_str = " · ".join(deltas) if deltas else "no deltas"
+                age_days = (
+                    f" ({s.published_at.isoformat()[:10]})"
+                    if s.published_at
+                    else ""
+                )
+                actor = f" [{s.actor_short_name}]" if s.actor_short_name else ""
+                parts.append(
+                    f"- **{s.source_kind}**{actor}: {s.title}{age_days} — {deltas_str}"
+                )
+                if s.summary:
+                    snippet = s.summary[:300]
+                    parts.append(f"  > {snippet}{'…' if len(s.summary) > 300 else ''}")
+        parts.append(
+            "\n\nReturn the updated CapabilityScoreUpdate. Apply temporal decay; "
+            "leave a dim null when no signal flow justifies a change."
+        )
+        return "\n".join(parts)
