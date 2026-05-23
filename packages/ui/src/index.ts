@@ -3,6 +3,14 @@ export { Sparkline, type SparklineProps } from "./sparkline";
 export { SubNav, type SubNavItem, type SubNavProps } from "./sub-nav";
 
 // M37 Vision Feasibility Monitor hero components.
+export {
+  ActorCard,
+  countryFlag,
+  type ActorCardProps,
+  type ActorCategory,
+  type ActorStage,
+} from "./actor-card";
+export { ActorPill, type ActorPillProps } from "./actor-pill";
 export { CapabilityCard, type CapabilityCardProps } from "./capability-card";
 export { DimensionBars, type DimensionBarsProps } from "./dimension-bars";
 export {

@@ -6,6 +6,8 @@
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./actor-card": "./src/actor-card.tsx",
+    "./actor-pill": "./src/actor-pill.tsx",
     "./breadcrumbs": "./src/breadcrumbs.tsx",
     "./capability-card": "./src/capability-card.tsx",
     "./dimension-bars": "./src/dimension-bars.tsx",
