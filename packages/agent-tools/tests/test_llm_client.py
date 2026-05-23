@@ -375,6 +375,49 @@ def test_opus_response_model_uses_tool_choice_with_schema() -> None:
     assert result.parsed.intermediates == ["i1"]
 
 
+def test_opus_call_drops_thinking_when_response_model_forces_tool_choice() -> None:
+    """Anthropic forbids `thinking` together with a forced `tool_choice`
+    on a specific tool (which is how the wrapper implements structured
+    output). When both are requested, the wrapper must drop thinking —
+    structured output is the harder downstream constraint."""
+
+    class Item(BaseModel):
+        name: str
+
+    fake = _FakeAnthropic()
+    fake.messages.next_response = _FakeAnthropicResponse(
+        content=[
+            _FakeAnthropicBlock(
+                type="tool_use", name="Item", input={"name": "ok"}
+            )
+        ],
+        stop_reason="tool_use",
+    )
+    client = LLMClient(anthropic_client=fake)
+    client.call(
+        tier="opus",
+        system="sys",
+        user="hi",
+        adaptive_thinking=True,
+        response_model=Item,
+    )
+    sent = fake.messages.requests[-1]
+    # tool_choice IS set (structured output stays); thinking is NOT.
+    assert sent["tool_choice"] == {"type": "tool", "name": "Item"}
+    assert "thinking" not in sent
+
+
+def test_opus_call_keeps_thinking_when_no_response_model() -> None:
+    """Without forced tool_choice, adaptive_thinking should still wire
+    through to Claude's extended-thinking knob."""
+    fake = _FakeAnthropic()
+    client = LLMClient(anthropic_client=fake)
+    client.call(tier="opus", system="sys", user="hi", adaptive_thinking=True)
+    sent = fake.messages.requests[-1]
+    assert sent["thinking"]["type"] == "enabled"
+    assert sent["thinking"]["budget_tokens"] >= 1024
+
+
 def test_opus_call_records_cost_at_claude_opus_pricing() -> None:
     fake = _FakeAnthropic()
     fake.messages.next_response = _FakeAnthropicResponse(

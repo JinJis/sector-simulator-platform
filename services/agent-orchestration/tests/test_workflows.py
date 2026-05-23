@@ -136,8 +136,12 @@ async def test_decomposition_workflow_uses_decomposition_prompt(
     assert sys_blocks[-1]["cache_control"] == {"type": "ephemeral"}
     # Structured output requested with the Decomposition model.
     assert sent["output_format"] is Decomposition
-    # Adaptive thinking was enabled (it's an opus call).
-    assert sent.get("thinking") == {"type": "adaptive"}
+    # Adaptive thinking is requested by the workflow, but the wrapper
+    # MUST drop it on the Anthropic path because forced tool_choice
+    # (the structured-output mechanism) is incompatible with extended
+    # thinking. See llm_client._call_anthropic — structured output is
+    # the harder constraint and wins.
+    assert sent.get("thinking") is None
 
 
 @pytest.mark.asyncio

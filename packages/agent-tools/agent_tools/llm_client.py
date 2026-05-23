@@ -340,7 +340,17 @@ class LLMClient:
         # model decide" budget; the model spends extra output tokens
         # reasoning before answering. Caller-tunable cap so a runaway
         # thinking phase can't blow past max_tokens.
-        if adaptive_thinking:
+        #
+        # BUT: Anthropic rejects `thinking` when `tool_choice` forces a
+        # specific tool — "Thinking may not be enabled when tool_choice
+        # forces tool use." All our structured-output calls force a tool,
+        # so when `response_model` is set we silently drop thinking.
+        # Structured output is the harder constraint (downstream code
+        # asserts `result.parsed is not None`); thinking is a quality
+        # boost the model loses without breaking the call. Workflows
+        # that need BOTH would have to switch to the unstructured path
+        # or use interleaved-thinking beta — deferred until needed.
+        if adaptive_thinking and tool_choice is None:
             request["thinking"] = {
                 "type": "enabled",
                 "budget_tokens": max(min(max_tokens // 2, 8192), 1024),
