@@ -217,6 +217,56 @@ export const monitoringRouter = router({
         age_hours: ageHours(latestAuditIso),
       });
 
+      // M39f — Signal ingest feed. Pulls /jobs/signal-ingest/last from
+      // data-pipeline. 404 = never run; non-200 = pipeline degraded.
+      const dataPipelineBase = env().DATA_PIPELINE_URL;
+      let signalLastIso: string | null = null;
+      let signalDetail = "";
+      let signalStatus: "ok" | "stale" | "down" | "not_configured" =
+        "not_configured";
+      if (!dataPipelineBase) {
+        signalDetail = "DATA_PIPELINE_URL 환경변수 미설정";
+      } else {
+        try {
+          const res = await fetch(`${dataPipelineBase}/jobs/signal-ingest/last`, {
+            signal: AbortSignal.timeout(2000),
+          });
+          if (res.status === 404) {
+            signalStatus = "stale";
+            signalDetail = "signal-ingest 한 번도 실행되지 않음";
+          } else if (!res.ok) {
+            signalStatus = "down";
+            signalDetail = `data-pipeline /jobs/signal-ingest/last → ${res.status}`;
+          } else {
+            const body = (await res.json()) as {
+              finished_at?: string | null;
+              signals_written?: number;
+              extractor_failures?: number;
+              extractor_total_cost_usd?: number;
+            };
+            signalLastIso = body.finished_at ?? null;
+            signalStatus = statusFromAge(signalLastIso, 30); // ~24h cron + grace
+            signalDetail =
+              `signals_written=${body.signals_written ?? 0}` +
+              (body.extractor_failures
+                ? ` · extractor_failures=${body.extractor_failures}`
+                : "") +
+              ` · cost=$${(body.extractor_total_cost_usd ?? 0).toFixed(4)}`;
+          }
+        } catch {
+          signalStatus = "down";
+          signalDetail = "data-pipeline /jobs/signal-ingest/last 응답 없음";
+        }
+      }
+      feeds.push({
+        name: "data-pipeline / signal ingest",
+        status: signalStatus,
+        detail: signalDetail,
+        last_success_at: signalLastIso,
+        next_run_at: null,
+        age_hours: ageHours(signalLastIso),
+      });
+
       return {
         generated_at: new Date(),
         feeds,
