@@ -442,4 +442,161 @@ export const PAGE_TOURS: Record<string, PageTourEntry> = {
       },
     ],
   },
+
+  // ----- M37 pivot: Vision Feasibility Monitor -----
+
+  "/visions": {
+    label: "Visions",
+    steps: [
+      {
+        title: "기술 비전 모니터링",
+        body:
+          "각 비전은 'X 기술이 실현될 것인가?'라는 큰 질문입니다. 우주 데이터센터 / AI 메모리 / SOFC 같은 기술 분야가 비전 단위.",
+      },
+      {
+        title: "비전 카드 한눈에",
+        body:
+          "각 카드: 현재 Feasibility (0-100) · 90일 변동 · ETA 추정 · 추적 중인 capability 수 · 최근 30일 signal 수. 클릭해서 깊이 들어가세요.",
+        tip: "처음 본다면 우주 데이터센터(Space Data Centers)부터 추천 — 가장 깊이 큐레이션되어 있습니다.",
+      },
+      {
+        title: "Capability 기반 분해",
+        body:
+          "비전 하나는 ~10개의 capability(기술 / 경제 / 규제 / 공급)로 쪼개지고, 각 capability는 4-차원 readiness score를 가집니다.",
+      },
+      {
+        title: "Signals로 점수가 움직임",
+        body:
+          "arXiv 논문 · 특허 · 뉴스 · 정부 보고서가 들어올 때마다 추출기(M39+) 가 capability score를 업데이트. Hero 페이지의 trajectory + delta가 자동 반영.",
+      },
+    ],
+  },
+
+  "/visions/:slug": {
+    label: "Vision Overview",
+    steps: [
+      {
+        title: "한눈에 보는 Feasibility",
+        body:
+          "큰 숫자(0-100)가 이 비전의 현재 실현 가능성. 90일 변동(▲/▼) · ETA 분포(median + P10-P90) · trajectory 6개월이 함께.",
+      },
+      {
+        title: "Capabilities — binding부터",
+        body:
+          "기본 정렬은 'binding-ness'. 가장 점수가 낮은(가장 가로막는) capability가 먼저. 각 카드 안에 tech/econ/reg/supply 4-차원 막대.",
+        tip: "⚠ BINDING 배지가 붙은 capability는 비전 전체의 점수 상한을 결정합니다 (Liebig's law).",
+      },
+      {
+        title: "Economics — 경제성 곡선",
+        body:
+          "있을 때만 표시. 비전 기술의 비용 곡선 vs 기존 기준선. 교차점(crossover)이 표시되면 그 시점부터 비용 우위 달성.",
+      },
+      {
+        title: "Risk Board",
+        body:
+          "정치 · 법률 · 공급 · 안전 · 환경 · 재무 · 사회. severity × likelihood × time_horizon. 영향 받는 capability 키도 같이 표시.",
+      },
+      {
+        title: "Live Signals — 최근 24h",
+        body:
+          "오른쪽 화살표(↗/↘)는 해당 신호가 capability score에 미친 dimension delta. 강조된(amber 좌측 막대) 행이 hero 'Live signals' 패널에 노출되는 highlight.",
+      },
+    ],
+  },
+
+  "/visions/:slug/capabilities": {
+    label: "Capabilities",
+    steps: [
+      {
+        title: "Capability 전체 목록",
+        body:
+          "Overview에서는 binding 순으로 정렬됐다면, 여기서는 display_order 기준. 더 dense한 그리드로 한눈에 비교.",
+      },
+      {
+        title: "카드 클릭 → 4-차원 + dependency graph",
+        body:
+          "각 카드를 클릭하면 4-차원 점수 추이(time series), 어떤 capability에 의존/의존받는지(DAG), 해당 capability에 매핑된 signal feed로 drill-down. (M38에서 본 페이지 lands)",
+      },
+    ],
+  },
+
+  "/visions/:slug/signals": {
+    label: "Signals",
+    steps: [
+      {
+        title: "Signal feed",
+        body:
+          "비전에 연결된 원천 데이터(논문 · 특허 · 뉴스 · 공시 · 정부 보고서 · 벤더 문서 · 데이터셋 · 소셜) 시간순. 각 signal은 extractor agent가 4-차원 delta로 채점.",
+      },
+      {
+        title: "Filtering + cursor pagination",
+        body:
+          "capability / source_kind / sentiment 필터와 cursor 기반 페이지네이션은 M39 ingest 파이프라인이 들어오면 활성화됩니다.",
+      },
+    ],
+  },
+
+  "/visions/:slug/risks": {
+    label: "Risks",
+    steps: [
+      {
+        title: "Risk 전체 보드",
+        body:
+          "Overview의 5개를 넘어 전체 risk 목록. 심각도 · 가능성 · 시간 지평 + 대응 방안. severity × likelihood 매트릭스는 M38에서 추가됩니다.",
+      },
+    ],
+  },
+
+  "/visions/:slug/economics": {
+    label: "Economics",
+    steps: [
+      {
+        title: "비용 곡선 + 민감도",
+        body:
+          "TCO 비교 · break-even sensitivity · unit economics. M40 Feasibility scoring engine이 들어오면 활성화. 지금은 stub.",
+      },
+    ],
+  },
+
+  "/visions/:slug/playground": {
+    label: "Playground",
+    steps: [
+      {
+        title: "슬라이더로 산업을 이해하기",
+        body:
+          "비전을 구성하는 driver를 직접 조작해보세요. 차트가 실시간으로 반응합니다. 시뮬레이션은 부수 기능 — 비전을 이해하는 도구.",
+      },
+      {
+        title: "Scenario 저장 + 비교",
+        body:
+          "마음에 드는 driver 조합을 저장하고 (`scenario`), 다른 사람과 공유(`share`) 하거나 두 scenario를 A/B 비교(`compare`) 할 수 있습니다.",
+      },
+      {
+        title: "Live KPI strip",
+        body:
+          "상단 strip은 실시간 데이터 파이프라인이 들고 오는 driver 값. 3초마다 갱신, 30 tick sparkline.",
+      },
+      {
+        title: "What-if Feasibility (M42)",
+        body:
+          "M42부터: 슬라이더를 움직일 때 'Feasibility Index가 어떻게 변할지' 즉시 표시되는 callout이 추가됩니다.",
+      },
+    ],
+  },
+
+  "/visions/:slug/sources": {
+    label: "Sources",
+    steps: [
+      {
+        title: "모든 숫자의 원천",
+        body:
+          "현재는 recent signals의 source URL 목록. M39 signal 파이프라인이 들어오면 capability rationale + score history 전체에 걸친 aggregated source index가 완성됩니다.",
+      },
+      {
+        title: "kind 배지",
+        body:
+          "paper · patent · news · filing · gov_report · vendor_doc · dataset · social — 근거의 강도를 한눈에.",
+      },
+    ],
+  },
 };
