@@ -7,8 +7,17 @@
   "exports": {
     ".": "./src/index.ts",
     "./breadcrumbs": "./src/breadcrumbs.tsx",
+    "./capability-card": "./src/capability-card.tsx",
+    "./dimension-bars": "./src/dimension-bars.tsx",
+    "./economics-curve-chart": "./src/economics-curve-chart.tsx",
+    "./eta-window": "./src/eta-window.tsx",
+    "./feasibility-gauge": "./src/feasibility-gauge.tsx",
+    "./risk-row": "./src/risk-row.tsx",
+    "./signal-row": "./src/signal-row.tsx",
     "./sparkline": "./src/sparkline.tsx",
-    "./sub-nav": "./src/sub-nav.tsx"
+    "./sub-nav": "./src/sub-nav.tsx",
+    "./trajectory-sparkline": "./src/trajectory-sparkline.tsx",
+    "./vision-card": "./src/vision-card.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
