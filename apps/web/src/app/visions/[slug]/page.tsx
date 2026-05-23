@@ -8,16 +8,20 @@
  */
 
 import {
+  ActorCard,
+  ActorPill,
   CapabilityCard,
   EconomicsCurveChart,
   EtaWindow,
   FeasibilityGauge,
   RiskRow,
   SignalRow,
-  TrajectorySparkline,
+  type ActorCategory,
+  type ActorStage,
   type RiskSeverity,
   type SignalKind,
 } from "@platform/ui";
+import { TrajectorySparkline } from "@platform/ui";
 import { notFound } from "next/navigation";
 
 import { getVisionFixture } from "../_fixtures";
@@ -66,7 +70,7 @@ export default async function VisionOverviewPage({ params }: Props) {
   const fixture = getVisionFixture(slug);
   if (!fixture) notFound();
   const { overview, trajectory } = fixture;
-  const { vision, capabilities, risks, recent_signals } = overview;
+  const { vision, capabilities, risks, recent_signals, actors } = overview;
   const feas = vision.feasibility;
   const economics = ECONOMICS_CURVES[slug];
 
@@ -201,9 +205,69 @@ export default async function VisionOverviewPage({ params }: Props) {
                       : null
                   }
                   href={`/visions/${slug}/capabilities/${c.key}`}
-                />
+                >
+                  {c.active_actors.length > 0 && (
+                    <div className="border-t border-neutral-800 pt-2 text-[11px] text-neutral-500">
+                      <span className="mr-1.5">Active:</span>
+                      <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+                        {c.active_actors.map((aa, idx) => (
+                          <span key={aa.actor_key} className="inline-flex items-center gap-1">
+                            {idx > 0 && (
+                              <span className="text-neutral-700" aria-hidden="true">
+                                ·
+                              </span>
+                            )}
+                            <ActorPill
+                              actorKey={aa.actor_key}
+                              name={aa.actor_short_name || aa.actor_name}
+                              isoCountry={aa.iso_country}
+                              role={aa.role}
+                              href={`/visions/${slug}/actors/${aa.actor_key}`}
+                            />
+                          </span>
+                        ))}
+                      </span>
+                    </div>
+                  )}
+                </CapabilityCard>
               );
             })}
+          </div>
+        </section>
+      )}
+
+      {/* ----- Actors band (M45a) ----- */}
+      {actors.length > 0 && (
+        <section>
+          <div className="mb-3 flex items-baseline justify-between">
+            <h2 className="text-sm font-medium uppercase tracking-wider text-neutral-400">
+              Actors
+            </h2>
+            <a
+              href={`/visions/${slug}/actors`}
+              className="text-xs text-neutral-500 hover:text-cyan-400"
+            >
+              view all →
+            </a>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {actors.slice(0, 8).map((a) => (
+              <ActorCard
+                key={a.actor_key}
+                actorKey={a.actor_key}
+                name={a.name}
+                shortName={a.short_name}
+                isoCountry={a.iso_country}
+                category={a.category as ActorCategory}
+                stage={a.stage as ActorStage}
+                blurb={a.blurb}
+                ticker={a.ticker}
+                exchange={a.exchange}
+                logoUrl={a.logo_url}
+                relevance={a.relevance}
+                href={`/visions/${slug}/actors/${a.actor_key}`}
+              />
+            ))}
           </div>
         </section>
       )}

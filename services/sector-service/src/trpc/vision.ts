@@ -46,6 +46,17 @@ const VisionSummary = z.object({
     .nullable(),
 });
 
+// M45a: per-capability actor pill shape — minimal so the Hero capability
+// card footer can render "Active: SpaceX 🇺🇸 · Lonestar 🇺🇸 · Starcloud
+// 🇺🇸" without a second tRPC round-trip.
+const CapabilityActorInOverview = z.object({
+  actor_key: z.string(),
+  actor_name: z.string(),
+  actor_short_name: z.string().nullable(),
+  iso_country: z.string(),
+  role: z.string(),
+});
+
 const CapabilityInVisionOverview = z.object({
   id: z.string(),
   key: z.string(),
@@ -80,6 +91,28 @@ const CapabilityInVisionOverview = z.object({
       delta_composite: z.number().nullable(),
     })
     .nullable(),
+  // M45a: top-3 actors active on this capability (sorted by role then
+  // CapabilityActor.id for stability). Renders in the card footer.
+  active_actors: z.array(CapabilityActorInOverview),
+});
+
+// M45a: vision-level actor card shape (sorted by VisionActor.relevance
+// desc). Renders in the Hero "Actors" band.
+const ActorInVisionOverview = z.object({
+  actor_key: z.string(),
+  actor_id: z.string(),
+  name: z.string(),
+  short_name: z.string().nullable(),
+  iso_country: z.string(),
+  category: z.string(),
+  stage: z.string(),
+  blurb: z.string(),
+  ticker: z.string().nullable(),
+  exchange: z.string().nullable(),
+  logo_url: z.string().nullable(),
+  relevance: z.number().nullable(),
+  rationale: z.string().nullable(),
+  display_order: z.number().int(),
 });
 
 const RiskInVisionOverview = z.object({
@@ -117,6 +150,8 @@ const VisionOverview = z.object({
   capabilities: z.array(CapabilityInVisionOverview),
   risks: z.array(RiskInVisionOverview),
   recent_signals: z.array(SignalInVisionOverview),
+  // M45a: vision-level top-N actor cards for the Hero "Actors" band.
+  actors: z.array(ActorInVisionOverview),
 });
 
 const FeasibilityHistoryPoint = z.object({
@@ -301,43 +336,72 @@ export const visionRouter = router({
       z.object({
         slug: z.string().min(1),
         signal_limit: z.number().int().positive().max(50).default(8),
+        // M45a: how many vision-level actors to surface in the Hero
+        // "Actors" band (sorted by VisionActor.relevance desc).
+        actor_limit: z.number().int().positive().max(50).default(12),
+        // M45a: per-capability active-actor pills shown on the card
+        // footer. 3 fits the layout; more requires the detail page.
+        actors_per_capability: z.number().int().positive().max(10).default(3),
       }),
     )
     .output(VisionOverview)
     .query(async ({ ctx, input }) => {
       // Pull the sector + everything in parallel — the page can't render
       // until all of these arrive anyway.
-      const [sector, capabilities, risks, recentSignals, currentFeas] = await Promise.all([
-        ctx.prisma.sector.findUnique({ where: { slug: input.slug } }),
-        ctx.prisma.capability.findMany({
-          where: { sector_slug: input.slug },
-          orderBy: { display_order: "asc" },
-          include: {
-            scores: {
-              where: { is_current: true },
-              orderBy: { as_of: "desc" },
-              take: 1,
+      const [sector, capabilities, risks, recentSignals, currentFeas, visionActors] =
+        await Promise.all([
+          ctx.prisma.sector.findUnique({ where: { slug: input.slug } }),
+          ctx.prisma.capability.findMany({
+            where: { sector_slug: input.slug },
+            orderBy: { display_order: "asc" },
+            include: {
+              scores: {
+                where: { is_current: true },
+                orderBy: { as_of: "desc" },
+                take: 1,
+              },
+              signals: {
+                orderBy: { published_at: "desc" },
+                take: 1,
+              },
+              // M45a: include the top-N CapabilityActor rows per
+              // capability for the card-footer pills. Prisma can't
+              // order by an enum natively; we slice client-side after
+              // a stable order, prioritizing role=lead, then sorting
+              // by the role string for determinism.
+              capability_actors: {
+                include: { actor: true },
+                orderBy: [{ role: "asc" }, { id: "asc" }],
+                // Fetch more than display limit so we can prioritize
+                // lead → competitor → supplier → customer → regulator
+                // client-side without losing leads.
+                take: input.actors_per_capability * 3,
+              },
             },
-            signals: {
-              orderBy: { published_at: "desc" },
-              take: 1,
-            },
-          },
-        }),
-        ctx.prisma.risk.findMany({
-          where: { sector_slug: input.slug },
-          orderBy: { display_order: "asc" },
-        }),
-        ctx.prisma.signal.findMany({
-          where: { sector_slug: input.slug },
-          orderBy: { published_at: "desc" },
-          take: input.signal_limit,
-          include: { capability: { select: { key: true } } },
-        }),
-        ctx.prisma.visionFeasibility.findFirst({
-          where: { sector_slug: input.slug, is_current: true },
-        }),
-      ]);
+          }),
+          ctx.prisma.risk.findMany({
+            where: { sector_slug: input.slug },
+            orderBy: { display_order: "asc" },
+          }),
+          ctx.prisma.signal.findMany({
+            where: { sector_slug: input.slug },
+            orderBy: { published_at: "desc" },
+            take: input.signal_limit,
+            include: { capability: { select: { key: true } } },
+          }),
+          ctx.prisma.visionFeasibility.findFirst({
+            where: { sector_slug: input.slug, is_current: true },
+          }),
+          ctx.prisma.visionActor.findMany({
+            where: { sector_slug: input.slug },
+            include: { actor: true },
+            orderBy: [
+              { relevance: { sort: "desc", nulls: "last" } },
+              { display_order: "asc" },
+            ],
+            take: input.actor_limit,
+          }),
+        ]);
       if (!sector) {
         throw new TRPCError({ code: "NOT_FOUND", message: `vision ${input.slug}` });
       }
@@ -374,11 +438,28 @@ export const visionRouter = router({
           : null,
       };
 
+      // M45a: role priority for trimming per-capability actor pills —
+      // lead first, then competitor / supplier / customer / regulator.
+      const ROLE_PRIORITY: Record<string, number> = {
+        lead: 0,
+        competitor: 1,
+        supplier: 2,
+        customer: 3,
+        regulator: 4,
+      };
+
       return {
         vision: visionSummary,
         capabilities: capabilities.map((c) => {
           const cs = c.scores[0] ?? null;
           const ls = c.signals[0] ?? null;
+          // Prioritize lead → ... → regulator, then slice to limit.
+          const orderedActors = [...c.capability_actors].sort((a, b) => {
+            const pa = ROLE_PRIORITY[a.role] ?? 99;
+            const pb = ROLE_PRIORITY[b.role] ?? 99;
+            return pa - pb;
+          });
+          const sliced = orderedActors.slice(0, input.actors_per_capability);
           return {
             id: c.id,
             key: c.key,
@@ -413,6 +494,13 @@ export const visionRouter = router({
                   delta_composite: pickComposite(ls),
                 }
               : null,
+            active_actors: sliced.map((ca) => ({
+              actor_key: ca.actor.key,
+              actor_name: ca.actor.name,
+              actor_short_name: ca.actor.short_name,
+              iso_country: ca.actor.iso_country,
+              role: ca.role,
+            })),
           };
         }),
         risks: risks.map((r) => ({
@@ -442,6 +530,22 @@ export const visionRouter = router({
           delta_regulatory: s.delta_regulatory,
           delta_supply: s.delta_supply,
           is_highlight: s.is_highlight,
+        })),
+        actors: visionActors.map((va) => ({
+          actor_key: va.actor.key,
+          actor_id: va.actor.id,
+          name: va.actor.name,
+          short_name: va.actor.short_name,
+          iso_country: va.actor.iso_country,
+          category: va.actor.category,
+          stage: va.actor.stage,
+          blurb: va.actor.blurb,
+          ticker: va.actor.ticker,
+          exchange: va.actor.exchange,
+          logo_url: va.actor.logo_url,
+          relevance: va.relevance,
+          rationale: va.rationale,
+          display_order: va.display_order,
         })),
       };
     }),

@@ -19,6 +19,8 @@ export default async function VisionLayout({ children, params }: Props) {
   const subnav: SubNavItem[] = [
     { label: "Overview", href: `/visions/${slug}` },
     { label: "Capabilities", href: `/visions/${slug}/capabilities` },
+    // M45a: Actor tab — the WHO layer (companies + labs + govt per capability).
+    { label: "Actors", href: `/visions/${slug}/actors` },
     { label: "Signals", href: `/visions/${slug}/signals` },
     { label: "Risks", href: `/visions/${slug}/risks` },
     { label: "Economics", href: `/visions/${slug}/economics` },

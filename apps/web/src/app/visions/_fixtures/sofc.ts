@@ -36,6 +36,7 @@ export const sofcFixture: VisionOverview = {
   capabilities: [],
   risks: [],
   recent_signals: [],
+  actors: [],
 };
 
 export const sofcTrajectory = (() => {

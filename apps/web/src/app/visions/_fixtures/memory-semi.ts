@@ -37,6 +37,7 @@ export const memorySemiFixture: VisionOverview = {
   capabilities: [],
   risks: [],
   recent_signals: [],
+  actors: [],
 };
 
 export const memorySemiTrajectory = (() => {
