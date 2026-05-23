@@ -3,6 +3,7 @@
  * `import type { AppRouter } from "@platform/sector-service"`.
  */
 
+import { actorRouter } from "./actor.js";
 import { agentRouter } from "./agent.js";
 import { auditRouter } from "./audit.js";
 import { authRouter } from "./auth.js";
@@ -51,6 +52,9 @@ export const appRouter = router({
   signal: signalRouter,
   risk: riskRouter,
   feasibility: feasibilityRouter,
+  // M45 — Actor domain (the WHO layer). Global Actor table + per-vision
+  // and per-capability M2M joins. See docs/PIVOT.md §5.1.
+  actor: actorRouter,
 });
 
 export type AppRouter = typeof appRouter;

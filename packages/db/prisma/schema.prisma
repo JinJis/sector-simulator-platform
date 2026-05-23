@@ -76,6 +76,9 @@ model Sector {
   signals             Signal[]
   risks               Risk[]
   feasibility_history VisionFeasibility[]
+  // M45: Actor layer — companies + labs + governments competing on
+  // capabilities. Many-to-many via VisionActor.
+  vision_actors       VisionActor[]
 
   @@index([status])
   @@index([created_by_user_id])
@@ -721,10 +724,14 @@ model Capability {
   created_at DateTime @default(now()) @map("created_at")
   updated_at DateTime @updatedAt @map("updated_at")
 
-  scores       CapabilityScore[]
-  signals      Signal[]
-  dependencies CapabilityDependency[] @relation("CapabilitySource")
-  dependents   CapabilityDependency[] @relation("CapabilityTarget")
+  scores            CapabilityScore[]
+  signals           Signal[]
+  dependencies      CapabilityDependency[] @relation("CapabilitySource")
+  dependents        CapabilityDependency[] @relation("CapabilityTarget")
+  // M45: per-capability actor wiring with role (lead / competitor /
+  // supplier / customer / regulator). Surfaces as "Active actors:" on
+  // the capability card footer.
+  capability_actors CapabilityActor[]
 
   @@unique([sector_slug, key])
   @@index([sector_slug])
@@ -822,6 +829,14 @@ model Signal {
   capability_id String?     @map("capability_id")
   capability    Capability? @relation(fields: [capability_id], references: [id], onDelete: SetNull)
 
+  // M45b: actor mention extracted by the SignalExtractor agent
+  // (M39+M45b). Single-actor for v1 — multi-actor mentions would write
+  // duplicate Signal rows under the same source_url, similar to how
+  // multi-capability mentions are handled. Set to actor_id only when
+  // extractor confidence > 0.8; null otherwise.
+  actor_id String? @map("actor_id")
+  actor    Actor?  @relation(fields: [actor_id], references: [id], onDelete: SetNull)
+
   // Taxonomy: paper / patent / news / filing / gov_report / vendor_doc
   // / dataset / social. Re-uses the kind taxonomy already established
   // on Source / Provenance in the SDK.
@@ -852,6 +867,7 @@ model Signal {
   @@unique([source_url, capability_id])
   @@index([sector_slug, published_at(sort: Desc)])
   @@index([capability_id, published_at(sort: Desc)])
+  @@index([actor_id, published_at(sort: Desc)])
   @@index([sector_slug, is_highlight, published_at(sort: Desc)])
   @@map("signals")
 }
@@ -943,4 +959,141 @@ model VisionFeasibility {
   @@index([sector_slug, as_of(sort: Desc)])
   @@index([sector_slug, is_current])
   @@map("vision_feasibility")
+}
+
+// =====================================================================
+// M45 — Actor domain
+//
+// The "WHO" layer of the Vision Feasibility Monitor. An Actor is a
+// global real-world entity (public corp / private startup / govt lab /
+// national lab / academic lab / standards body) that builds or
+// influences technology capabilities. Same Actor can affect multiple
+// Visions (e.g. Samsung shows up in both memory-semi and SoFC).
+//
+// Why a fresh model, not equity repurpose:
+//   - SectorEquity.driver_links JSONB is investment-frame, not
+//     capability-frame
+//   - sector_exposure_pct measures revenue share, not relevance
+//   - Labs / govt / standards bodies don't have tickers — equity model
+//     forces it as required
+//
+// See docs/PIVOT.md §5.1 + §11.5 for the rationale.
+// =====================================================================
+
+model Actor {
+  id String @id @default(cuid())
+
+  // Stable global key — e.g. "spacex" or "kr_kaist". Lowercase
+  // snake_case. UNIQUE — the same Actor can't exist twice; M2M wiring
+  // through VisionActor + CapabilityActor.
+  key String @unique
+
+  name       String // "SpaceX" / "Samsung Electronics"
+  short_name String? @map("short_name") // "SpaceX" / "Samsung"
+  // Native-script name (Korean, Japanese, etc.) for non-English actors
+  name_local String? @map("name_local") // "삼성전자"
+
+  iso_country String @map("iso_country") // ISO 3166-1 alpha-2 — "US" / "KR" / "DE"
+
+  // Drives badge color + filtering on the Actors page
+  category String // "public_corp" | "private_startup" | "government_lab" | "national_lab" | "academic_lab" | "standards_body" | "ngo"
+
+  // Listing info — set when the actor is publicly traded. Not
+  // investment advice; just lets users drill into financials externally.
+  ticker   String?
+  exchange String? // "NYSE" / "NASDAQ" / "KOSPI" / "TSE" / ...
+
+  // One-line tagline for the actor card
+  blurb String
+
+  // Longer description (admin-curated; agent-generated in M41+)
+  description String?
+
+  // Stage of involvement — drives the "actor maturity" pill on cards.
+  // Default for the actor as a whole; CapabilityActor.stage can override
+  // per-capability ("scaling overall, research on quantum specifically").
+  stage String // "research" | "pilot" | "commercial" | "scaling"
+
+  // Optional links — admin curates, we don't host these
+  logo_url String? @map("logo_url")
+  website  String?
+
+  // Keywords for the SignalExtractor agent (M39+M45b). Name aliases,
+  // product lines, exec names. The extractor matches signal titles +
+  // summaries against these per-vision before setting Signal.actor_id.
+  signal_keywords String[] @default([]) @map("signal_keywords")
+
+  created_at DateTime @default(now()) @map("created_at")
+  updated_at DateTime @updatedAt @map("updated_at")
+
+  vision_actors     VisionActor[]
+  capability_actors CapabilityActor[]
+  signals           Signal[]
+
+  @@index([category])
+  @@index([iso_country])
+  @@map("actors")
+}
+
+model VisionActor {
+  // Many-to-many join: a single Actor can affect multiple Visions; a
+  // Vision has dozens of Actors. Join carries vision-specific context
+  // — relevance (per-vision how central this actor is), rationale
+  // (why), display_order (admin spotlight sort).
+
+  id          String @id @default(cuid())
+  actor_id    String @map("actor_id")
+  actor       Actor  @relation(fields: [actor_id], references: [id], onDelete: Cascade)
+  sector_slug String @map("sector_slug")
+  sector      Sector @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+
+  // 0-100 — how central this Actor is to the Vision. Used for Hero
+  // "top actors" sort. Null = not yet rated.
+  relevance Float?
+
+  // Per-vision rationale ("Starship is the cheap-launch story —
+  // primary catalyst for orbital DC economics")
+  rationale String?
+
+  display_order Int @default(100) @map("display_order")
+
+  created_at DateTime @default(now()) @map("created_at")
+  updated_at DateTime @updatedAt @map("updated_at")
+
+  @@unique([actor_id, sector_slug])
+  @@index([sector_slug])
+  @@index([sector_slug, relevance(sort: Desc)])
+  @@map("vision_actors")
+}
+
+model CapabilityActor {
+  // Per-capability actor mapping — which actors are advancing which
+  // capability. Lets the hero show "In-orbit thermal: Starcloud + ESA +
+  // JPL" on the capability card footer.
+
+  id            String     @id @default(cuid())
+  capability_id String     @map("capability_id")
+  capability    Capability @relation(fields: [capability_id], references: [id], onDelete: Cascade)
+  actor_id      String     @map("actor_id")
+  actor         Actor      @relation(fields: [actor_id], references: [id], onDelete: Cascade)
+
+  // Role this actor plays for this specific capability:
+  //   lead       — primary developer / consortium lead
+  //   competitor — alternative approach pursuing same outcome
+  //   supplier   — provides upstream inputs (e.g. TSMC for rad-hard chips)
+  //   customer   — buys the capability when ready
+  //   regulator  — sets rules / approvals (e.g. ITU for spectrum)
+  role String @default("competitor")
+
+  // Optional override of Actor.stage for this specific capability
+  stage     String?
+  rationale String?
+
+  created_at DateTime @default(now()) @map("created_at")
+  updated_at DateTime @updatedAt @map("updated_at")
+
+  @@unique([capability_id, actor_id])
+  @@index([capability_id])
+  @@index([capability_id, role])
+  @@map("capability_actors")
 }
