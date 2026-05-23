@@ -80,6 +80,11 @@ _DEFAULT_FINANCIALS_QUARTERS = 8
 # closes when target_date is yesterday. (M33b)
 _DEFAULT_RESOLVE_PREDICTIONS_CRON = "0 9 * * *"
 
+# M39c — signal ingest cron. 09:00 UTC = 18:00 KST daily (after KOSPI
+# close / few hours after US news cycle). Separate env so it can be
+# scheduled independently of the legacy equity cron family.
+_DEFAULT_SIGNAL_INGEST_CRON = "0 9 * * *"
+
 
 def _build_source() -> DataSource:
     name = os.environ.get("INGEST_SOURCE", "yfinance").lower()
@@ -151,6 +156,40 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         app.state.last_financials_result = None
     if not hasattr(app.state, "last_resolve_result"):
         app.state.last_resolve_result = None
+    if not hasattr(app.state, "last_signal_ingest_result"):
+        app.state.last_signal_ingest_result = None
+    # Signal ingest gets its own asyncpg pool (separate from `repo` and
+    # `resolver_repo`) so its writes don't compete with refresh jobs.
+    # Tests pre-wire `app.state.signal_repo` to swap in InMemory.
+    if not hasattr(app.state, "signal_repo"):
+        from data_pipeline.signal_repo import PostgresSignalRepository
+
+        dsn = os.environ.get("DATABASE_URL")
+        if dsn:
+            try:
+                app.state.signal_repo = await PostgresSignalRepository.connect(dsn)
+            except Exception as e:
+                log.error("data-pipeline: signal_repo connect failed: %s", e)
+                app.state.signal_repo = None
+        else:
+            log.warning(
+                "data-pipeline: DATABASE_URL unset — signal_ingest disabled"
+            )
+            app.state.signal_repo = None
+    # Per-vision visions to ingest. Default to the 3 reference visions;
+    # M44 adds fusion-power-grid-parity to this list.
+    if not hasattr(app.state, "signal_ingest_visions"):
+        env_list = os.environ.get("SIGNAL_INGEST_VISIONS", "").strip()
+        if env_list:
+            app.state.signal_ingest_visions = [
+                s.strip() for s in env_list.split(",") if s.strip()
+            ]
+        else:
+            app.state.signal_ingest_visions = [
+                "space-data-center",
+                "memory-semi",
+                "sofc",
+            ]
     app.state.throttle_ms = int(os.environ.get("INGEST_THROTTLE_MS", "200"))
     app.state.financials_quarters = int(
         os.environ.get("REFRESH_FINANCIALS_QUARTERS", str(_DEFAULT_FINANCIALS_QUARTERS))
@@ -214,6 +253,35 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
                 "data-pipeline: predictions-resolve armed (cron=%r UTC)", resolve_cron
             )
 
+        # M39c — signal ingest cron. Skip if signal_repo couldn't connect
+        # (DATABASE_URL missing → app.state.signal_repo is None).
+        if (
+            app.state.signal_repo is not None
+            and os.environ.get("SIGNAL_INGEST_SCHEDULE", "on").lower() != "off"
+        ):
+            sig_cron = os.environ.get(
+                "SIGNAL_INGEST_CRON_DAILY", _DEFAULT_SIGNAL_INGEST_CRON
+            )
+            try:
+                sig_trigger = CronTrigger.from_crontab(sig_cron, timezone="UTC")
+            except ValueError as e:
+                log.error(
+                    "data-pipeline: bad SIGNAL_INGEST_CRON_DAILY=%r (%s)",
+                    sig_cron,
+                    e,
+                )
+            else:
+                scheduler.add_job(
+                    _run_signal_ingest_job,
+                    trigger=sig_trigger,
+                    kwargs={"app": app},
+                    id="signal_ingest_daily",
+                    replace_existing=True,
+                )
+                log.info(
+                    "data-pipeline: signal-ingest armed (cron=%r UTC)", sig_cron
+                )
+
         if scheduler.get_jobs():
             scheduler.start()
         else:
@@ -268,6 +336,23 @@ async def _run_refresh_financials_job(*, app: FastAPI) -> RefreshFinancialsResul
     )
     app.state.last_financials_result = result
     return result
+
+
+async def _run_signal_ingest_job(*, app: FastAPI):  # noqa: ANN201
+    """M39c — daily signal ingest. Drives arXiv (+ M39d NewsAPI + M39e
+    USPTO when those ship) through the SignalExtractor agent, writing
+    rows to signals.
+    """
+    from data_pipeline.jobs.signal_ingest import run_signal_ingest
+
+    repo = app.state.signal_repo
+    if repo is None:
+        log.warning("signal-ingest: repo not configured — skipping")
+        return None
+    visions: list[str] = app.state.signal_ingest_visions
+    stats = await run_signal_ingest(sector_slugs=visions, repo=repo)
+    app.state.last_signal_ingest_result = stats
+    return stats
 
 
 def create_app() -> FastAPI:
@@ -424,6 +509,52 @@ def create_app() -> FastAPI:
                 detail="no prediction-resolve has run since the process started",
             )
         return last
+
+    # M39c — signal ingest manual + last endpoints.
+    @app.post("/jobs/signal-ingest")
+    async def manual_signal_ingest() -> dict:  # noqa: ANN201
+        if app.state.signal_repo is None:
+            raise HTTPException(
+                status_code=503,
+                detail="signal_ingest unavailable — DATABASE_URL not configured",
+            )
+        log.info("data-pipeline: manual /jobs/signal-ingest triggered")
+        stats = await _run_signal_ingest_job(app=app)
+        if stats is None:
+            raise HTTPException(status_code=503, detail="signal_ingest skipped")
+        return {
+            "started_at": stats.started_at.isoformat(),
+            "finished_at": stats.finished_at.isoformat() if stats.finished_at else None,
+            "visions_processed": stats.visions_processed,
+            "capabilities_processed": stats.capabilities_processed,
+            "raw_signals_fetched": stats.raw_signals_fetched,
+            "extractor_calls": stats.extractor_calls,
+            "extractor_failures": stats.extractor_failures,
+            "signals_written": stats.signals_written,
+            "extractor_total_cost_usd": stats.extractor_total_cost_usd,
+            "errors": stats.errors,
+        }
+
+    @app.get("/jobs/signal-ingest/last")
+    async def last_signal_ingest() -> dict:  # noqa: ANN201
+        last = app.state.last_signal_ingest_result
+        if last is None:
+            raise HTTPException(
+                status_code=404,
+                detail="no signal-ingest has run since the process started",
+            )
+        return {
+            "started_at": last.started_at.isoformat(),
+            "finished_at": last.finished_at.isoformat() if last.finished_at else None,
+            "visions_processed": last.visions_processed,
+            "capabilities_processed": last.capabilities_processed,
+            "raw_signals_fetched": last.raw_signals_fetched,
+            "extractor_calls": last.extractor_calls,
+            "extractor_failures": last.extractor_failures,
+            "signals_written": last.signals_written,
+            "extractor_total_cost_usd": last.extractor_total_cost_usd,
+            "errors": last.errors,
+        }
 
     return app
 
