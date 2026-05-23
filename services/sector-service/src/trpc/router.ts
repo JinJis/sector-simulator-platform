@@ -7,18 +7,23 @@ import { agentRouter } from "./agent.js";
 import { auditRouter } from "./audit.js";
 import { authRouter } from "./auth.js";
 import { billingRouter } from "./billing.js";
+import { capabilityRouter } from "./capability.js";
 import { communityRouter } from "./community.js";
 import { equityRouter } from "./equity.js";
+import { feasibilityRouter } from "./feasibility.js";
 import { graphRouter } from "./graph.js";
 import { router } from "./init.js";
 import { lifecycleRouter } from "./lifecycle.js";
 import { monitoringRouter } from "./monitoring.js";
 import { predictionRouter } from "./prediction.js";
+import { riskRouter } from "./risk.js";
 import { scenarioRouter } from "./scenario.js";
 import { sectorRouter } from "./sector.js";
+import { signalRouter } from "./signal.js";
 import { simRouter } from "./sim.js";
 import { suggestionRouter } from "./suggestion.js";
 import { userAdminRouter } from "./user-admin.js";
+import { visionRouter } from "./vision.js";
 import { watchlistRouter } from "./watchlist.js";
 
 export const appRouter = router({
@@ -38,6 +43,14 @@ export const appRouter = router({
   prediction: predictionRouter,
   suggestion: suggestionRouter,
   community: communityRouter,
+  // M36 — Vision Feasibility Monitor namespace. Reads cover the hero
+  // page composite payload; mutations cover M38 manual seeding +
+  // M41 Vision Builder agent persistence. See docs/PIVOT.md.
+  vision: visionRouter,
+  capability: capabilityRouter,
+  signal: signalRouter,
+  risk: riskRouter,
+  feasibility: feasibilityRouter,
 });
 
 export type AppRouter = typeof appRouter;
