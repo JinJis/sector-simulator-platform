@@ -1,7 +1,106 @@
-# Current task — Phase 2 entry (multi-sector platform)
+# Current task — Phase 3 PIVOT: Vision Feasibility Monitor (M36+)
 
-**Status**: Phase 1 vertical slice closed (2026-05-20). Phase 2 entry — multi-sector
-platform with 3 user-facing sectors registered (2026-05-21).
+**Status**: 2026-05-23 — major product pivot. Investment-side surface
+(equity tracking / predictions / community / watchlist) drifted from
+original vision. Reset to "monitor for technology vision feasibility."
+
+**TOP PRIORITY**: M36 → M44 (see [PIVOT.md](../PIVOT.md) for full memo +
+[REFACTOR.md](../REFACTOR.md) for file-by-file code surgery inventory).
+Everything else is deferred until M44 ships.
+
+**Workflow per milestone**: read PIVOT.md §5 entry → read REFACTOR.md
+relevant sections → check "Order of operations" in REFACTOR.md §16 for PR
+sequencing → execute slice-by-slice.
+
+## Pivot summary
+
+새 product 한 줄:
+> "Pick any bold technology vision (space data centers, fusion, brain
+> interface, …). We track every capability it needs, every signal that
+> moves it, and roll it all up into one number you can glance at in 5
+> seconds."
+
+| 변경 | From | To |
+|---|---|---|
+| Top abstraction | `Sector` (sim) | `Vision` (feasibility) — DB는 그대로, product 언어만 |
+| Main UI | 4-tab workspace | 1-page Feasibility Monitor (hero) |
+| Simulation | 주연 | 부가 ("Playground" tab) |
+| Data ingest | yfinance 시세 | arXiv + USPTO + News + policy (capability signals) |
+| 점수 | sim outputs | Feasibility Index (4-dim Bayesian aggregation) |
+| Investment surface (Equity / Prediction / Watchlist / Community) | core | archived behind `ENABLE_LEGACY_INVESTMENT_FEATURES` |
+
+## Pivot milestones (in order)
+
+이전 backlog (M29 OAuth / M30 multi-tenant / M31 backtest harness)은
+**deferred until M44**. 새 우선순위 sequence:
+
+- [ ] **M36 — Capability / Signal / Risk / VisionFeasibility schema +
+      product language migration**. Prisma 6 new models + `vision.*` tRPC
+      router + DESIGN.md §1 update + deprecation comments on legacy
+      tables. 2-3 days. Low risk. See PIVOT.md §5 M36.
+- [ ] **M37 — Hero page (hardcoded SDC showcase)**. `/visions/[slug]`
+      route, Feasibility Gauge + Capability cards + Risk board + Signal
+      feed + Economics curve, sub-nav with 7 tabs (Overview default).
+      Hardcoded fixture data. Goal: Twitter-shareable screenshot.
+      4-6 days. Medium risk (design iteration). See PIVOT.md §5 M37.
+- [ ] **M38 — Capability decomposition for 3 sectors (manual seed)**.
+      seed-capabilities.ts / seed-risks.ts / seed-feasibility.ts wired
+      into `db-migrate` chain. Replace hero fixtures with tRPC. Capability
+      detail page. 3-4 days. See PIVOT.md §5 M38.
+- [ ] **M39 — Signal ingest pipeline**. arXiv + USPTO + NewsAPI adapters
+      under `services/data-pipeline/data_pipeline/signals/`. Signal
+      Extractor Agent (haiku) scores per-dimension deltas. Signals tab
+      goes live. 6-8 days. High risk (adapter flakiness). See PIVOT.md
+      §5 M39.
+- [ ] **M40 — Feasibility scoring engine**. Per-capability 4-dim
+      composite + vision-level Bayesian aggregation with binding
+      constraint + ETA inference. Score Updater agent (sonnet) ties
+      signals → scores. Cron rebuilds VisionFeasibility daily. 4-5 days.
+      See PIVOT.md §5 M40.
+- [ ] **M41 — Vision Builder agent (one-line → full capability tree)**.
+      Repurpose existing Decomposition / Research / Driver Inference /
+      Edge Inference / CodeGen / CodeReview workflows. New
+      `VisionDecompositionResult` schema + admin propose flow at
+      `/visions/new`. 6-8 days. High risk (LLM hallucination). See
+      PIVOT.md §5 M41.
+- [ ] **M42 — Simulation → Playground re-positioning**. Drivers tagged
+      with primary capability. What-if Feasibility callout above
+      Playground charts. Causal graph demoted to capability-detail
+      drill-down. 2-3 days. See PIVOT.md §5 M42.
+- [ ] **M43 — Archive investment features behind feature flag**.
+      `ENABLE_LEGACY_INVESTMENT_FEATURES` env (default false). Hide
+      /predict, /community, /watchlist, /my-sectors, equities and
+      compare-stocks sub-tabs. Disable yfinance + prediction-resolve
+      crons by default. 1-2 days. See PIVOT.md §5 M43.
+- [ ] **M44 — Second showcase vision (Fusion Power) + polish**. Use M41
+      agent to generate, hand-polish, seed initial signals, publish
+      `/visions` landing with 4 visions. Twitter/X demo thread. 4-6 days.
+      See PIVOT.md §5 M44.
+
+**Total**: ~32-45 days. Realistic 8-10 weeks.
+
+## Deferred (resume after M44)
+
+- M29 — OAuth providers (Google / GitHub)
+- M30 — Multi-tenant scoping (tenant_id + Postgres RLS)
+- M31 — Backtest harness (will be reframed as vision-feasibility
+        backtest, not sector-sim backtest)
+- M28b — Modal/E2B sandbox for agent-generated capability scoring code
+        (M41 may surface need)
+- M10b — DART/EDGAR adapters (deprecated; signals pipeline replaces)
+- Observability — LangSmith / Helicone integration
+
+## Pre-pivot history (closed)
+
+Phase 1 vertical slice closed (2026-05-20). Phase 2 entry — multi-sector
+platform with 3 user-facing sectors registered (2026-05-21). Subsequent
+M5-M35 work is in git history; relevant pieces are repurposed in M36+.
+
+Full closed list moved below for context.
+
+---
+
+## Pre-pivot Phase 1 — shipped (closed)
 
 ## Phase 1 — shipped (closed)
 
