@@ -28,40 +28,65 @@ datasource db {
 }
 
 model Sector {
-  id             String   @id @default(cuid())
-  slug           String   @unique
-  name           String
-  description    String?
+  // M36 pivot note: in product language a `Sector` is a `Vision` — a
+  // bold technology question ("Will commercial fusion reach grid parity
+  // by 2040?"). The DB column name is kept for migration-history hygiene;
+  // tRPC exposes the same data via the new `vision.*` namespace.
+  id                 String   @id @default(cuid())
+  slug               String   @unique
+  name               String
+  description        String?
+  // M36: one-sentence framing question rendered above the hero gauge.
+  // e.g. "By when will compute in orbit be commercially viable?"
+  // Null on legacy rows; the Vision Builder agent (M41) populates this
+  // for new visions.
+  vision_question    String?  @map("vision_question")
+  // M36: opts a Sector row in/out of the new Vision Monitor UI. Set
+  // true by default for forward-compat — legacy investment-side rows
+  // remain visible. Toggle false to soft-hide a sector from /visions
+  // without dropping it.
+  is_vision_eligible Boolean  @default(true) @map("is_vision_eligible")
   // Python module path for the in-code sim. Agent-generated sectors
   // currently start as `draft` with `source_module = null`; when a
   // Python sim is authored for them they're promoted to `live`.
-  source_module  String?  @map("source_module")
+  source_module      String?  @map("source_module")
   // M21: lifecycle status. The 3 in-code sims seed as "live"; agent-
   // proposed sectors land as "draft" and an admin promotes to "live".
   // "archived" hides from both user app and admin sector grids
   // without dropping the row.
-  status         String   @default("live")
+  status             String   @default("live")
   // M21: traceability — when this row was created by promoting an
   // agent workflow, point at it so the audit/admin UI can deep-link
   // back to the original decomposition + cost.
-  agent_workflow_id String? @map("agent_workflow_id")
+  agent_workflow_id  String?  @map("agent_workflow_id")
   // M25a: who built this sector — null for the 3 seed sims, the
   // promoting user's id for agent-proposed sectors. Powers /my-sectors.
-  created_by_user_id String? @map("created_by_user_id")
-  created_by         User?   @relation("UserCreatedSectors", fields: [created_by_user_id], references: [id], onDelete: SetNull)
-  created_at     DateTime @default(now()) @map("created_at")
-  updated_at     DateTime @updatedAt        @map("updated_at")
+  created_by_user_id String?  @map("created_by_user_id")
+  created_by         User?    @relation("UserCreatedSectors", fields: [created_by_user_id], references: [id], onDelete: SetNull)
+  created_at         DateTime @default(now()) @map("created_at")
+  updated_at         DateTime @updatedAt @map("updated_at")
 
-  scenarios      Scenario[]
-  equities       SectorEquity[]
-  graph_nodes    GraphNode[]
-  graph_edges    GraphEdge[]
+  scenarios   Scenario[]
+  equities    SectorEquity[]
+  graph_nodes GraphNode[]
+  graph_edges GraphEdge[]
+
+  // M36: Vision Feasibility Monitor domain.
+  capabilities        Capability[]
+  signals             Signal[]
+  risks               Risk[]
+  feasibility_history VisionFeasibility[]
 
   @@index([status])
   @@index([created_by_user_id])
+  @@index([is_vision_eligible])
   @@map("sectors")
 }
 
+/// @deprecated M36 (2026-05-23) — pivot from "Sector Simulator" investment
+/// surface to "Vision Feasibility Monitor". Rows retained; tables hidden
+/// from the user app when ENABLE_LEGACY_INVESTMENT_FEATURES=false (M43).
+/// No new writes after M43. See docs/PIVOT.md §1.5 + docs/REFACTOR.md §7.1.
 model SectorEquity {
   // Equities Milestone 1: per-sector listed-company basket. Each row is a
   // ticker on a specific exchange that the editorial team considers a key
@@ -73,50 +98,50 @@ model SectorEquity {
   // values use the snapshot date's FX so dashboards can show comparable
   // market caps across KR/US.
 
-  id                  String   @id @default(cuid())
-  sector_slug         String   @map("sector_slug")
-  sector              Sector   @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+  id          String @id @default(cuid())
+  sector_slug String @map("sector_slug")
+  sector      Sector @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
 
-  ticker              String
-  exchange            String   // NASDAQ / NYSE / KOSPI / KOSDAQ
-  iso_country         String   @map("iso_country") // ISO 3166-1 alpha-2 — "US", "KR"
-  company_name        String   @map("company_name")
+  ticker             String
+  exchange           String // NASDAQ / NYSE / KOSPI / KOSDAQ
+  iso_country        String  @map("iso_country") // ISO 3166-1 alpha-2 — "US", "KR"
+  company_name       String  @map("company_name")
   // Korean / native-script name for KR equities; null for pure-English names.
-  company_name_local  String?  @map("company_name_local")
+  company_name_local String? @map("company_name_local")
 
   // 0–100. Fraction of the company's revenue / earnings exposed to this
   // sector. A KOSPI conglomerate with 8% of revenue from memory might
   // still belong on memory-semi if it's a key swing stock there.
-  sector_exposure_pct Float    @map("sector_exposure_pct")
+  sector_exposure_pct Float   @map("sector_exposure_pct")
   // Free-form rationale for inclusion (why this stock matters for this sector).
   rationale           String?
 
   // --- Snapshot quote (denormalized; refreshed by milestone-2 ingest) ---
-  currency            String?  // "USD" or "KRW"
-  last_close_local    Float?   @map("last_close_local")
-  last_close_usd      Float?   @map("last_close_usd")
-  last_close_date     DateTime? @map("last_close_date")
-  market_cap_usd      Float?   @map("market_cap_usd")
+  currency         String? // "USD" or "KRW"
+  last_close_local Float?    @map("last_close_local")
+  last_close_usd   Float?    @map("last_close_usd")
+  last_close_date  DateTime? @map("last_close_date")
+  market_cap_usd   Float?    @map("market_cap_usd")
 
   // --- Driver linkage (structured rationale) ---
   // JSON array of { driver: string, sign: "+"|"-", magnitude: "low"|"med"|"high", note?: string }.
   // The user-app Equities view reads this to project an impact direction
   // when the current driver state diverges from defaults. The MarketFactor
   // model (Milestone 2) replaces this with a normalized table.
-  driver_links        Json     @default("[]") @map("driver_links")
+  driver_links Json @default("[]") @map("driver_links")
 
   // Display ordering within the sector basket — defaults to 0, ties resolved
   // by market_cap_usd desc.
-  display_order       Int      @default(0) @map("display_order")
+  display_order Int @default(0) @map("display_order")
 
-  created_at          DateTime @default(now()) @map("created_at")
-  updated_at          DateTime @updatedAt        @map("updated_at")
+  created_at DateTime @default(now()) @map("created_at")
+  updated_at DateTime @updatedAt @map("updated_at")
 
-  quotes              EquityQuote[]
-  financials          EquityFinancial[]
-  graph_nodes         GraphNode[]
-  watchlist_items     WatchlistItem[]
-  predictions         Prediction[]
+  quotes          EquityQuote[]
+  financials      EquityFinancial[]
+  graph_nodes     GraphNode[]
+  watchlist_items WatchlistItem[]
+  predictions     Prediction[]
 
   @@unique([sector_slug, ticker, exchange])
   @@index([sector_slug])
@@ -124,6 +149,7 @@ model SectorEquity {
   @@map("sector_equities")
 }
 
+/// @deprecated M36 — see SectorEquity. Retained; not written after M43.
 model EquityFinancial {
   // Phase 2 epic milestone 10: quarterly fundamentals per equity.
   // Mock-seeded for now (anchor on `market_cap_usd / 8` with deterministic
@@ -133,28 +159,28 @@ model EquityFinancial {
   // are denormalized alongside `period_end` so dashboards can group by
   // quarter without recomputing.
 
-  equity_id      String   @map("equity_id")
-  fiscal_year    Int      @map("fiscal_year")
-  fiscal_quarter Int      @map("fiscal_quarter")  // 1..4
+  equity_id      String @map("equity_id")
+  fiscal_year    Int    @map("fiscal_year")
+  fiscal_quarter Int    @map("fiscal_quarter") // 1..4
 
-  period_end     DateTime @map("period_end") @db.Date
+  period_end DateTime @map("period_end") @db.Date
 
-  revenue_usd       Float?   @map("revenue_usd")
-  cogs_usd          Float?   @map("cogs_usd")
-  gross_profit_usd  Float?   @map("gross_profit_usd")
-  opex_usd          Float?   @map("opex_usd")
-  ebitda_usd        Float?   @map("ebitda_usd")
-  net_income_usd    Float?   @map("net_income_usd")
-  capex_usd         Float?   @map("capex_usd")
+  revenue_usd      Float? @map("revenue_usd")
+  cogs_usd         Float? @map("cogs_usd")
+  gross_profit_usd Float? @map("gross_profit_usd")
+  opex_usd         Float? @map("opex_usd")
+  ebitda_usd       Float? @map("ebitda_usd")
+  net_income_usd   Float? @map("net_income_usd")
+  capex_usd        Float? @map("capex_usd")
 
   // Balance sheet (M10d) — totals only. Detailed sub-accounts can
   // come later; these three are enough for leverage / book-value plots.
-  total_assets_usd       Float?   @map("total_assets_usd")
-  total_liabilities_usd  Float?   @map("total_liabilities_usd")
-  total_equity_usd       Float?   @map("total_equity_usd")
+  total_assets_usd      Float? @map("total_assets_usd")
+  total_liabilities_usd Float? @map("total_liabilities_usd")
+  total_equity_usd      Float? @map("total_equity_usd")
 
-  source         String   @default("mock")
-  inserted_at    DateTime @default(now()) @map("inserted_at")
+  source      String   @default("mock")
+  inserted_at DateTime @default(now()) @map("inserted_at")
 
   equity SectorEquity @relation(fields: [equity_id], references: [id], onDelete: Cascade)
 
@@ -163,6 +189,7 @@ model EquityFinancial {
   @@map("equity_financials")
 }
 
+/// @deprecated M36 — see SectorEquity. Retained; not written after M43.
 model EquityQuote {
   // Daily close time-series per equity, refreshed by the data-pipeline
   // `refresh_quote_history` job (yfinance daily bars, last 90 days by
@@ -200,24 +227,24 @@ model AgentWorkflow {
   // The schema is duplicated there as raw SQL; this Prisma block is
   // the authoritative source for migrations.
 
-  id           String   @id // wf_<hex16>
-  kind         String
+  id         String   @id // wf_<hex16>
+  kind       String
   // pending | running | succeeded | failed | cancelled
-  status       String
+  status     String
   // Original input the workflow was started with.
-  input        Json
+  input      Json
   // Pydantic-validated agent output, populated on success.
-  output       Json?
+  output     Json?
   // Stack-trace-ish error text on failure; null otherwise.
-  error        String?
+  error      String?
   // Roll-up cost in USD across every LLM call this workflow made.
-  cost_usd     Float    @default(0)
+  cost_usd   Float    @default(0)
   // M27: who triggered this workflow. Null for legacy admin-driven
   // rows; populated by sector-service after the orchestration call
   // returns. Powers the per-user monthly budget meter.
-  user_id      String?  @map("user_id")
-  created_at   DateTime @default(now()) @map("created_at")
-  updated_at   DateTime @updatedAt        @map("updated_at")
+  user_id    String?  @map("user_id")
+  created_at DateTime @default(now()) @map("created_at")
+  updated_at DateTime @updatedAt @map("updated_at")
 
   @@index([kind, created_at])
   @@index([status, updated_at])
@@ -235,29 +262,29 @@ model GraphNode {
   // `equity_id` points at the SectorEquity row this node visualizes;
   // null otherwise.
 
-  id           String   @id @default(cuid())
-  sector_slug  String   @map("sector_slug")
-  sector       Sector   @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+  id          String @id @default(cuid())
+  sector_slug String @map("sector_slug")
+  sector      Sector @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
 
-  node_key     String   @map("node_key")
-  kind         String
-  label        String
-  group        String   @default("")
-  unit         String?
-  description  String?
+  node_key    String  @map("node_key")
+  kind        String
+  label       String
+  group       String  @default("")
+  unit        String?
+  description String?
 
   // Position overrides — null = use the kind-based default column layout.
-  position_x   Float?   @map("position_x")
-  position_y   Float?   @map("position_y")
+  position_x Float? @map("position_x")
+  position_y Float? @map("position_y")
 
   // FK to SectorEquity for kind="equity" nodes; SET NULL on equity
   // deletion so the graph topology survives (the orphan node can be
   // pruned by an admin action).
-  equity_id    String?  @map("equity_id")
-  equity       SectorEquity? @relation(fields: [equity_id], references: [id], onDelete: SetNull)
+  equity_id String?       @map("equity_id")
+  equity    SectorEquity? @relation(fields: [equity_id], references: [id], onDelete: SetNull)
 
-  created_at   DateTime @default(now()) @map("created_at")
-  updated_at   DateTime @updatedAt        @map("updated_at")
+  created_at DateTime @default(now()) @map("created_at")
+  updated_at DateTime @updatedAt @map("updated_at")
 
   @@unique([sector_slug, node_key])
   @@index([sector_slug])
@@ -274,24 +301,24 @@ model GraphEdge {
   // `magnitude` is presentation-only ("low" / "med" / "high") — it
   // controls edge styling in the UI and does NOT enter the math.
 
-  id           String   @id @default(cuid())
-  sector_slug  String   @map("sector_slug")
-  sector       Sector   @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+  id          String @id @default(cuid())
+  sector_slug String @map("sector_slug")
+  sector      Sector @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
 
-  source_key   String   @map("source_key")
-  target_key   String   @map("target_key")
-  label        String?
+  source_key String  @map("source_key")
+  target_key String  @map("target_key")
+  label      String?
 
-  weight       Float    @default(1.0)
-  magnitude    String   @default("med")
+  weight    Float  @default(1.0)
+  magnitude String @default("med")
 
   // Set by the seed/bootstrap path so we can distinguish edges that came
   // from the Python graph from edits or agent-generated ones later.
-  origin       String   @default("seed") // seed | edit | agent
-  author_label String?  @map("author_label")
+  origin       String  @default("seed") // seed | edit | agent
+  author_label String? @map("author_label")
 
-  created_at   DateTime @default(now()) @map("created_at")
-  updated_at   DateTime @updatedAt        @map("updated_at")
+  created_at DateTime @default(now()) @map("created_at")
+  updated_at DateTime @updatedAt @map("updated_at")
 
   @@unique([sector_slug, source_key, target_key])
   @@index([sector_slug])
@@ -306,7 +333,7 @@ model AuditLog {
   // auth lands.
 
   id           String   @id @default(cuid())
-  action       String   // e.g. "graph.upsertEdge", "scenario.update"
+  action       String // e.g. "graph.upsertEdge", "scenario.update"
   sector_slug  String?  @map("sector_slug")
   // Full mutation payload (input + the row's `before` snapshot when
   // applicable). Bounded by `body_max_bytes` upstream — we don't enforce
@@ -324,34 +351,37 @@ model User {
   // M20 auth foundation. Email + bcrypt password hash for now;
   // OAuth providers / SSO arrive as a separate slice. tenant_id will
   // join here when multi-tenant lands.
-  id            String    @id @default(cuid())
-  email         String    @unique
-  password_hash String    @map("password_hash")
+  id            String   @id @default(cuid())
+  email         String   @unique
+  password_hash String   @map("password_hash")
   name          String?
   // Future-friendly preference columns. The settings UI surfaces them
   // even though the platform doesn't act on them yet — wiring is a
   // follow-up slice.
-  locale        String?   // "ko" | "en"
-  theme         String?   // "dark" | "light" | "system"
+  locale        String? // "ko" | "en"
+  theme         String? // "dark" | "light" | "system"
   // M25a: pricing tier. "free" is the default; "premium" unlocks the
   // agent flow gating that we ship behind a soft (decorative) badge
   // today. The hard paywall lands when payment integration is wired.
-  tier          String    @default("free")
-  created_at    DateTime  @default(now()) @map("created_at")
-  updated_at    DateTime  @updatedAt        @map("updated_at")
+  tier          String   @default("free")
+  created_at    DateTime @default(now()) @map("created_at")
+  updated_at    DateTime @updatedAt @map("updated_at")
 
-  sessions          Session[]
-  watchlist_items   WatchlistItem[]
-  created_sectors   Sector[]        @relation("UserCreatedSectors")
-  billing_customer  BillingCustomer?
-  predictions       Prediction[]
-  user_score        UserScore?
-  suggestions       SectorSuggestion[]
-  suggestion_votes  SectorSuggestionVote[]
+  sessions         Session[]
+  watchlist_items  WatchlistItem[]
+  created_sectors  Sector[]               @relation("UserCreatedSectors")
+  billing_customer BillingCustomer?
+  predictions      Prediction[]
+  user_score       UserScore?
+  suggestions      SectorSuggestion[]
+  suggestion_votes SectorSuggestionVote[]
 
   @@map("users")
 }
 
+/// @deprecated M36 — equity-watchlist concept retired with pivot. Rows
+/// retained; UI gated by ENABLE_LEGACY_INVESTMENT_FEATURES. May resurface
+/// post-pivot as a "vision watchlist" but with a different schema.
 model WatchlistItem {
   // M24a: user-curated "관심 종목" list. One row per (user, equity)
   // pair. The `note` column lets users jot a one-line reason ("AI
@@ -360,13 +390,13 @@ model WatchlistItem {
   // Authoritative on user_id + equity_id; cascade-delete on either
   // side so deleting an equity or a user cleans up automatically.
 
-  id          String       @id @default(cuid())
-  user_id     String       @map("user_id")
-  user        User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  equity_id   String       @map("equity_id")
-  equity      SectorEquity @relation(fields: [equity_id], references: [id], onDelete: Cascade)
-  note        String?
-  created_at  DateTime     @default(now()) @map("created_at")
+  id         String       @id @default(cuid())
+  user_id    String       @map("user_id")
+  user       User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  equity_id  String       @map("equity_id")
+  equity     SectorEquity @relation(fields: [equity_id], references: [id], onDelete: Cascade)
+  note       String?
+  created_at DateTime     @default(now()) @map("created_at")
 
   @@unique([user_id, equity_id])
   @@index([user_id, created_at(sort: Desc)])
@@ -378,16 +408,16 @@ model Session {
   // value is the lookup key. Rotating signed-token design lands when
   // session compromise becomes a real concern; for prototype scale a
   // 32-byte random token is enough.
-  id          String   @id @default(cuid())
-  user_id     String   @map("user_id")
-  user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  token       String   @unique
-  expires_at  DateTime @map("expires_at")
+  id         String   @id @default(cuid())
+  user_id    String   @map("user_id")
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  token      String   @unique
+  expires_at DateTime @map("expires_at")
   // Per-request niceties — populated on creation, useful for the
   // settings "active sessions" surface when that ships.
-  user_agent  String?  @map("user_agent")
-  ip          String?  @map("ip")
-  created_at  DateTime @default(now()) @map("created_at")
+  user_agent String?  @map("user_agent")
+  ip         String?  @map("ip")
+  created_at DateTime @default(now()) @map("created_at")
 
   @@index([token])
   @@index([user_id])
@@ -395,18 +425,18 @@ model Session {
 }
 
 model Scenario {
-  id                String   @id @default(cuid())
-  sector_slug       String   @map("sector_slug")
-  sector            Sector   @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
-  name              String
-  notes             String?
+  id               String   @id @default(cuid())
+  sector_slug      String   @map("sector_slug")
+  sector           Sector   @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+  name             String
+  notes            String?
   // {driver_name: value} for any driver overridden from sector default.
   // Missing keys = use the sector's default for that driver.
-  driver_overrides  Json     @map("driver_overrides")
+  driver_overrides Json     @map("driver_overrides")
   // Free-form author label. Becomes a real users(id) FK when auth lands.
-  author_label      String?  @map("author_label")
-  created_at        DateTime @default(now()) @map("created_at")
-  updated_at        DateTime @updatedAt        @map("updated_at")
+  author_label     String?  @map("author_label")
+  created_at       DateTime @default(now()) @map("created_at")
+  updated_at       DateTime @updatedAt @map("updated_at")
 
   @@index([sector_slug])
   @@map("scenarios")
@@ -420,15 +450,15 @@ model BillingCustomer {
   // One row per User who has been seen by Stripe Checkout (created on
   // first checkout attempt; never deleted, so the same stripe_customer_id
   // is reused across resubscriptions).
-  id                   String   @id @default(cuid())
-  user_id              String   @unique @map("user_id")
-  user                 User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  stripe_customer_id   String   @unique @map("stripe_customer_id")
-  email                String?
-  created_at           DateTime @default(now()) @map("created_at")
-  updated_at           DateTime @updatedAt        @map("updated_at")
+  id                 String   @id @default(cuid())
+  user_id            String   @unique @map("user_id")
+  user               User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  stripe_customer_id String   @unique @map("stripe_customer_id")
+  email              String?
+  created_at         DateTime @default(now()) @map("created_at")
+  updated_at         DateTime @updatedAt @map("updated_at")
 
-  subscriptions        BillingSubscription[]
+  subscriptions BillingSubscription[]
 
   @@map("billing_customers")
 }
@@ -437,21 +467,21 @@ model BillingSubscription {
   // One row per Stripe Subscription. The active subscription gates
   // `user.tier = "premium"`. We keep historical rows so a downgraded
   // user's audit trail survives.
-  id                       String           @id @default(cuid())
-  customer_id              String           @map("customer_id")
-  customer                 BillingCustomer  @relation(fields: [customer_id], references: [id], onDelete: Cascade)
-  stripe_subscription_id   String           @unique @map("stripe_subscription_id")
-  stripe_price_id          String           @map("stripe_price_id")
+  id                     String          @id @default(cuid())
+  customer_id            String          @map("customer_id")
+  customer               BillingCustomer @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  stripe_subscription_id String          @unique @map("stripe_subscription_id")
+  stripe_price_id        String          @map("stripe_price_id")
   // Stripe statuses: trialing | active | past_due | canceled | unpaid | incomplete | incomplete_expired
-  status                   String
+  status                 String
   // Snapshot from the latest webhook so we don't need to call Stripe
   // for routine reads.
-  current_period_start     DateTime         @map("current_period_start")
-  current_period_end       DateTime         @map("current_period_end")
-  cancel_at_period_end     Boolean          @default(false) @map("cancel_at_period_end")
-  canceled_at              DateTime?        @map("canceled_at")
-  created_at               DateTime         @default(now()) @map("created_at")
-  updated_at               DateTime         @updatedAt        @map("updated_at")
+  current_period_start   DateTime        @map("current_period_start")
+  current_period_end     DateTime        @map("current_period_end")
+  cancel_at_period_end   Boolean         @default(false) @map("cancel_at_period_end")
+  canceled_at            DateTime?       @map("canceled_at")
+  created_at             DateTime        @default(now()) @map("created_at")
+  updated_at             DateTime        @updatedAt @map("updated_at")
 
   @@index([customer_id, status])
   @@index([status, current_period_end])
@@ -462,16 +492,15 @@ model BillingEvent {
   // Append-only log of every Stripe webhook event we've ingested.
   // Primarily used for webhook idempotency (event.id is reused if
   // Stripe retries) and post-hoc debugging.
-  id                String   @id @default(cuid())
-  stripe_event_id   String   @unique @map("stripe_event_id")
-  type              String
-  payload           Json
-  received_at       DateTime @default(now()) @map("received_at")
+  id              String   @id @default(cuid())
+  stripe_event_id String   @unique @map("stripe_event_id")
+  type            String
+  payload         Json
+  received_at     DateTime @default(now()) @map("received_at")
 
   @@index([type, received_at])
   @@map("billing_events")
 }
-
 
 // =====================================================================
 // M27 — Agent budget tracking
@@ -486,49 +515,52 @@ model BillingEvent {
 // the Python agent-orchestration is the writer; Prisma stays read-only
 // against that table.
 
-
 // =====================================================================
 // M32 — Community: predictions, scores, suggestions
 // =====================================================================
 
+/// @deprecated M36 — stock-prediction game retired with pivot. Rows
+/// retained; UI gated by ENABLE_LEGACY_INVESTMENT_FEATURES. M31 backtest
+/// harness when resumed will reframe forecasting around Vision feasibility,
+/// not equity price. See docs/PIVOT.md §1.5.
 model Prediction {
   // One row per user-submitted prediction. The user picks an equity,
   // a horizon ("1d" | "1w" | "1m"), and a predicted % change. We
   // snapshot the anchor_close at submission time so the resolver
   // (cron, future slice) can compute actual_pct against a stable
   // baseline.
-  id              String   @id @default(cuid())
-  user_id         String   @map("user_id")
-  user            User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  equity_id       String   @map("equity_id")
-  equity          SectorEquity @relation(fields: [equity_id], references: [id], onDelete: Cascade)
+  id                 String       @id @default(cuid())
+  user_id            String       @map("user_id")
+  user               User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  equity_id          String       @map("equity_id")
+  equity             SectorEquity @relation(fields: [equity_id], references: [id], onDelete: Cascade)
   // "1d" | "1w" | "1m" — short enough to fit on chips, no point in
   // enum-ing across tRPC boundary.
-  horizon         String
+  horizon            String
   // Predicted % change vs anchor_close. Positive = up, negative = down.
-  predicted_pct   Float    @map("predicted_pct")
-  anchor_close    Float    @map("anchor_close")
+  predicted_pct      Float        @map("predicted_pct")
+  anchor_close       Float        @map("anchor_close")
   // Computed at submission time: anchor_close * (1 + predicted_pct/100).
-  predicted_close Float    @map("predicted_close")
+  predicted_close    Float        @map("predicted_close")
   // ISO date — when the prediction was made + the horizon-shifted target.
-  anchor_at       DateTime @default(now()) @map("anchor_at")
-  target_date     DateTime @map("target_date")
+  anchor_at          DateTime     @default(now()) @map("anchor_at")
+  target_date        DateTime     @map("target_date")
   // Optional linkage to a saved Scenario — explains "what assumptions
   // back this prediction".
-  scenario_id     String?  @map("scenario_id")
-  rationale       String?
+  scenario_id        String?      @map("scenario_id")
+  rationale          String?
   // M33: structured Claude-generated analysis of the rationale + the
   // linked scenario's driver overrides. Shape:
   //   { thesis_summary, supporting_factors[], risk_factors[],
   //     confidence: "low"|"med"|"high", edited_by_user }
   // Persisted alongside the prediction so the reviewer can see what
   // the LLM extracted even months after creation.
-  rationale_analysis Json?  @map("rationale_analysis")
+  rationale_analysis Json?        @map("rationale_analysis")
   // null until the prediction resolves at target_date.
-  resolved        Boolean  @default(false)
-  created_at      DateTime @default(now()) @map("created_at")
+  resolved           Boolean      @default(false)
+  created_at         DateTime     @default(now()) @map("created_at")
 
-  result          PredictionResult?
+  result PredictionResult?
 
   @@index([user_id, created_at(sort: Desc)])
   @@index([equity_id, created_at(sort: Desc)])
@@ -536,87 +568,379 @@ model Prediction {
   @@map("predictions")
 }
 
+/// @deprecated M36 — see Prediction. Retained; resolver cron disabled
+/// by default after M43.
 model PredictionResult {
   // Created by the resolver cron when target_date passes. score
   // formula in v1: max(0, 100 - |predicted_pct - actual_pct| * 5)
   // — i.e. ±20pp error wipes the score; perfect call gets 100.
-  id               String   @id @default(cuid())
-  prediction_id    String   @unique @map("prediction_id")
-  prediction       Prediction @relation(fields: [prediction_id], references: [id], onDelete: Cascade)
-  actual_close     Float    @map("actual_close")
-  actual_pct       Float    @map("actual_pct")
-  abs_error        Float    @map("abs_error")
-  score            Float
-  resolved_at      DateTime @default(now()) @map("resolved_at")
+  id            String     @id @default(cuid())
+  prediction_id String     @unique @map("prediction_id")
+  prediction    Prediction @relation(fields: [prediction_id], references: [id], onDelete: Cascade)
+  actual_close  Float      @map("actual_close")
+  actual_pct    Float      @map("actual_pct")
+  abs_error     Float      @map("abs_error")
+  score         Float
+  resolved_at   DateTime   @default(now()) @map("resolved_at")
 
   @@map("prediction_results")
 }
 
+/// @deprecated M36 — leaderboard scored prediction game retired. Retained
+/// in case prediction surface is reactivated; M31 backtest reframe may
+/// supersede entirely.
 model UserScore {
   // Rolling per-user totals. Updated each time a prediction resolves;
   // a single row per user so the leaderboard is a flat query.
-  user_id              String  @id @map("user_id")
-  user                 User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  total_points         Float   @default(0) @map("total_points")
-  predictions_made     Int     @default(0) @map("predictions_made")
-  predictions_resolved Int     @default(0) @map("predictions_resolved")
+  user_id              String   @id @map("user_id")
+  user                 User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  total_points         Float    @default(0) @map("total_points")
+  predictions_made     Int      @default(0) @map("predictions_made")
+  predictions_resolved Int      @default(0) @map("predictions_resolved")
   // Lifetime hits (score >= 50). Stored denormalized so the resolver
   // doesn't have to COUNT(*) over prediction_results on every write;
   // hit_rate_pct stays consistent with hits/predictions_resolved with
   // no float drift. Maintained by data-pipeline's resolve_predictions
   // job (M33b).
-  hits                 Int     @default(0) @map("hits")
+  hits                 Int      @default(0) @map("hits")
   // Lifetime hits / lifetime resolved as a percentage; "hit" = score >= 50.
-  hit_rate_pct         Float   @default(0) @map("hit_rate_pct")
-  current_streak       Int     @default(0) @map("current_streak")
-  best_streak          Int     @default(0) @map("best_streak")
+  hit_rate_pct         Float    @default(0) @map("hit_rate_pct")
+  current_streak       Int      @default(0) @map("current_streak")
+  best_streak          Int      @default(0) @map("best_streak")
   updated_at           DateTime @updatedAt @map("updated_at")
 
   @@index([total_points(sort: Desc)])
   @@map("user_scores")
 }
 
+/// @deprecated M36 — community suggestion flow retired with /community
+/// hub archive. May resurface as "Vision contribution" PRs (M41+ admin
+/// approval flow) but with a different schema.
 model SectorSuggestion {
   // Community-submitted suggestion to improve a sector's structure —
   // e.g. "add NVDA as a memory-semi equity", "remove driver X because
   // it never moves". Editorial team reviews; an admin can flip status.
-  id            String   @id @default(cuid())
-  user_id       String   @map("user_id")
-  user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  sector_slug   String   @map("sector_slug")
+  id          String   @id @default(cuid())
+  user_id     String   @map("user_id")
+  user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  sector_slug String   @map("sector_slug")
   // "add_driver" | "remove_driver" | "add_equity" | "remove_equity" |
   // "rename_node" | "rewire_edge" — kept as a free string so new kinds
   // don't need a migration. The payload JSONB carries kind-specific
   // detail (e.g. {"ticker": "NVDA", "rationale": "..."}).
-  kind          String
-  title         String
-  body          String?
-  payload       Json     @default("{}")
+  kind        String
+  title       String
+  body        String?
+  payload     Json     @default("{}")
   // "open" | "under_review" | "approved" | "rejected" | "withdrawn"
-  status        String   @default("open")
+  status      String   @default("open")
   // Snapshot of net votes (`+1` ups - `-1` downs). Updated transactionally
   // with each vote insert/update so the list query stays cheap.
-  score         Int      @default(0)
-  created_at    DateTime @default(now()) @map("created_at")
-  updated_at    DateTime @updatedAt @map("updated_at")
+  score       Int      @default(0)
+  created_at  DateTime @default(now()) @map("created_at")
+  updated_at  DateTime @updatedAt @map("updated_at")
 
-  votes         SectorSuggestionVote[]
+  votes SectorSuggestionVote[]
 
   @@index([sector_slug, status, score(sort: Desc)])
   @@index([user_id, created_at(sort: Desc)])
   @@map("sector_suggestions")
 }
 
+/// @deprecated M36 — see SectorSuggestion.
 model SectorSuggestionVote {
   // One vote per (user, suggestion). Value is +1 or -1.
-  suggestion_id  String   @map("suggestion_id")
-  suggestion     SectorSuggestion @relation(fields: [suggestion_id], references: [id], onDelete: Cascade)
-  user_id        String   @map("user_id")
-  user           User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  value          Int      // +1 | -1
-  created_at     DateTime @default(now()) @map("created_at")
+  suggestion_id String           @map("suggestion_id")
+  suggestion    SectorSuggestion @relation(fields: [suggestion_id], references: [id], onDelete: Cascade)
+  user_id       String           @map("user_id")
+  user          User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  value         Int // +1 | -1
+  created_at    DateTime         @default(now()) @map("created_at")
 
   @@id([suggestion_id, user_id])
   @@index([user_id, created_at(sort: Desc)])
   @@map("sector_suggestion_votes")
+}
+
+// =====================================================================
+// M36 — Vision Feasibility Monitor
+//
+// Pivot from sector simulation toward a feasibility monitor for bold
+// technology visions (e.g. "Will commercial fusion reach grid parity by
+// 2040?"). See docs/PIVOT.md for product framing, docs/REFACTOR.md for
+// the file-by-file refactor inventory.
+//
+// Core abstraction:
+//   Vision (Sector row + is_vision_eligible)
+//    └─ Capability (key tech / economic / regulatory / supply requirement)
+//        ├─ 4-dimension readiness score (CapabilityScore time series)
+//        ├─ Dependencies (CapabilityDependency DAG)
+//        └─ Signals (paper / patent / news / filing → per-dim deltas)
+//   Risk (orthogonal blockers — political, legal, supply, safety, ...)
+//   VisionFeasibility (snapshot of vision-level composite + ETA)
+//
+// Internationalization: name/description/rationale fields are English
+// only in M36. _ko variants land in a later slice (M37 or M38) once we
+// settle on column-per-locale vs JSON-blob i18n.
+// =====================================================================
+
+model Capability {
+  // A single capability required for a vision to be realized — e.g.
+  // "Radiation-hard compute" within the Space Data Centers vision.
+  //
+  // Identified by a stable `key` (slug-like) per sector, used by signal
+  // keyword maps, dependency edges, and admin URLs. The cuid id is the
+  // opaque DB PK; UI code addresses capabilities by (sector_slug, key).
+
+  id          String @id @default(cuid())
+  sector_slug String @map("sector_slug")
+  sector      Sector @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+
+  key         String // "rad_hard_compute"
+  name        String // "Radiation-hard compute"
+  short_name  String? @map("short_name") // "Rad-hard compute"
+  description String // 1-2 sentences
+  rationale   String // why this is necessary for the vision
+
+  // Lower = more central / more blocking. Drives the "sort by
+  // binding-ness" default order on the hero. Ties broken by
+  // (composite_score asc, weight desc).
+  display_order Int @default(100) @map("display_order")
+
+  // Vision-aggregation weight (0.0 – 1.0). The vision_aggregator
+  // (simulation-service feasibility module, M40) normalizes per-vision
+  // before combining — so values don't have to sum to 1.0 across all
+  // capabilities, but should be roughly proportional to importance.
+  weight Float @default(0.1)
+
+  // Optional pointer to a SimulationBase.driver so the Playground tab
+  // can flag "moving this slider primarily affects [Capability X]" and
+  // wire the what-if-feasibility projection (M42).
+  primary_driver_name String? @map("primary_driver_name")
+
+  created_at DateTime @default(now()) @map("created_at")
+  updated_at DateTime @updatedAt @map("updated_at")
+
+  scores       CapabilityScore[]
+  signals      Signal[]
+  dependencies CapabilityDependency[] @relation("CapabilitySource")
+  dependents   CapabilityDependency[] @relation("CapabilityTarget")
+
+  @@unique([sector_slug, key])
+  @@index([sector_slug])
+  @@index([sector_slug, display_order])
+  @@map("capabilities")
+}
+
+model CapabilityScore {
+  // Time-series of (capability × 4-dimension) scores. Each row is a
+  // snapshot at `as_of`; the most recent one per capability carries
+  // is_current=true. The Score Updater agent (M40) writes new rows on
+  // signal arrival; recompute_feasibility cron also writes daily.
+  //
+  // Score dimensions are independent, each ∈ [0, 100]:
+  //   technical   — TRL-like: 100 = mass-deployable today
+  //   economic    — unit economics + scale viability
+  //   regulatory  — political / legal / export-control clearance
+  //   supply      — supply chain / talent / capital bottlenecks
+  // Null = "not yet assessed".
+  //
+  // `composite` is computed by simulation-service's aggregator: a
+  // weighted mean of the 4 dims, optionally capped by the binding
+  // constraint (lowest dim) when binding-constraint logic is enabled
+  // per-capability.
+
+  id            String     @id @default(cuid())
+  capability_id String     @map("capability_id")
+  capability    Capability @relation(fields: [capability_id], references: [id], onDelete: Cascade)
+
+  technical  Float?
+  economic   Float?
+  regulatory Float?
+  supply     Float?
+
+  composite     Float?
+  // P10–P90 band around the composite — surfaces "we don't know yet"
+  // honestly on the hero gauge.
+  composite_p10 Float? @map("composite_p10")
+  composite_p90 Float? @map("composite_p90")
+
+  as_of      DateTime
+  is_current Boolean  @default(false) @map("is_current")
+
+  // Agent- or admin-written explanation of what moved since the prior
+  // snapshot — surfaces in the capability detail page time-series.
+  rationale String?
+
+  created_at DateTime @default(now()) @map("created_at")
+
+  @@index([capability_id, as_of(sort: Desc)])
+  @@index([capability_id, is_current])
+  @@map("capability_scores")
+}
+
+model CapabilityDependency {
+  // DAG between capabilities — "source depends on target." E.g.
+  // "in_orbit_thermal_rejection" might depend on
+  // "high_efficiency_radiator_materials". Used by the Capability detail
+  // page's mini dep-graph drill-down (M38) and by the vision aggregator
+  // (M40) when propagating binding-constraint effects.
+  //
+  // Cycles are forbidden — enforced at the tRPC mutation layer (M36)
+  // since Prisma can't express graph constraints declaratively.
+
+  id        String     @id @default(cuid())
+  source_id String     @map("source_id")
+  target_id String     @map("target_id")
+  source    Capability @relation("CapabilitySource", fields: [source_id], references: [id], onDelete: Cascade)
+  target    Capability @relation("CapabilityTarget", fields: [target_id], references: [id], onDelete: Cascade)
+  rationale String?
+
+  created_at DateTime @default(now()) @map("created_at")
+
+  @@unique([source_id, target_id])
+  @@index([target_id])
+  @@map("capability_dependencies")
+}
+
+model Signal {
+  // A source-grounded event that contributes to one or more capability
+  // scores. Ingested by the signal pipeline (M39 — arXiv, USPTO,
+  // NewsAPI, govt feeds) and scored by the Signal Extractor agent
+  // (haiku tier) into per-dimension deltas.
+  //
+  // capability_id is single-valued in M36; multi-capability mapping
+  // (one paper moving 2+ capabilities) lands as a join table in a
+  // later slice if needed. For now, when a signal moves multiple
+  // capabilities the ingest pipeline writes one Signal row per
+  // (signal, capability) pair, keyed by (source_url, capability_id).
+
+  id          String @id @default(cuid())
+  sector_slug String @map("sector_slug")
+  sector      Sector @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+
+  capability_id String?     @map("capability_id")
+  capability    Capability? @relation(fields: [capability_id], references: [id], onDelete: SetNull)
+
+  // Taxonomy: paper / patent / news / filing / gov_report / vendor_doc
+  // / dataset / social. Re-uses the kind taxonomy already established
+  // on Source / Provenance in the SDK.
+  source_kind   String  @map("source_kind")
+  source_url    String  @map("source_url")
+  // arXiv id (2401.12345), USPTO patent number, DOI, etc. — null when
+  // the source has no stable external id.
+  source_id_ext String? @map("source_id_ext")
+
+  title        String
+  summary      String?
+  published_at DateTime @map("published_at")
+
+  // Per-dimension deltas, signed (-10 .. +10). Set by the extractor
+  // agent; null = not yet scored. The score updater (M40) reads these
+  // when recomputing capability composite.
+  delta_technical  Float? @map("delta_technical")
+  delta_economic   Float? @map("delta_economic")
+  delta_regulatory Float? @map("delta_regulatory")
+  delta_supply     Float? @map("delta_supply")
+
+  // Promoted to the hero "Live Signals" panel when true. Set by the
+  // extractor when the magnitude warrants attention.
+  is_highlight Boolean @default(false) @map("is_highlight")
+
+  ingested_at DateTime @default(now()) @map("ingested_at")
+
+  @@unique([source_url, capability_id])
+  @@index([sector_slug, published_at(sort: Desc)])
+  @@index([capability_id, published_at(sort: Desc)])
+  @@index([sector_slug, is_highlight, published_at(sort: Desc)])
+  @@map("signals")
+}
+
+model Risk {
+  // Risks are orthogonal to capabilities — political, legal, supply,
+  // safety, environmental, financial, social factors that could
+  // derail a vision independent of any single capability's readiness.
+  //
+  // Rendered on the hero Risk Board: ●/○ severity dot + category +
+  // description + linked capabilities. Severity × likelihood matrix
+  // on the Risks detail tab (M38).
+  //
+  // affected_capability_keys is a Postgres text[]; each entry is a
+  // Capability.key in the same sector. Not a FK because the keys live
+  // on a sibling table — keeping it denormalized to a string array
+  // makes the hero render cheap. Integrity is enforced at the tRPC
+  // mutation layer.
+
+  id          String @id @default(cuid())
+  sector_slug String @map("sector_slug")
+  sector      Sector @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+
+  key         String
+  category    String // political | legal | supply | safety | environmental | financial | social
+  name        String
+  description String
+
+  severity     String // low | medium | high | critical
+  likelihood   String // low | medium | high
+  // Time horizon over which the risk plausibly materializes:
+  // immediate | 1y | 3y | 5y | 10y. Free string so we can extend.
+  time_horizon String  @map("time_horizon")
+  mitigations  String?
+
+  affected_capability_keys String[] @map("affected_capability_keys")
+
+  display_order Int @default(100) @map("display_order")
+
+  created_at DateTime @default(now()) @map("created_at")
+  updated_at DateTime @updatedAt @map("updated_at")
+
+  @@unique([sector_slug, key])
+  @@index([sector_slug])
+  @@index([sector_slug, severity])
+  @@map("risks")
+}
+
+model VisionFeasibility {
+  // Vision-level composite snapshot. Computed by the simulation-service
+  // vision_aggregator (M40) by Bayesian aggregation of capability
+  // composites with Liebig's-law binding-constraint logic (vision
+  // composite is capped by the lowest weighted capability — softened
+  // by a configurable factor so a single dim doesn't fully dominate).
+  //
+  // Time series; the most recent snapshot per sector carries
+  // is_current=true. Hero's trajectory + ETA window read this table.
+
+  id          String @id @default(cuid())
+  sector_slug String @map("sector_slug")
+  sector      Sector @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+
+  as_of      DateTime
+  is_current Boolean  @default(false) @map("is_current")
+
+  composite     Float
+  composite_p10 Float? @map("composite_p10")
+  composite_p90 Float? @map("composite_p90")
+
+  // The capability driving the cap (lowest composite × weight). Used
+  // to surface "BINDING" badge on the hero capability cards.
+  binding_capability_key String? @map("binding_capability_key")
+
+  // ETA: years-from-as_of until the vision crosses a configurable
+  // feasibility threshold (default 80). Linear extrapolation from
+  // recent trajectory in M40 v1; logistic-fit upgrade later.
+  eta_median_years Float? @map("eta_median_years")
+  eta_p10_years    Float? @map("eta_p10_years")
+  eta_p90_years    Float? @map("eta_p90_years")
+
+  // Hero "▲ +8 (90d)" delta. Pre-computed at snapshot time so the
+  // hero query stays O(1) per vision.
+  delta_90d Float? @map("delta_90d")
+
+  rationale String?
+
+  created_at DateTime @default(now()) @map("created_at")
+
+  @@index([sector_slug, as_of(sort: Desc)])
+  @@index([sector_slug, is_current])
+  @@map("vision_feasibility")
 }
