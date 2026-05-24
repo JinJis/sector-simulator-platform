@@ -49,6 +49,11 @@ interface Props {
   onChangeValues: Dispatch<SetStateAction<Record<string, number>>>;
   /** Pre-computed defaults map — passed in to avoid recomputing on each tab swap. */
   defaults: Record<string, number>;
+  /** M42: optional map from driver_name → primary capability. When
+   *  present, each DriverSlider renders a "Affects: <capability>"
+   *  badge that links to the capability detail page. Vision-aware
+   *  callers (Playground) pass this; legacy /sectors/* callers don't. */
+  driverCapabilityMap?: Record<string, { key: string; name: string }>;
 }
 
 export function ManualPanel({
@@ -57,6 +62,7 @@ export function ManualPanel({
   values,
   onChangeValues,
   defaults,
+  driverCapabilityMap,
 }: Props) {
   const initial = defaults;
   const setValues = onChangeValues;
@@ -139,6 +145,8 @@ export function ManualPanel({
             drivers={grouped.get(g) ?? []}
             values={values}
             provenance={meta.provenance}
+            driverCapabilityMap={driverCapabilityMap}
+            sectorSlug={meta.slug}
             onChange={(name, n) => {
               setActivePreset(null);
               setValues((prev) => ({ ...prev, [name]: n }));
@@ -249,12 +257,16 @@ function DriverGroup({
   drivers,
   values,
   provenance,
+  driverCapabilityMap,
+  sectorSlug,
   onChange,
 }: {
   name: string;
   drivers: DriverSchema[];
   values: Record<string, number>;
   provenance: Record<string, ProvenanceSchema>;
+  driverCapabilityMap?: Record<string, { key: string; name: string }>;
+  sectorSlug: string;
   onChange: (name: string, n: number) => void;
 }) {
   return (
@@ -270,6 +282,8 @@ function DriverGroup({
             driver={d}
             value={values[d.name] ?? d.default}
             provenance={provenance[d.name] ?? null}
+            capability={driverCapabilityMap?.[d.name] ?? null}
+            sectorSlug={sectorSlug}
             onChange={(n) => onChange(d.name, n)}
           />
         ))}
@@ -282,11 +296,15 @@ function DriverSlider({
   driver,
   value,
   provenance,
+  capability,
+  sectorSlug,
   onChange,
 }: {
   driver: DriverSchema;
   value: number;
   provenance: ProvenanceSchema | null;
+  capability: { key: string; name: string } | null;
+  sectorSlug: string;
   onChange: (n: number) => void;
 }) {
   const step = (driver.max - driver.min) / 200;
@@ -303,6 +321,16 @@ function DriverSlider({
           {formatDriverValue(value, driver.unit)}
         </span>
       </label>
+      {capability && (
+        <a
+          href={`/visions/${sectorSlug}/capabilities/${capability.key}`}
+          className="mt-0.5 inline-flex items-center gap-1 rounded border border-cyan-900/60 bg-cyan-950/30 px-1.5 py-0.5 text-[10px] text-cyan-300 hover:border-cyan-700 hover:bg-cyan-900/40"
+          title={`Primarily affects capability: ${capability.name}`}
+        >
+          <span className="text-cyan-500">↳</span>
+          {capability.name}
+        </a>
+      )}
       <div className="mt-2 flex items-center gap-2">
         <input
           type="range"

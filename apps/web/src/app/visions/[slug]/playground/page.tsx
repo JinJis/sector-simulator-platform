@@ -24,6 +24,10 @@ import {
   type SensitivityResponse,
   type SimMetadata,
 } from "@/lib/sim-client";
+import {
+  fetchVisionOverview,
+  type VisionOverview,
+} from "@/lib/vision-client";
 
 import { getVisionFixture } from "../../_fixtures";
 
@@ -40,14 +44,20 @@ export default async function PlaygroundPage({ params }: Props) {
 
   // Fetch the same sim payloads the sector layout uses. If sim-service
   // is unreachable, render an inline error rather than 500-ing the page.
+  // M42: also fetch vision overview so the WhatIfFeasibility callout can
+  // project composite shifts from slider state. Overview fetch is best-
+  // effort — if sector-service is down, suppress the callout instead of
+  // failing the whole page (the sim still works).
   let meta: SimMetadata;
   let sensitivity: SensitivityResponse | null = null;
   let initialLive: LiveResponse | null = null;
+  let overview: VisionOverview | null = null;
   try {
     meta = await fetchSim(slug);
-    [sensitivity, initialLive] = await Promise.all([
+    [sensitivity, initialLive, overview] = await Promise.all([
       fetchSensitivity(slug).catch(() => null),
       fetchLive(slug).catch(() => null),
+      fetchVisionOverview(slug).catch(() => null),
     ]);
   } catch (err) {
     return (
@@ -71,6 +81,7 @@ export default async function PlaygroundPage({ params }: Props) {
       meta={meta}
       sensitivity={sensitivity}
       initialLive={initialLive}
+      overview={overview}
     />
   );
 }

@@ -55,8 +55,10 @@ M36 ✅ → M37 ✅ → M45a → M38 → M45b → M39 → M40 → M41
       validation gate (DAG + FK + weight-sum) → tRPC propose/commit
       with full Prisma transaction → admin /visions/new UI → 5-case
       eval set. Shipped in 5 PRs (M41a-e).
-- [ ] **M42** — Simulation → Playground re-positioning. Driver capability
-      badges + WhatIfFeasibility callout above sim chart. 2-3d.
+- [x] **M42** — Simulation → Playground re-positioning. Driver capability
+      badges + WhatIfFeasibility callout above sim chart. Client-side
+      Liebig aggregator mirrors `simulation_service/feasibility/`;
+      Capability.primary_driver_name drives the driver→capability map.
 - [ ] **M43** — Archive investment features behind
       `ENABLE_LEGACY_INVESTMENT_FEATURES` (default false). Disable
       yfinance + prediction-resolve crons by default. 1-2d.
