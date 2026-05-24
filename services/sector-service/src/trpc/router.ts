@@ -25,6 +25,7 @@ import { simRouter } from "./sim.js";
 import { suggestionRouter } from "./suggestion.js";
 import { userAdminRouter } from "./user-admin.js";
 import { visionRouter } from "./vision.js";
+import { visionBuilderRouter } from "./vision-builder.js";
 import { watchlistRouter } from "./watchlist.js";
 
 export const appRouter = router({
@@ -48,6 +49,9 @@ export const appRouter = router({
   // page composite payload; mutations cover M38 manual seeding +
   // M41 Vision Builder agent persistence. See docs/PIVOT.md.
   vision: visionRouter,
+  // M41 — Vision Builder agent. Two-step propose/apply with manual
+  // admin approval seam. See docs/PIVOT.md §12 PR-M41c.
+  visionBuilder: visionBuilderRouter,
   capability: capabilityRouter,
   signal: signalRouter,
   risk: riskRouter,

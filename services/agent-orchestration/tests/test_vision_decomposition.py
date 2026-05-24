@@ -288,7 +288,7 @@ class TestDecompositionSchema:
 
     def test_rejects_capability_weight_above_max(self) -> None:
         with pytest.raises(ValidationError):
-            _capability(weight=0.5)
+            _capability(weight=0.6)
 
     def test_rejects_capability_weight_below_min(self) -> None:
         with pytest.raises(ValidationError):

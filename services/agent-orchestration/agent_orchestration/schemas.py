@@ -690,7 +690,7 @@ class CapabilityDraft(BaseModel):
     short_name: str | None = Field(default=None, max_length=40)
     description: str = Field(..., min_length=20, max_length=600)
     rationale: str = Field(..., min_length=20, max_length=600)
-    weight: float = Field(..., ge=0.02, le=0.30)
+    weight: float = Field(..., ge=0.02, le=0.50)
     display_order: int = Field(..., ge=10, le=10_000)
     primary_driver_name: str | None = Field(default=None, max_length=80)
     initial_technical: float | None = Field(default=None, ge=0, le=100)
@@ -873,3 +873,53 @@ class DataSourceSelectorRunResult(BaseModel):
     config: DataSourceConfigDraft
     cost_usd: float
     duration_ms: int
+
+
+# ---- Conductor: full end-to-end pipeline -------------------------------
+
+
+class VisionBuilderRequest(BaseModel):
+    """Single-call entry point — admin posts a natural-language prompt
+    and we run all four stages."""
+
+    prompt: str = Field(..., min_length=15, max_length=4000)
+    existing_vision_slugs: list[str] = Field(default_factory=list, max_length=500)
+    existing_actor_keys: list[str] = Field(default_factory=list, max_length=2000)
+    research_brief: str | None = Field(default=None, max_length=20_000)
+
+
+class StageMetricDto(BaseModel):
+    """One row in the per-stage cost / latency table."""
+
+    name: str
+    cost_usd: float
+    duration_ms: int
+
+
+class ValidationGateDto(BaseModel):
+    """Serialized ValidationGateResult for HTTP wire."""
+
+    ok: bool
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class VisionBuilderRunResult(BaseModel):
+    """HTTP envelope for /vision-builder/build.
+
+    Failure cases:
+      - validation.is_valid=False → stage-1 rejection; draft/gate null
+      - gate.ok=False → stages ran but relational checks failed;
+        draft is the RAW agent output (un-normalized) so admin can see
+        what to fix
+      - success=True → use draft + signal_config for persistence
+    """
+
+    success: bool
+    validation: PromptValidationResult
+    draft: VisionDecompositionResult | None
+    signal_config: DataSourceConfigDraft | None
+    gate: ValidationGateDto | None
+    stages: list[StageMetricDto]
+    total_cost_usd: float
+    total_duration_ms: int

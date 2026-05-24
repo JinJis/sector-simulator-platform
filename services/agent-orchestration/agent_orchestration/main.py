@@ -50,11 +50,16 @@ from agent_orchestration.schemas import (
     ResearchRequest,
     SignalExtractorRequest,
     SignalExtractorRunResult,
+    StageMetricDto,
+    ValidationGateDto,
     VisionBuilderPromptRequest,
+    VisionBuilderRequest,
+    VisionBuilderRunResult,
     VisionDecompositionRequest,
     VisionDecompositionRunResult,
     WorkflowRecord,
 )
+from agent_orchestration.conductor import VisionBuilderConductor
 from agent_orchestration.workflows import (
     CapabilityScoreUpdaterWorkflow,
     CodeGenWorkflow,
@@ -349,6 +354,54 @@ def create_app() -> FastAPI:
             draft=draft,
             cost_usd=cost_meter.total_usd,
             duration_ms=duration_ms,
+        )
+
+    @app.post(
+        "/vision-builder/build",
+        response_model=VisionBuilderRunResult,
+    )
+    async def vision_builder_build(
+        req: VisionBuilderRequest,
+    ) -> VisionBuilderRunResult:
+        """End-to-end Vision Builder — runs the full pipeline (validator
+        → decomposition → data sources → validation gate) and returns a
+        single draft ready for admin review. Total cost target ≤$0.55
+        per successful build. Pipeline short-circuits at stage 1 on
+        prompt rejection; gate failures still return the (un-normalized)
+        draft so admin can see what went wrong.
+        """
+        llm: LLMClient = app.state.llm
+        conductor = VisionBuilderConductor(llm=llm)
+        try:
+            result = await conductor.run(
+                prompt=req.prompt,
+                existing_vision_slugs=req.existing_vision_slugs,
+                existing_actor_keys=req.existing_actor_keys,
+                research_brief=req.research_brief,
+            )
+        except Exception as e:
+            log.exception("vision-builder conductor failed: %s", e)
+            raise HTTPException(
+                status_code=502, detail=f"vision-builder failed: {e}"
+            ) from e
+        return VisionBuilderRunResult(
+            success=result.success,
+            validation=result.validation,
+            draft=result.draft,
+            signal_config=result.signal_config,
+            gate=ValidationGateDto(
+                ok=result.gate.ok,
+                errors=result.gate.errors,
+                warnings=result.gate.warnings,
+            ) if result.gate is not None else None,
+            stages=[
+                StageMetricDto(
+                    name=s.name, cost_usd=s.cost_usd, duration_ms=s.duration_ms
+                )
+                for s in result.stages
+            ],
+            total_cost_usd=result.total_cost_usd,
+            total_duration_ms=result.total_duration_ms,
         )
 
     @app.post(

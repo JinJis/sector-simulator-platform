@@ -28,9 +28,12 @@ reach the admin:
 - `description` — 20–600 chars. What is this capability, technically?
 - `rationale` — 20–600 chars. WHY is this capability binding for the
   vision? What happens if it doesn't mature?
-- `weight` — 0.02–0.30. Per-capability weight in the composite. **All
+- `weight` — 0.02–0.50. Per-capability weight in the composite. **All
   capability weights for the vision MUST sum to approximately 1.0**
   (Pydantic doesn't check this, but the M41c validation gate will).
+  For 3-cap narrow visions, expect ~0.33 each; for 10-cap broad
+  visions, expect ~0.10 each. Don't go above 0.40 unless one
+  capability genuinely dominates.
 - `display_order` — 10, 20, 30, ... (steps of 10 so admins can insert).
 - `initial_technical|economic|regulatory|supply` — 0–100 floats (null
   allowed if not assessable today). The M40 signal pipeline will
