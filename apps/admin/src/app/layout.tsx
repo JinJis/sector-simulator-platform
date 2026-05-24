@@ -40,6 +40,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <Link href="/lifecycle" className="hover:text-neutral-100">
                 Lifecycle
               </Link>
+              <Link href="/visions" className="hover:text-neutral-100">
+                Visions
+              </Link>
               <Link href="/agent-runs" className="hover:text-neutral-100">
                 Agent runs
               </Link>

@@ -8,7 +8,7 @@
 
 import type { AppRouter } from "@platform/sector-service";
 import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
-import type { inferRouterOutputs } from "@trpc/server";
+import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 
 const BROWSER_BASE = "/api/sim/trpc";
 const SERVER_BASE = `${process.env.SECTOR_SERVICE_URL ?? "http://localhost:8001"}/trpc`;
@@ -27,6 +27,7 @@ export const trpc = createTRPCClient<AppRouter>({
 });
 
 type RouterOutput = inferRouterOutputs<AppRouter>;
+type RouterInput = inferRouterInputs<AppRouter>;
 
 export type SimMetadata = RouterOutput["sim"]["get"];
 export type DriverSchema = SimMetadata["drivers"][number];
@@ -358,6 +359,33 @@ export async function sectorToDraft(slug: string): Promise<SectorRow> {
   return rethrow(
     () => trpc.sector.toDraft.mutate({ slug }),
     `sectorToDraft(${slug})`,
+  );
+}
+
+// ---------- M41 — Vision Builder ----------
+
+export type VisionBuilderProposeInput = RouterInput["visionBuilder"]["propose"];
+export type VisionBuilderProposeResult = RouterOutput["visionBuilder"]["propose"];
+export type VisionBuilderCommitInput = RouterInput["visionBuilder"]["commit"];
+export type VisionBuilderCommitResult = RouterOutput["visionBuilder"]["commit"];
+export type VisionBuilderDraft = NonNullable<VisionBuilderProposeResult["draft"]>;
+export type VisionBuilderSignalConfig = NonNullable<VisionBuilderProposeResult["signal_config"]>;
+
+export async function visionBuilderPropose(
+  input: VisionBuilderProposeInput,
+): Promise<VisionBuilderProposeResult> {
+  return rethrow(
+    () => trpc.visionBuilder.propose.mutate(input),
+    "visionBuilderPropose",
+  );
+}
+
+export async function visionBuilderCommit(
+  input: VisionBuilderCommitInput,
+): Promise<VisionBuilderCommitResult> {
+  return rethrow(
+    () => trpc.visionBuilder.commit.mutate(input),
+    "visionBuilderCommit",
   );
 }
 
