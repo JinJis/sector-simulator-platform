@@ -151,9 +151,82 @@ class _FakeModels:
         )
 
 
+# ---- Anthropic-shape stubs ------------------------------------------------
+#
+# Opus-tier workflows (Decomposition, EdgeInference, CodeGen, CodeReview,
+# VisionDecomposition) route to Anthropic via LLMClient._call_anthropic.
+# The fake `messages.create()` must return a response with a `tool_use`
+# block carrying the canned BaseModel's `model_dump(mode="json")` —
+# matching the structured-output trick the real wrapper uses.
+
+
+@dataclass
+class _FakeAnthropicBlock:
+    type: str = "text"
+    text: str = ""
+    name: str | None = None
+    input: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class _FakeAnthropicUsage:
+    input_tokens: int = 4096
+    output_tokens: int = 1024
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+
+
+@dataclass
+class _FakeAnthropicResponse:
+    content: list[_FakeAnthropicBlock] = field(default_factory=list)
+    stop_reason: str = "end_turn"
+    usage: _FakeAnthropicUsage = field(default_factory=_FakeAnthropicUsage)
+
+
+class _FakeMessages:
+    """Anthropic provider fake. Records `create(...)` calls on the
+    shared `requests` list (same list as `_FakeModels`) so tests can
+    inspect either provider's traffic from one place."""
+
+    def __init__(self, parent: "_FakeGenAI") -> None:
+        self._parent = parent
+
+    def create(self, **kwargs: Any) -> _FakeAnthropicResponse:
+        self._parent.models.requests.append(kwargs)
+        canned = self._parent.models._canned
+        # If the call is structured-output (tool_choice forces a tool),
+        # surface as a tool_use block carrying the canned dump.
+        tool_choice = kwargs.get("tool_choice")
+        if tool_choice and isinstance(tool_choice, dict) and tool_choice.get("type") == "tool":
+            return _FakeAnthropicResponse(
+                content=[
+                    _FakeAnthropicBlock(
+                        type="tool_use",
+                        name=tool_choice.get("name", type(canned).__name__),
+                        input=canned.model_dump(mode="json"),
+                    )
+                ],
+                stop_reason="tool_use",
+            )
+        # Free-form text return — drop the canned JSON in the text.
+        return _FakeAnthropicResponse(
+            content=[_FakeAnthropicBlock(type="text", text=canned.model_dump_json())],
+            stop_reason="end_turn",
+        )
+
+
 class _FakeGenAI:
+    """Composite fake. The same instance is injected as BOTH
+    `genai_client` and `anthropic_client` into LLMClient; the wrapper
+    dispatches by tier and hits the matching surface."""
+
     def __init__(self, canned: BaseModel) -> None:
         self.models = _FakeModels(canned)
+        self._messages = _FakeMessages(self)
+
+    @property
+    def messages(self) -> _FakeMessages:
+        return self._messages
 
 
 def build_llm(case: Case) -> LLMClient:
@@ -166,4 +239,9 @@ def build_llm(case: Case) -> LLMClient:
     """
     if is_live_mode():
         return LLMClient()
-    return LLMClient(client=_FakeGenAI(case.canned_response))
+    fake = _FakeGenAI(case.canned_response)
+    # The fake serves BOTH provider surfaces, so inject it twice. Opus-
+    # tier workflows (Decomposition, VisionDecomposition, ...) hit the
+    # Anthropic path; haiku/sonnet hit the Gemini path. One instance
+    # keeps `requests` shared so test code can inspect either.
+    return LLMClient(genai_client=fake, anthropic_client=fake)

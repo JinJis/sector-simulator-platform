@@ -38,22 +38,23 @@ M36 ✅ → M37 ✅ → M45a → M38 → M45b → M39 → M40 → M41
 - [x] **M37** — Hero page (hardcoded SDC showcase). Shipped in 5 PRs.
       `/visions` landing + `/visions/[slug]` hero + 7-tab sub-nav +
       Playground migration + onboarding/tour rewrite.
-- [ ] **M45a** — Actor schema + tRPC + Hero "Actors" band + capability
-      card "active actors" footer + sub-nav tab. Fixture-backed for
-      SDC. 4-5d. Inserts before M38 for demo lift.
-- [ ] **M38** — Capability decomposition (manual seed, 3 sectors).
+- [x] **M45a** — Actor schema + tRPC + Hero "Actors" band + capability
+      card "active actors" footer + sub-nav tab. Fixture-backed for SDC.
+- [x] **M38** — Capability decomposition (manual seed, 3 sectors).
       seed-capabilities.ts / seed-risks.ts / seed-feasibility.ts. Real
-      DB data on the Hero. 3-4d.
-- [ ] **M45b** — Actor DB seed + capability_actor wiring + replace
-      fixtures with DB. 2-3d.
-- [ ] **M39** — Signal ingest (arXiv + USPTO + NewsAPI) + extractor
-      agent (haiku) + actor tagging. 6-8d.
-- [ ] **M40** — Feasibility scoring engine (4-dim aggregation + Liebig
-      binding constraint + ETA inference + daily recompute cron). 4-5d.
-- [ ] **M41** — Vision Builder agent: one-liner vision → full capability
-      tree + risk drafts + actor drafts + scoring code. Repurposes
-      existing Decomposition / Research / DriverInference / EdgeInference
-      / CodeGen / CodeReview workflows. 6-8d.
+      DB data on the Hero.
+- [x] **M45b** — Actor DB seed + capability_actor wiring + replace
+      fixtures with DB.
+- [x] **M39** — Signal ingest (arXiv + USPTO + NewsAPI) + extractor
+      agent (haiku) + actor tagging. Shipped in 6 PRs.
+- [x] **M40** — Feasibility scoring engine (4-dim aggregation + Liebig
+      binding constraint + ETA inference + daily recompute cron).
+      Shipped in 2 PRs.
+- [x] **M41** — Vision Builder agent: NL prompt → validator (haiku)
+      → decomposition (opus) → data-source selector (sonnet) →
+      validation gate (DAG + FK + weight-sum) → tRPC propose/commit
+      with full Prisma transaction → admin /visions/new UI → 5-case
+      eval set. Shipped in 5 PRs (M41a-e).
 - [ ] **M42** — Simulation → Playground re-positioning. Driver capability
       badges + WhatIfFeasibility callout above sim chart. 2-3d.
 - [ ] **M43** — Archive investment features behind
