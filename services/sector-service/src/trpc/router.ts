@@ -10,6 +10,7 @@ import { authRouter } from "./auth.js";
 import { billingRouter } from "./billing.js";
 import { capabilityRouter } from "./capability.js";
 import { communityRouter } from "./community.js";
+import { communityProposalRouter } from "./community-proposal.js";
 import { equityRouter } from "./equity.js";
 import { feasibilityRouter } from "./feasibility.js";
 import { graphRouter } from "./graph.js";
@@ -45,6 +46,9 @@ export const appRouter = router({
   prediction: predictionRouter,
   suggestion: suggestionRouter,
   community: communityRouter,
+  // M46a — Community 3.0 proposals (driver/equity/capability/risk/actor/
+  // signal_source enrichment proposals with multi-source evidence + vote).
+  communityProposal: communityProposalRouter,
   // M36 — Vision Feasibility Monitor namespace. Reads cover the hero
   // page composite payload; mutations cover M38 manual seeding +
   // M41 Vision Builder agent persistence. See docs/PIVOT.md.

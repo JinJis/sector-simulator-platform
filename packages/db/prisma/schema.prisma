@@ -379,6 +379,12 @@ model User {
   suggestions      SectorSuggestion[]
   suggestion_votes SectorSuggestionVote[]
 
+  // M46a — Community 3.0
+  community_proposals       CommunityProposal[] @relation("ProposalAuthor")
+  community_proposal_decisions CommunityProposal[] @relation("ProposalDecidedBy")
+  community_proposal_votes  ProposalVote[]
+  community_proposal_replies ProposalReply[]
+
   @@map("users")
 }
 
@@ -1106,4 +1112,166 @@ model CapabilityActor {
   @@index([capability_id])
   @@index([capability_id, role])
   @@map("capability_actors")
+}
+
+// =====================================================================
+// M46a — Community 3.0: Proposals
+//
+// Users (Member tier and above) propose enrichments to any element of a
+// vision / sector: a new driver, a new equity, a new capability / risk /
+// actor, a new signal source, or freeform improvement notes. Each
+// proposal carries multi-source evidence (URL with OG preview, uploaded
+// PDF/image, or freeform text) and accumulates upvotes from the
+// community. Admins (and high-rep users in M46c+) move it through the
+// status pipeline; on acceptance, the structured `proposed_payload`
+// drives the target-kind-specific DB write (handled in M46e).
+// =====================================================================
+
+model CommunityProposal {
+  id String @id @default(cuid())
+
+  // Author. Must be a registered user — proposals are not anonymous.
+  author_id String @map("author_id")
+  author    User   @relation("ProposalAuthor", fields: [author_id], references: [id], onDelete: Cascade)
+
+  // Sector / Vision this proposal targets. Required — proposals are
+  // always scoped to a sector. Cross-sector "platform" proposals are
+  // out of scope for v1.
+  sector_slug String @map("sector_slug")
+
+  // What kind of element is being proposed. The full set the M46e
+  // applier handles:
+  //   add_driver       — new SimulationBase driver
+  //   add_equity       — new SectorEquity row
+  //   add_capability   — new Capability + initial CapabilityScore
+  //   add_risk         — new Risk row
+  //   add_actor        — new Actor + VisionActor + CapabilityActor wiring
+  //   add_signal_source — new keyword set / source URL for ingest
+  //   edit             — edit an existing row (target_ref points to it)
+  //   other            — freeform; never auto-applies
+  target_kind String @map("target_kind")
+
+  // When the proposal is editing an existing row, this is its key/slug;
+  // null for fresh "add_*" proposals.
+  target_ref String? @map("target_ref")
+
+  title String
+  body  String
+
+  // The exact payload that gets fed to the M46e applier on acceptance.
+  // Shape depends on `target_kind`:
+  //   add_driver: { name, group, unit, default, min, max, description }
+  //   add_capability: { key, name, description, weight, ... }
+  //   ...
+  // Pydantic / Zod schemas in the applier validate this before DB write.
+  // Stored as Json so each kind can evolve without a schema migration.
+  proposed_payload Json @map("proposed_payload")
+
+  // Pipeline status. Drives admin queue + filtering. Transitions are
+  // logged via AuditLog.
+  //   open      — accepting votes
+  //   review    — admin (or high-rep auto-promotion in M46e) is looking
+  //   applied   — DB write succeeded; decided_at + decided_by set
+  //   rejected  — admin chose not to pursue; reason in audit_log
+  //   stale     — auto-aged out after 90d with no decision + low votes
+  status String @default("open")
+
+  // Denormalized for cheap sort/feed queries. Recomputed on each vote
+  // insert/delete (the vote handler writes both rows in a transaction).
+  vote_score Int @default(0) @map("vote_score")
+
+  // Decision metadata. Set when status transitions to applied/rejected.
+  decided_at      DateTime? @map("decided_at")
+  decided_by_id   String?   @map("decided_by_id")
+  decided_by      User?     @relation("ProposalDecidedBy", fields: [decided_by_id], references: [id], onDelete: SetNull)
+  decision_reason String?   @map("decision_reason")
+
+  created_at DateTime @default(now()) @map("created_at")
+  updated_at DateTime @updatedAt @map("updated_at")
+
+  evidence ProposalEvidence[]
+  votes    ProposalVote[]
+  replies  ProposalReply[]
+
+  // Hot feed: sector + status + score desc
+  @@index([sector_slug, status, vote_score(sort: Desc)])
+  // New feed: sector + created_at desc
+  @@index([sector_slug, created_at(sort: Desc)])
+  // Global hot/new + author profile
+  @@index([status, vote_score(sort: Desc)])
+  @@index([author_id, created_at(sort: Desc)])
+  // Admin queue ordering
+  @@index([status, created_at(sort: Desc)])
+  @@map("community_proposals")
+}
+
+model ProposalEvidence {
+  // Each piece of evidence attached to a proposal — URL, uploaded
+  // PDF/image, or freeform text. Order matters (admin / readers see
+  // evidence in the same order the author arranged).
+  //
+  // For url kind: `content` is the URL; `fetched_meta` carries the
+  // M46d OG-fetcher's output (title, description, screenshot_url).
+  // For pdf / image kind: `content` is the R2 object key.
+  // For text kind: `content` IS the body (markdown allowed); fetched_meta
+  // stays null.
+
+  id          String @id @default(cuid())
+  proposal_id String @map("proposal_id")
+  proposal    CommunityProposal @relation(fields: [proposal_id], references: [id], onDelete: Cascade)
+
+  kind        String  // url | pdf | image | text
+  content     String  // URL / R2 key / freeform body
+  fetched_meta Json?  @map("fetched_meta")
+  // Display order chosen by the author.
+  order_index Int     @default(0) @map("order_index")
+
+  created_at DateTime @default(now()) @map("created_at")
+
+  @@index([proposal_id, order_index])
+  @@map("proposal_evidence")
+}
+
+model ProposalVote {
+  // Upvote-only (no downvote — see plan §8). One vote per (user, proposal).
+  // `weight` is the vote's contribution to the proposal's vote_score —
+  // 1 for newcomers, scales with voter reputation in M46c (Stack Overflow
+  // pattern: the system trusts high-rep voters more). M46a writes 1
+  // unconditionally; M46c upgrades the writer.
+
+  proposal_id String @map("proposal_id")
+  user_id     String @map("user_id")
+  proposal    CommunityProposal @relation(fields: [proposal_id], references: [id], onDelete: Cascade)
+  user        User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  weight     Int      @default(1)
+  created_at DateTime @default(now()) @map("created_at")
+
+  @@id([proposal_id, user_id])
+  @@index([user_id, created_at(sort: Desc)])
+  @@map("proposal_votes")
+}
+
+model ProposalReply {
+  // Threaded reply. Single-level nesting (parent_reply_id) to keep
+  // rendering simple — no deep tree. Reply upvotes don't exist in
+  // M46a (only proposal-level votes; see plan §8 anti-features).
+
+  id              String @id @default(cuid())
+  proposal_id     String @map("proposal_id")
+  parent_reply_id String? @map("parent_reply_id")
+  author_id       String @map("author_id")
+
+  proposal CommunityProposal @relation(fields: [proposal_id], references: [id], onDelete: Cascade)
+  author   User              @relation(fields: [author_id], references: [id], onDelete: Cascade)
+  parent   ProposalReply?    @relation("ReplyParent", fields: [parent_reply_id], references: [id], onDelete: Cascade)
+  children ProposalReply[]   @relation("ReplyParent")
+
+  body       String
+  created_at DateTime @default(now()) @map("created_at")
+  updated_at DateTime @updatedAt @map("updated_at")
+
+  @@index([proposal_id, created_at])
+  @@index([parent_reply_id])
+  @@map("proposal_replies")
 }

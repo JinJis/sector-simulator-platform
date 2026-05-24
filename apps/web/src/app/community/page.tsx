@@ -71,6 +71,12 @@ export default async function CommunityHubPage() {
           >
             💡 섹터 개선 제안
           </Link>
+          <Link
+            href="/community/proposals"
+            className="rounded border border-cyan-700/60 bg-neutral-900 px-3 py-1.5 text-xs font-medium text-cyan-100 hover:border-cyan-600 hover:bg-cyan-900/40"
+          >
+            🆕 Community proposals
+          </Link>
         </div>
       </section>
 
