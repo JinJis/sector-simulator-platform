@@ -1,11 +1,8 @@
 /**
- * /community/predictions/new — placement form.
+ * /community/predictions/new — 3-step wizard (Stock → Bet → Review).
  *
- * Server wrapper preloads available sectors + equities so the form
- * dropdown renders instantly. Auth check redirects anonymous users.
- *
- * Query params: `?equity=<id>&sector=<slug>` deep-link from the
- * equity / sector pages.
+ * Server wrapper does auth redirect + preloads sectors + the first
+ * sector's equities so the wizard renders instantly.
  */
 
 import Link from "next/link";
@@ -14,7 +11,7 @@ import { redirect } from "next/navigation";
 import { fetchEquities, fetchMe } from "@/lib/sim-client";
 import { fetchVisions } from "@/lib/vision-client";
 
-import { PlacePredictionForm } from "./place-prediction-form";
+import { PredictionWizard } from "./prediction-wizard";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +32,6 @@ export default async function NewPredictionPage({ searchParams }: Props) {
     .map((v) => ({ slug: v.slug, name: v.name }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  // Default sector: from query param, else first available.
   const defaultSector = params.sector ?? sectorChoices[0]?.slug ?? "";
   const equityChoices = defaultSector
     ? await fetchEquities(defaultSector).catch(() => [])
@@ -49,18 +45,16 @@ export default async function NewPredictionPage({ searchParams }: Props) {
         </Link>
       </nav>
       <header>
-        <h1 className="text-xl font-semibold text-neutral-100">
-          Place a prediction
+        <h1 className="text-2xl font-bold tracking-tight text-neutral-50">
+          새 베팅 등록
         </h1>
-        <p className="mt-1 text-[12px] text-neutral-500">
-          Pick a stock, set a price band, choose a horizon. We auto-
-          assign the difficulty tier — wider bands + longer horizons +
-          lower volatility = Easy; tight bands + short horizons + high
-          volatility = Hard. Reward = score × tier × 10 points.
+        <p className="mt-1 text-[13px] text-neutral-400">
+          3단계 — 종목 선택, 기간 + 가격 밴드 설정, 확인 후 등록. 난이도는
+          자동으로 산정됩니다.
         </p>
       </header>
 
-      <PlacePredictionForm
+      <PredictionWizard
         sectorChoices={sectorChoices}
         initialSector={defaultSector}
         initialEquityChoices={equityChoices.map((e) => ({

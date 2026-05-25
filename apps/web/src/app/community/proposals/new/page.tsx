@@ -1,9 +1,9 @@
 /**
- * /community/proposals/new — proposal creation form.
+ * /community/proposals/new — 5-step wizard.
  *
- * Server wrapper pre-loads the sector list so the form can render a
- * dropdown without an extra round-trip. Sign-in check is server-side;
- * anonymous users get redirected.
+ * Server wrapper pre-loads sector choices + does the auth redirect.
+ * The wizard itself is client-side; state lives in React (no URL
+ * persistence for v1).
  */
 
 import Link from "next/link";
@@ -12,7 +12,7 @@ import { redirect } from "next/navigation";
 import { fetchMe } from "@/lib/sim-client";
 import { fetchVisions } from "@/lib/vision-client";
 
-import { NewProposalForm } from "./new-proposal-form";
+import { ProposalWizard } from "./proposal-wizard";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +29,9 @@ export default async function NewProposalPage({ searchParams }: Props) {
     );
   }
   const visions = await fetchVisions({ include_legacy: true }).catch(() => []);
-  const sectorChoices = visions.map((v) => ({ slug: v.slug, name: v.name }));
+  const sectorChoices = visions
+    .map((v) => ({ slug: v.slug, name: v.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
@@ -39,19 +41,18 @@ export default async function NewProposalPage({ searchParams }: Props) {
         </Link>
       </nav>
       <header>
-        <h1 className="text-xl font-semibold text-neutral-100">
-          Propose a change
+        <h1 className="text-2xl font-bold tracking-tight text-neutral-50">
+          새 제안 작성
         </h1>
-        <p className="mt-1 text-[12px] text-neutral-500">
-          Suggest a new driver, equity, capability, risk, actor, or
-          signal source. Add evidence (URLs or notes) — the more
-          grounded your proposal, the faster it gets applied.
+        <p className="mt-1 text-[13px] text-neutral-400">
+          5단계로 끝납니다 — 종류를 고르고, 섹터를 정하고, 본문을 쓰고,
+          상세 필드를 채우고, 근거를 첨부한 뒤 공개합니다.
         </p>
       </header>
 
-      <NewProposalForm
+      <ProposalWizard
         sectorChoices={sectorChoices}
-        defaultSector={params.sector ?? sectorChoices[0]?.slug ?? ""}
+        defaultSector={params.sector}
       />
     </main>
   );
