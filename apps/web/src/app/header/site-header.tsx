@@ -13,8 +13,6 @@ import { UserMenu } from "./user-menu";
 
 const PRIMARY_NAV: { label: string; href: string }[] = [
   { label: "Visions", href: "/visions" },
-  { label: "Predictions", href: "/community/predictions" },
-  { label: "Proposals", href: "/community/proposals" },
   { label: "Community", href: "/community" },
 ];
 
