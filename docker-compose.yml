@@ -234,13 +234,19 @@ services:
       - internal
 
   admin:
-    # Admin console — sector + scenario inspection + agent-runs.
-    # Same image shape as `web` but pinned to port 3100 to avoid
-    # collisions when both apps are up at once.
+    # Admin console — sector + scenario inspection + agent-runs +
+    # M48 crawler cockpit. Port 3100 to avoid colliding with `web`.
+    # Gated by the env-driven login (ADMIN_EMAIL / ADMIN_PASSWORD /
+    # ADMIN_SESSION_SECRET); without these set, every route redirects
+    # to /login which shows a "not configured" notice. `env_file`
+    # (not `${VAR:-}` interpolation) so a stray export on the host
+    # shell can't override the file values silently.
     image: tssp/admin:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: infra/docker/admin.Dockerfile
+    env_file:
+      - .env
     environment:
       # RSC / route handlers run inside the container, so address
       # sector-service / agent-orchestration by their compose hostnames
