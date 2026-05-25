@@ -7,6 +7,63 @@
 
 ---
 
+## Behavioral guidelines
+
+Tradeoff: bias toward caution over speed. For trivial tasks, use judgment.
+
+### Think before coding
+- State assumptions explicitly. If uncertain, ask.
+- Multiple interpretations? Present them — don't pick silently.
+- A simpler approach exists? Say so. Push back when warranted.
+- Unclear? Stop, name what's confusing, ask.
+
+### Simplicity first
+- Minimum code that solves the problem. Nothing speculative.
+- No features beyond the ask. No abstractions for single-use code.
+- No "flexibility" / "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- "Would a senior engineer call this overcomplicated?" If yes, rewrite.
+
+### Surgical changes
+- Touch only what the task requires. Don't "improve" adjacent code.
+- Don't refactor things that aren't broken. Match existing style.
+- Remove only the orphans **your** changes created (unused imports /
+  vars / functions). Don't delete pre-existing dead code unless asked.
+- Notice unrelated dead code → mention it, don't touch it.
+- Test: every changed line traces directly to the user's request.
+
+### Goal-driven execution
+- Turn the task into a verifiable goal before starting.
+  - "Add validation" → "Write tests for invalid inputs, make them pass."
+  - "Fix the bug" → "Write a test that reproduces it, then make it pass."
+  - "Refactor X" → "Ensure tests pass before and after."
+- Multi-step → state a brief plan with one `verify:` check per step,
+  then loop until verified.
+
+### Before every commit — MD review
+
+Read every MD file your change touches *or* that documents an area you
+touched. Three questions:
+1. Still accurate?
+2. Simpler than it needs to be? Trim — but never drop the core.
+3. Cross-references still resolve?
+
+Important MD files (review when in scope):
+- `CLAUDE.md`, `README.md`, `DESIGN.md`
+- `docs/PIVOT.md`, `docs/REFACTOR.md`, `docs/tasks/current.md`,
+  `docs/agent-capabilities.md`, `docs/adr/*.md`
+- `packages/*/README.md`, `prompts/README.md`,
+  `infra/secrets/README.md`, `tests/agent_evals/README.md`
+
+Bloat to watch for: status repeated in many places (canonical = `current.md`,
+others link), restating what the code already says, historical PR
+sequences in more than one file, growing tables when a paragraph would do.
+
+These guidelines are working if: fewer unnecessary diffs, fewer rewrites
+from overcomplication, clarifying questions arrive *before* implementation.
+
+---
+
 ## Mission
 
 > Pick any bold technology vision. We track every capability it needs,
