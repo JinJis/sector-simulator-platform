@@ -3,13 +3,34 @@ import Link from "next/link";
 import {
   fetchScenarios,
   fetchSims,
+  SECTOR_SERVICE_URL,
   type Scenario,
   type SimMetadata,
 } from "@/lib/sim-client";
 
+async function settle<T>(p: Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
+  try {
+    return { ok: true, value: await p };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export default async function ScenariosIndex() {
-  const [scenarios, sims] = await Promise.all([fetchScenarios(), fetchSims()]);
+  // Same pattern as /admin (dashboard) — render whatever we can.
+  // Scenarios live in sector-service's DB; sim metadata lives in
+  // simulation-service. Either can be down without killing the page.
+  const [scenariosR, simsR] = await Promise.all([
+    settle(fetchScenarios()),
+    settle(fetchSims()),
+  ]);
+  const scenarios: Scenario[] = scenariosR.ok ? scenariosR.value : [];
+  const sims: SimMetadata[] = simsR.ok ? simsR.value : [];
   const simByslug = new Map<string, SimMetadata>(sims.map((s) => [s.slug, s]));
+  const failures = [
+    scenariosR.ok ? null : { source: "fetchScenarios (sector-service)", error: scenariosR.error },
+    simsR.ok ? null : { source: "fetchSims (simulation-service)", error: simsR.error },
+  ].filter((x): x is { source: string; error: string } => x != null);
 
   const grouped = new Map<string, Scenario[]>();
   for (const s of scenarios) {
@@ -26,6 +47,26 @@ export default async function ScenariosIndex() {
           {scenarios.length} total · {grouped.size} sectors
         </span>
       </div>
+
+      {failures.length > 0 && (
+        <div className="mb-6 rounded-lg border border-amber-800/60 bg-amber-950/30 px-4 py-3">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-amber-200">
+            Partial data — {failures.length} upstream{" "}
+            {failures.length === 1 ? "source" : "sources"} unreachable
+          </div>
+          <ul className="mt-1 space-y-0.5 text-[11px] text-amber-100/80">
+            {failures.map((f) => (
+              <li key={f.source}>
+                <span className="text-amber-300">{f.source}</span>:{" "}
+                <span className="text-amber-200/70">{f.error}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-1 text-[10px] text-amber-200/50">
+            sector-service: {SECTOR_SERVICE_URL}
+          </div>
+        </div>
+      )}
 
       {scenarios.length === 0 && (
         <p className="rounded border border-neutral-800 bg-neutral-900/30 p-4 text-sm text-neutral-500">

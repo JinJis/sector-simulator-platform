@@ -13,17 +13,29 @@ export default async function AgentRunsIndex() {
   try {
     runs = await listAgentWorkflows({ limit: 100 });
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Classify the failure so the visible copy points at the actual
+    // missing piece instead of a generic "sector-service down".
+    const isAgentMissing =
+      msg.includes("PRECONDITION_FAILED") ||
+      msg.includes("agent-orchestration") ||
+      msg.includes("AGENT_ORCHESTRATION_URL");
+    const headline = isAgentMissing
+      ? "agent-orchestration 서비스가 연결되지 않았습니다."
+      : "sector-service에 연결할 수 없습니다.";
+    const hint = isAgentMissing
+      ? "Vertex AI 자격증명을 마운트하고 (`infra/secrets/vertex-ai-sa.json`) " +
+        "`agent-orchestration` 컨테이너를 띄우거나, sector-service의 " +
+        "AGENT_ORCHESTRATION_URL 환경변수를 가리키세요."
+      : `sector-service: ${SECTOR_SERVICE_URL}`;
     return (
       <main className="mx-auto max-w-6xl px-6 py-8">
-        <h1 className="text-xl font-semibold">Agent runs</h1>
-        <p className="mt-4 text-sm text-red-400">
-          {err instanceof Error && err.message.includes("PRECONDITION_FAILED")
-            ? "agent-orchestration service is not configured. Set AGENT_ORCHESTRATION_URL on sector-service and bring the agent-orchestration container up."
-            : "Could not reach the sector-service to list agent runs."}
-        </p>
-        <p className="mt-1 text-xs text-neutral-500">
-          {err instanceof Error ? err.message : String(err)} ({SECTOR_SERVICE_URL})
-        </p>
+        <h1 className="text-xl font-semibold text-neutral-50">Agent runs</h1>
+        <div className="mt-4 rounded-lg border border-amber-800/60 bg-amber-950/30 px-4 py-3">
+          <p className="text-sm text-amber-200">{headline}</p>
+          <p className="mt-1 text-[11px] text-amber-200/70">{hint}</p>
+          <p className="mt-2 font-mono text-[10px] text-amber-200/50">{msg}</p>
+        </div>
       </main>
     );
   }

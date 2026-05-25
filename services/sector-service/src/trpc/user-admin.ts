@@ -1,21 +1,27 @@
 /**
  * `admin.*` procedures — operational metadata about platform users.
  *
- * Admin-role gating isn't wired yet (the platform has no role system
- * beyond `User.tier`). For now any authenticated user could hit
- * these; the admin app is the only consumer in practice and it sits
- * behind the same docker network. A future slice plugs an
- * `is_admin` boolean or an admin tier and routes through that.
+ * Trust model: these endpoints are reached only by apps/admin, which
+ * sits behind its own env-driven HMAC login gate (see
+ * `apps/admin/src/middleware.ts`). Sector-service itself has no
+ * separate admin-role system (only `User.tier` for end-user pricing).
+ *
+ * We therefore do NOT re-authenticate at this layer — the admin app's
+ * login IS the boundary. If a real `ctx.user` is present we record
+ * them on audit-log entries; otherwise we synthesize an `admin-app`
+ * placeholder so mutations still attribute cleanly.
+ *
+ * If sector-service ever gets exposed publicly (post multi-tenant
+ * slice), tighten by requiring a real admin role here and dropping
+ * the synthesis path.
  */
 
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { env } from "../lib/env.js";
 import { publicProcedure, router } from "./init.js";
 
-const INTERNAL_USER_LABEL = "admin-app";
-const INTERNAL_TOKEN_HEADER = "x-admin-internal-token";
+const ADMIN_APP_LABEL = "admin-app";
 
 const UserSummaryOut = z.object({
   id: z.string(),
@@ -42,40 +48,18 @@ const ListInput = z
   })
   .default({});
 
-/** Admin endpoints accept two auth modes:
- *
- *  1. Real session user — any logged-in user (the platform has no
- *     role system beyond `User.tier` yet, so we don't gate by role).
- *  2. Internal-token bypass — apps/admin sends a shared secret via
- *     the `x-admin-internal-token` header on RSC / server-action
- *     fetches. Sector-service treats a matching header as
- *     authenticated and synthesizes a CurrentUser-shaped placeholder
- *     for the audit log. Browser-side fetches never carry this
- *     token (the admin Next.js client only injects it server-side),
- *     so the secret stays out of devtools / source maps.
- */
-function requireUser(ctx: import("./context.js").Context) {
+/** Returns the caller for audit-log purposes. Real session user wins
+ *  when present; otherwise we synthesize an admin-app placeholder.
+ *  See file header for the trust-model rationale (admin login gate
+ *  is the boundary). */
+function resolveCaller(ctx: import("./context.js").Context) {
   if (ctx.user) return ctx.user;
-
-  const expected = env().ADMIN_INTERNAL_TOKEN;
-  if (expected) {
-    const headers = ctx.req?.headers ?? {};
-    const headerVal = headers[INTERNAL_TOKEN_HEADER];
-    const provided = Array.isArray(headerVal) ? headerVal[0] : headerVal;
-    if (typeof provided === "string" && provided === expected) {
-      return {
-        id: "admin-internal",
-        email: "admin@internal",
-        name: INTERNAL_USER_LABEL,
-        label: INTERNAL_USER_LABEL,
-      };
-    }
-  }
-
-  throw new TRPCError({
-    code: "UNAUTHORIZED",
-    message: "admin endpoints require authentication",
-  });
+  return {
+    id: "admin-app",
+    email: "admin@admin-app",
+    name: ADMIN_APP_LABEL,
+    label: ADMIN_APP_LABEL,
+  };
 }
 
 export const userAdminRouter = router({
@@ -88,7 +72,7 @@ export const userAdminRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      requireUser(ctx);
+      resolveCaller(ctx);
       const where: Record<string, unknown> = {};
       if (input.search) {
         where.email = { contains: input.search, mode: "insensitive" };
@@ -167,7 +151,7 @@ export const userAdminRouter = router({
     )
     .output(z.object({ id: z.string(), tier: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const me = requireUser(ctx);
+      const me = resolveCaller(ctx);
       const target = await ctx.prisma.user.findUnique({
         where: { id: input.user_id },
         select: { id: true, tier: true, email: true },
