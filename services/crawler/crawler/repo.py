@@ -94,6 +94,13 @@ class PostgresCrawlRunRepository:
     async def close(self) -> None:
         await self._pool.close()
 
+    @property
+    def pool(self) -> asyncpg.Pool:
+        """Exposed so sibling repos (capability_reader / signal_writer)
+        share the same pool. Avoids opening a second connection
+        bucket inside one container."""
+        return self._pool
+
     async def create_queued(
         self,
         *,

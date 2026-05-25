@@ -1,5 +1,6 @@
 import { Breadcrumbs } from "@platform/ui";
 
+import { CapabilityTrigger } from "@/components/crawler/CapabilityTrigger";
 import { HelloWorldTrigger } from "@/components/crawler/HelloWorldTrigger";
 import {
   type CrawlerHealth,
@@ -76,9 +77,12 @@ export default async function CrawlerCockpitPage() {
 
       <section className="mb-6">
         <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-          Smoke trigger
+          Fetchers
         </h2>
-        <HelloWorldTrigger />
+        <div className="flex flex-col gap-2">
+          <HelloWorldTrigger />
+          <CapabilityTrigger />
+        </div>
       </section>
 
       <section>

@@ -367,6 +367,19 @@ export async function runHelloWorldFetcher(input: {
   );
 }
 
+export type CapabilityFetchResult = RouterOutput["crawler"]["runs"]["capability"];
+
+export async function runCapabilityFetcher(input: {
+  vision_slug: string;
+  capability_key: string;
+  prompt?: string;
+}): Promise<CapabilityFetchResult> {
+  return rethrow(
+    () => trpc.crawler.runs.capability.mutate(input),
+    `runCapabilityFetcher(${input.vision_slug}/${input.capability_key})`,
+  );
+}
+
 // ---------- Sector lifecycle (M21) ----------
 
 export type SectorRow = RouterOutput["sector"]["list"][number];

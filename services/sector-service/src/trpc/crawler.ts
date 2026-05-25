@@ -56,12 +56,21 @@ const HelloWorldOut = z.object({
   cached: z.boolean(),
 });
 
+const CapabilityOut = z.object({
+  run: CrawlRunOut,
+  signal_id: z.string().nullable(),
+  dr_cached: z.boolean(),
+  scoring_confidence: z.number().nullable(),
+});
+
 const CrawlerHealth = z.object({
   status: z.string(),
   now: z.string(),
   ready: z.object({
     repo: z.boolean(),
     deep_research: z.boolean(),
+    // M49a — optional so older crawler builds still validate.
+    agent_client: z.boolean().optional(),
   }),
 });
 
@@ -200,6 +209,29 @@ export const crawlerRouter = router({
             body: JSON.stringify(input),
           },
           HelloWorldOut,
+        ),
+      ),
+
+    // M49a — CapabilityFetcher: per binding capability, ask Deep
+    // Research for state-of-X, hand to SignalExtractor for per-dim
+    // scoring, upsert a Signal row.
+    capability: publicProcedure
+      .input(
+        z.object({
+          vision_slug: z.string().min(1).max(128),
+          capability_key: z.string().min(1).max(128),
+          prompt: z.string().min(1).max(4000).optional(),
+        }),
+      )
+      .output(CapabilityOut)
+      .mutation(async ({ input }) =>
+        proxy(
+          "/fetchers/capability/run",
+          {
+            method: "POST",
+            body: JSON.stringify(input),
+          },
+          CapabilityOut,
         ),
       ),
   }),

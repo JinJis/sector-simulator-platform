@@ -170,7 +170,11 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/vertex-ai-sa.json
-      # M49+ will arm the orchestrator cron via this flag. M48c is
+      # M49a — CapabilityFetcher delegates per-dim scoring to the
+      # SignalExtractor agent via HTTP. Without this, the capability
+      # endpoint returns 503.
+      AGENT_ORCHESTRATION_URL: http://agent-orchestration:8002
+      # M49f will arm the orchestrator cron via this flag. M48c is
       # trigger-only; scheduler stays off by default.
       CRAWLER_SCHEDULE: ${CRAWLER_SCHEDULE:-off}
     volumes:
@@ -180,6 +184,8 @@ services:
         condition: service_healthy
       db-migrate:
         condition: service_completed_successfully
+      agent-orchestration:
+        condition: service_started
     networks:
       - internal
 

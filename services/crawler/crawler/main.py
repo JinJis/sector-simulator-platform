@@ -1,8 +1,9 @@
 """crawler FastAPI app.
 
-Endpoints (M48c):
+Endpoints:
 - GET  /health                                  → liveness + ready flags
-- POST /fetchers/hello-world/run                → trigger smoke fetcher
+- POST /fetchers/hello-world/run                → smoke trigger (M48c)
+- POST /fetchers/capability/run                 → CapabilityFetcher (M49a)
 - GET  /jobs/runs?vision=&fetcher=&status=&limit=   → recent CrawlRuns
 - GET  /jobs/runs/{run_id}                      → single CrawlRun
 
@@ -10,13 +11,15 @@ Configuration (env):
   DATABASE_URL                  — required for non-degraded mode
   GOOGLE_APPLICATION_CREDENTIALS — Vertex AI SA JSON path
   GOOGLE_CLOUD_LOCATION         — default "global"
+  AGENT_ORCHESTRATION_URL       — SignalExtractor + ScoreUpdater base URL
+                                  (e.g. http://agent-orchestration:8002)
   CRAWLER_SCHEDULE              — set to "off" to silence the scheduler
-                                  (M49+ will register cron jobs here)
+                                  (M49f wires real cron jobs here)
   LOG_LEVEL                     — default INFO
 
-When `DATABASE_URL` is missing the service still serves /health (with
-ready=false) so docker-compose stays green during local smoke without
-a DB — the fetcher endpoints return 503.
+When `DATABASE_URL` / `AGENT_ORCHESTRATION_URL` are missing the
+service still serves /health (with ready=false) so docker-compose
+stays green during local smoke — the fetcher endpoints return 503.
 """
 
 from __future__ import annotations
@@ -32,6 +35,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from agent_tools import DeepResearchClient
+from crawler.agents import (
+    AgentClient,
+    HttpAgentClient,
+    default_agent_orchestration_url,
+)
+from crawler.db.capability_reader import (
+    CapabilityReader,
+    PostgresCapabilityReader,
+)
+from crawler.db.signal_writer import PostgresSignalWriter, SignalWriter
+from crawler.fetchers.capability import (
+    CapabilityFetchRequest,
+    CapabilityFetcherError,
+    run_capability_fetcher,
+)
 from crawler.fetchers.hello_world import (
     HelloWorldRunRequest,
     run_hello_world,
@@ -93,6 +111,19 @@ class HelloWorldTriggerOut(BaseModel):
     cached: bool
 
 
+class CapabilityTriggerBody(BaseModel):
+    vision_slug: str = Field(..., min_length=1, max_length=128)
+    capability_key: str = Field(..., min_length=1, max_length=128)
+    prompt: str | None = Field(default=None, max_length=4000)
+
+
+class CapabilityTriggerOut(BaseModel):
+    run: CrawlRunOut
+    signal_id: str | None
+    dr_cached: bool
+    scoring_confidence: float | None
+
+
 # --------------------------------------------------------------------------
 # Bootstrap helpers (separated so tests can inject)
 # --------------------------------------------------------------------------
@@ -152,10 +183,38 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
     if not hasattr(app.state, "deep_research"):
         app.state.deep_research = _build_deep_research_client()
 
+    # M49a — share the asyncpg pool across the sibling repos so the
+    # crawler stays at a single connection bucket per container.
+    if not hasattr(app.state, "capability_reader"):
+        repo = getattr(app.state, "repo", None)
+        if isinstance(repo, PostgresCrawlRunRepository):
+            app.state.capability_reader = PostgresCapabilityReader(repo.pool)
+        else:
+            app.state.capability_reader = None
+
+    if not hasattr(app.state, "signal_writer"):
+        repo = getattr(app.state, "repo", None)
+        if isinstance(repo, PostgresCrawlRunRepository):
+            app.state.signal_writer = PostgresSignalWriter(repo.pool)
+        else:
+            app.state.signal_writer = None
+
+    if not hasattr(app.state, "agent_client"):
+        base = default_agent_orchestration_url()
+        if base:
+            app.state.agent_client = HttpAgentClient(base_url=base)
+        else:
+            log.warning(
+                "crawler: AGENT_ORCHESTRATION_URL unset — CapabilityFetcher "
+                "will return 503 (no SignalExtractor reachable)"
+            )
+            app.state.agent_client = None
+
     log.info(
-        "crawler ready (repo=%s · deep_research=%s)",
+        "crawler ready (repo=%s · deep_research=%s · agent_client=%s)",
         "on" if getattr(app.state, "repo", None) is not None else "off",
         "on" if getattr(app.state, "deep_research", None) is not None else "off",
+        "on" if getattr(app.state, "agent_client", None) is not None else "off",
     )
     try:
         yield
@@ -206,6 +265,36 @@ def create_app() -> FastAPI:
             )
         return dr
 
+    def _require_capability_reader() -> CapabilityReader:
+        reader = getattr(app.state, "capability_reader", None)
+        if reader is None:
+            raise HTTPException(
+                status_code=503,
+                detail="crawler unavailable — capability_reader not configured (needs DATABASE_URL)",
+            )
+        return reader
+
+    def _require_signal_writer() -> SignalWriter:
+        writer = getattr(app.state, "signal_writer", None)
+        if writer is None:
+            raise HTTPException(
+                status_code=503,
+                detail="crawler unavailable — signal_writer not configured (needs DATABASE_URL)",
+            )
+        return writer
+
+    def _require_agent_client() -> AgentClient:
+        client = getattr(app.state, "agent_client", None)
+        if client is None:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "crawler unavailable — AGENT_ORCHESTRATION_URL not configured "
+                    "(SignalExtractor unreachable)"
+                ),
+            )
+        return client
+
     @app.get("/health")
     def health() -> dict[str, Any]:
         return {
@@ -214,8 +303,45 @@ def create_app() -> FastAPI:
             "ready": {
                 "repo": getattr(app.state, "repo", None) is not None,
                 "deep_research": getattr(app.state, "deep_research", None) is not None,
+                "agent_client": getattr(app.state, "agent_client", None) is not None,
             },
         }
+
+    @app.post("/fetchers/capability/run", response_model=CapabilityTriggerOut)
+    async def capability_run(body: CapabilityTriggerBody) -> CapabilityTriggerOut:
+        repo = _require_repo()
+        dr = _require_deep_research()
+        reader = _require_capability_reader()
+        writer = _require_signal_writer()
+        agent = _require_agent_client()
+        log.info(
+            "crawler: capability triggered vision=%s cap=%s",
+            body.vision_slug,
+            body.capability_key,
+        )
+        try:
+            out = await run_capability_fetcher(
+                CapabilityFetchRequest(
+                    vision_slug=body.vision_slug,
+                    capability_key=body.capability_key,
+                    prompt=body.prompt,
+                ),
+                runs_repo=repo,
+                capability_reader=reader,
+                signal_writer=writer,
+                deep_research=dr,
+                agent_client=agent,
+            )
+        except CapabilityFetcherError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return CapabilityTriggerOut(
+            run=CrawlRunOut.from_row(out.run),
+            signal_id=out.signal_id,
+            dr_cached=out.deep_research.cached,
+            scoring_confidence=out.scoring.scoring.confidence
+            if out.scoring is not None
+            else None,
+        )
 
     @app.post("/fetchers/hello-world/run", response_model=HelloWorldTriggerOut)
     async def hello_world_run(body: HelloWorldTriggerBody) -> HelloWorldTriggerOut:
