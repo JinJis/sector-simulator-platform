@@ -1,138 +1,270 @@
 # Agent capabilities inventory
 
-플랫폼이 가진 모든 에이전트(Anthropic Claude 기반) 능력을 한 곳에 정리한 문서입니다.
-M25 시점에 작성 (2026-05-21). 사용자 노출 여부 / 모델 / 평균 비용 / 워크플로 상태를 함께 표기합니다.
+플랫폼이 가진 모든 에이전트(LLM 기반 워크플로) 능력을 한 곳에 정리한
+문서입니다. Vision Builder + signal pipeline + legacy sim-builder
+3개 트랙으로 나뉘어 있어요. **Last updated**: 2026-05-25 (post-M41).
 
-## 1. Shipped & user-facing (M25부터 일반 사용자 노출)
+소스 진실:
+- 워크플로 구현 — `services/agent-orchestration/agent_orchestration/workflows.py`
+- Conductor + 체이닝 — `services/agent-orchestration/agent_orchestration/conductor.py`
+- 검증 게이트 — `services/agent-orchestration/agent_orchestration/validation_gate.py`
+- Pydantic 스키마 — `services/agent-orchestration/agent_orchestration/schemas.py`
+- 프롬프트 — `prompts/*.md` (versioned)
+- LLM 클라이언트 + 라우팅 — `packages/agent-tools/agent_tools/llm_client.py`
 
-### 1.1 `DecompositionWorkflow`
+LLM 호출은 모두 `LLMClient`를 통과합니다. Vertex AI 한 SA가 Claude
+(opus 4.7)와 Gemini (3.5-flash / -flash-lite)를 동시에 인증해요.
+Prompt cache + Pydantic structured output + cost meter가 client-side에
+빌트인. 자세한 라우팅은 [CLAUDE.md "LLM auth + tier routing"](../CLAUDE.md#llm-auth--tier-routing-m35) 참조.
 
-| | |
-|---|---|
-| **kind** | `decomposition` |
-| **모델** | Claude **Opus 4.7** (adaptive thinking) |
-| **인풋** | 자연어 산업 설명 (10–4000자) + 선택적 reference_data (≤20000자) |
-| **아웃풋 (Pydantic)** | `Decomposition` — drivers / intermediates / outputs + horizon + slug |
-| **HTTP** | `POST /workflows/decompose` (agent-orchestration:8002) |
-| **tRPC** | `agent.startDecomposition` (sector-service) |
-| **평균 비용** | $0.10 – $0.30 / 호출 |
-| **소요 시간** | 약 30s – 90s |
-| **사용자 진입** | `/propose` (단독으로는 노출 안 됨 — 아래 1.3 의 일부로 호출됨) |
-| **프롬프트** | [`prompts/decomposition.md`](../prompts/decomposition.md) |
+---
 
-### 1.2 `EdgeInferenceWorkflow`
+## 1. Vision Builder (M41) ★ — 일등 시민
 
-| | |
-|---|---|
-| **kind** | `edge_inference` |
-| **모델** | Claude **Opus 4.7** (adaptive thinking) |
-| **인풋** | 완성된 `Decomposition` 객체 |
-| **아웃풋 (Pydantic)** | `EdgeInferenceResult` — edges + intermediate formulas + output formulas + assumptions |
-| **HTTP** | (단독 endpoint 없음 — `ProposeSectorWorkflow` 내부에서 호출) |
-| **평균 비용** | $0.10 – $0.30 / 호출 |
-| **소요 시간** | 약 30s – 90s |
-| **사용자 진입** | `/propose` (1.3 의 일부) |
-| **프롬프트** | [`prompts/edge-inference.md`](../prompts/edge-inference.md) |
+자연어 한 문장으로 새 비전을 만드는 메인 entry. Admin이
+`/admin/visions/new`에서 발사하고, Conductor가 체인을 돌려 결과를
+드래프트로 보여줍니다.
 
-### 1.3 `ProposeSectorWorkflow` ★ (사용자가 직접 호출하는 메인 entry)
+```
+PromptValidator (haiku)
+  → VisionResearch (sonnet)
+  → VisionDecomposition (opus)
+  → DataSourceSelector (sonnet)
+  → ValidationGate (DAG + FK + weight-sum)
+  → admin checkpoint
+  → tRPC commit (single Prisma transaction)
+```
 
-| | |
-|---|---|
-| **kind** | `propose_sector` |
-| **체인** | `DecompositionWorkflow` → `EdgeInferenceWorkflow` |
-| **모델** | Opus 4.7 × 2 (양쪽 stage 모두) |
-| **인풋** | 자연어 설명 + 선택 reference_data |
-| **아웃풋** | `ProposeSectorResult` (`decomposition` + `edge_inference` composite) |
-| **HTTP** | `POST /workflows/propose-sector` |
-| **tRPC** | `agent.startProposeSector` |
-| **평균 비용** | $0.20 – $0.60 / 호출 |
-| **소요 시간** | 약 60s – 180s |
-| **사용자 진입** | `/propose` → 4-step UX (Prompt → Working → Result → Activate) |
-| **베타 정책** | 가입자 전원 무료. 정식 출시 후 ★ Premium 전용으로 전환 예정. |
-
-### 1.4 `sector.proposeFromAgent` → 드래프트 섹터 생성
+### 1.1 `PromptValidatorWorkflow` (stage 1)
 
 | | |
 |---|---|
-| **종류** | tRPC mutation (sector-service) |
-| **인풋** | 완료된 `propose_sector` (또는 `decomposition`) 워크플로의 id |
-| **동작** | sectors row + graph_nodes + graph_edges (agent-inferred) 를 트랜잭션으로 생성 + audit log |
-| **권한** | 로그인 사용자 (M25 부터 `sectors.created_by_user_id = ctx.user.id` 기록) |
-| **사용자 진입** | `/propose` 의 "내 시뮬레이터로 만들기 →" 버튼 |
+| **tier** | haiku (gemini-3.5-flash-lite) |
+| **input** | 자연어 prompt (10–800자) |
+| **output** | `PromptValidation` — verdict (`accept` / `reject`) + reason + (선택) suggested rewrite |
+| **prompt** | [`prompts/prompt_validator.md`](../prompts/prompt_validator.md) |
+| **목적** | "AI가 좋네요" 같은 무내용 prompt를 일찍 거름. Hallucination 비용 절감 |
 
-### 1.5 `sector.activate / archive / toDraft / deleteMine`
-
-| | |
-|---|---|
-| **종류** | tRPC mutations (sector-service) |
-| **권한** | activate/archive/toDraft = 모두; deleteMine = 본인 생성 섹터만 |
-| **동작** | 상태 트랜지션 + audit log + simulation-service `/sims/<slug>/reload` 캐시 무효화 |
-| **사용자 진입** | `/propose` 완료 → 자동 activate; `/my-sectors` → delete |
-
-### 1.6 `GenericDagSim` 런타임
+### 1.2 `ResearchWorkflow` (stage 2)
 
 | | |
 |---|---|
-| **종류** | Python 클래스 (simulation-service) |
-| **목적** | 에이전트 생성 섹터를 실제로 simulate (`simulate()`, `sensitivity()`, `live`) |
-| **방식** | DB 의 graph_nodes / graph_edges / agent_workflows.output (formulas) 을 asyncpg 로 읽어 simpleeval 로 평가 |
-| **안전성** | simpleeval whitelist (산술 + min/max/sqrt/exp/log/pow/abs/round + pi/e/MMBtu/MWh). 차단: dunder, `__import__`, lambda, comprehension. 비유한 결과 거부 |
-| **edge weight** | 모든 변수 reference 에 곱해짐 — M19 hybrid weights 가 에이전트 섹터에도 동일 적용 |
-| **사용자 진입** | activate 된 에이전트 섹터의 모든 페이지가 자동 사용 |
+| **tier** | sonnet (gemini-3.5-flash) |
+| **input** | 검증된 vision prompt |
+| **output** | `ResearchBrief` — numeric anchors + citations + key references |
+| **prompt** | [`prompts/research.md`](../prompts/research.md) |
+| **adaptive_thinking** | True (dynamic budget) |
 
-## 2. 작성된 프롬프트 (아직 워크플로 미연결)
-
-| 프롬프트 | 모델 (예정) | 출력 schema (예정) | 상태 |
-|---|---|---|---|
-| [`prompts/research.md`](../prompts/research.md) | Sonnet 4.6 | `ResearchBrief` (numeric anchors + citations) | 워크플로 미작성 |
-| [`prompts/driver-inference.md`](../prompts/driver-inference.md) | Sonnet 4.6 | `DriverInferenceResult` (calibrated defaults / ranges / history) | 워크플로 미작성 |
-| [`prompts/code-gen.md`](../prompts/code-gen.md) | Sonnet 4.6 | `CodeGenResult` (`SimulationBase` subclass Python) | 워크플로 미작성 |
-| [`prompts/code-review.md`](../prompts/code-review.md) | Sonnet 4.6 | `CodeReviewResult` (findings + severity) | 워크플로 미작성 |
-
-이 4개는 미래 풀파이프라인(`Research → Decomposition → DriverInference → EdgeInference → CodeGen → CodeReview`) 의 부품으로 남아 있으며, 정식 출시 단계에서 활성화 예정입니다. 현재는 plain Markdown 프롬프트만 존재.
-
-## 3. 인프라 & 운영
+### 1.3 `VisionDecompositionWorkflow` (stage 3) ★ 핵심
 
 | | |
 |---|---|
-| **모델 routing** | `agent_tools/llm_client.py` 의 tier 시스템 — `"haiku"` / `"sonnet"` / `"opus"` 를 canonical 모델 ID 로 매핑. M25 시점에는 Opus 만 사용 |
-| **Prompt caching** | 모든 호출에 cache_control: ephemeral. 마지막 system block 가 캐시 |
-| **Adaptive thinking** | 명시적 opt-in. Decomposition / EdgeInference 가 사용 |
-| **Cost meter** | 호출당 토큰 + USD 가 `CostMeter` 에 기록 → workflow record 의 `cost_usd` 에 roll-up |
-| **Persistence** | `agent_workflows` Prisma 테이블에 모든 워크플로 입력/출력/cost 영구 저장 |
-| **Dangling sweep** | 프로세스 재시작 시 `pending` / `running` 5분 이상 stale → `failed` 마킹 |
-| **Sandbox (Modal/E2B)** | **미구현**. 에이전트 생성 Python 실행은 아직 안 함. GenericDagSim 의 simpleeval 평가가 우회 솔루션 |
+| **tier** | opus (claude-opus-4-7), adaptive thinking |
+| **input** | `ResearchBrief` + 원본 prompt |
+| **output** | `VisionDecomposition` — 8-12개의 `CapabilityDraft` + `RiskDraft[]` + `ActorDraft[]` + 메타데이터 |
+| **prompt** | [`prompts/vision_decomposition.md`](../prompts/vision_decomposition.md) |
+| **검증** | 각 capability는 4-dim 초기 점수 + weight + dependencies + 출처 URL을 반드시 가짐. LLM이 fabricate 못하도록 `source_ref` 강제 |
 
-## 4. 사용자 노출 매트릭스
+### 1.4 `DataSourceSelectorWorkflow` (stage 4)
+
+| | |
+|---|---|
+| **tier** | sonnet |
+| **input** | `VisionDecomposition` |
+| **output** | `DataSourceSelection` — 각 capability별 추적 키워드 (arXiv / USPTO / NewsAPI) |
+| **prompt** | [`prompts/data_source_selector.md`](../prompts/data_source_selector.md) |
+| **저장** | `Capability.signal_keywords` JSON 컬럼에 영구 기록 |
+
+### 1.5 `ValidationGate` (stage 5 — non-LLM)
+
+`agent_orchestration/validation_gate.py`. LLM 출력을 받아 다음을 검사:
+- Capability dependency 그래프에 cycle 없음 (위상 정렬)
+- weight 합이 0.95 ~ 1.05
+- 모든 `affected_capability_keys`가 실제 capability key를 가리킴 (FK)
+- 4-dim 초기 점수가 0-100 범위 안
+- Risk severity / likelihood / time_horizon이 enum 값
+실패하면 admin UI에 친화적 에러로 노출.
+
+### 1.6 `VisionBuilderConductor`
+
+`agent_orchestration/conductor.py`. 위 5단계를 orchestration하고 각
+stage의 cost / tokens / 소요 시간을 `agent_workflows` Prisma 테이블에
+기록합니다. 실패하면 status=`failed`로 마킹.
+
+### 1.7 `vision.commitProposal` (tRPC)
+
+`services/sector-service/src/trpc/vision.ts`. Conductor 결과를 받아
+한 Prisma transaction으로 `Sector` + `Capability[]` +
+`CapabilityScore[]` + `Risk[]` + `Actor[]` + `VisionActor[]` +
+`CapabilityActor[]` + `VisionFeasibility` snapshot을 commit합니다.
+모든 mutation은 `audit_logs`에 기록.
+
+### 1.8 Eval set (M41e)
+
+`tests/agent_evals/` — 5개 canonical vision으로 회귀 테스트:
+SDC / Fusion / Quantum / Humanoid / mRNA. Offline (canned response)이
+기본, `GEMINI_EVAL_LIVE=1` 환경변수로 실제 API 호출.
+
+**평균 비용**: $1.50 – $4.00 / 새 vision (Research + Decomposition이 대부분).
+**소요 시간**: 약 60s – 180s (Decomposition stage가 병목).
+
+---
+
+## 2. Signal pipeline (M39 + M40)
+
+매일 들어오는 외부 신호(arXiv / USPTO / NewsAPI)가 capability score를
+어떻게 움직이는지 정하는 자동화 트랙.
+
+### 2.1 `SignalExtractorWorkflow` (M39b)
+
+| | |
+|---|---|
+| **tier** | haiku |
+| **input** | raw signal payload (title / abstract / source URL / source kind) + 후보 capabilities + keywords |
+| **output** | `SignalScoring` — `capability_id` + 4-dim deltas + confidence + (선택) `actor_id` (M45b) |
+| **prompt** | [`prompts/signal_extractor.md`](../prompts/signal_extractor.md) |
+| **트리거** | `data-pipeline` 의 `signal_ingest` job이 새 signal을 가져올 때마다 |
+| **confidence gating** | confidence < 0.8이면 actor 태깅 생략, score delta는 weight로 감쇠 |
+
+### 2.2 `CapabilityScoreUpdaterWorkflow` (M40b)
+
+| | |
+|---|---|
+| **tier** | sonnet |
+| **input** | capability current state + 새로 들어온 `SignalScoring[]` |
+| **output** | `CapabilityScoreUpdate` — 새 4-dim score + rationale + source refs |
+| **prompt** | [`prompts/score_updater.md`](../prompts/score_updater.md) |
+| **트리거** | daily `recompute_feasibility` cron (M40) |
+| **결과** | 새 `CapabilityScore` row 추가 (시계열), 이전 row의 `is_current=false`로 flip |
+
+### 2.3 Feasibility aggregation (non-LLM, M40)
+
+LLM이 아닌 결정적 수학:
+- `simulation_service/feasibility/aggregator.py` — capability 4-dim →
+  단일 score (weighted mean + 신뢰 밴드)
+- `simulation_service/feasibility/vision_aggregator.py` — capability
+  scores → vision composite. **Liebig binding constraint**: 가장 낮은
+  capability가 vision 상한을 결정 (binding capability에 ⚠ 배지).
+- `simulation_service/feasibility/eta.py` — 현재 추세에서 0-100 도달
+  연도 추정 (median + P10-P90 분포)
+- `simulation_service/feasibility/delta.py` — 90일 변동
+
+`feasibility.recompute` tRPC procedure가 위 모듈을 호출하고
+`VisionFeasibility` row를 저장합니다. Daily cron이 모든
+vision에 대해 자동 실행.
+
+---
+
+## 3. Legacy sim-builder track (pre-pivot)
+
+사용자가 직접 자기 시뮬레이터를 만드는 옛 entry. M37 이후
+Vision Builder로 무게 중심이 옮겨갔지만, agent-generated sector를
+Playground에서 돌리는 인프라는 유지됩니다.
+
+### 3.1 `DecompositionWorkflow`
+
+| | |
+|---|---|
+| **tier** | opus (adaptive thinking) |
+| **input** | 자연어 산업 설명 (10–4000자) + 선택 reference_data |
+| **output** | `Decomposition` — drivers / intermediates / outputs + horizon + slug |
+| **prompt** | [`prompts/decomposition.md`](../prompts/decomposition.md) |
+
+### 3.2 `EdgeInferenceWorkflow`
+
+| | |
+|---|---|
+| **tier** | opus |
+| **input** | `Decomposition` |
+| **output** | `EdgeInferenceResult` — edges + intermediate formulas + output formulas + assumptions |
+| **prompt** | [`prompts/edge-inference.md`](../prompts/edge-inference.md) |
+
+### 3.3 `ProposeSectorWorkflow`
+
+`DecompositionWorkflow` → `EdgeInferenceWorkflow` 체인. 사용자 entry는
+`/propose` (legacy UI는 M43 cleanup에서 삭제됐지만 워크플로 자체와
+tRPC `agent.startProposeSector`는 남아 있어 admin에서 호출 가능).
+
+### 3.4 `DriverInferenceWorkflow` / `CodeGenWorkflow` / `CodeReviewWorkflow`
+
+전체 파이프라인 (Research → Decomposition → DriverInference →
+EdgeInference → CodeGen → CodeReview) 의 부품. `FullPipelineWorkflow`로
+묶여 있지만 사용자 노출은 보류. 향후 Vision Builder의 capability
+scoring code 생성과 연결될 수 있어요. 현재는 `GenericDagSim` runtime이
+simpleeval 기반 formula 평가로 우회.
+
+### 3.5 `GenericDagSim` runtime (simulation-service)
+
+| | |
+|---|---|
+| **목적** | 에이전트가 생성한 섹터를 실제로 simulate |
+| **방식** | DB의 `graph_nodes` / `graph_edges` / `agent_workflows.output`(formulas)을 asyncpg로 읽어 simpleeval로 평가 |
+| **안전성** | whitelist (산술 + min/max/sqrt/exp/log/pow/abs/round + 상수). 차단: dunder / `__import__` / lambda / comprehension. 비유한 결과 거부 |
+| **사용자 진입** | activate된 에이전트 섹터의 모든 페이지가 자동 사용. Playground sub-tab을 통해 표시 |
+
+---
+
+## 4. 인프라 & 운영
+
+| | |
+|---|---|
+| **모델 routing** | `agent_tools/llm_client.py` — `haiku` / `sonnet` / `opus` tier를 Claude opus 4.7 / Gemini 3.5-flash / -flash-lite로 매핑. Vertex AI 한 SA가 양쪽 인증 |
+| **Prompt caching** | 모든 호출에 `cache_control: ephemeral`. system block만 캐시 |
+| **Adaptive thinking** | 명시적 opt-in. VisionDecomposition / VisionResearch가 사용 |
+| **Structured output** | Gemini는 native `response_schema`, Claude는 forced `tool_choice` 트릭. 양쪽 Pydantic으로 validate |
+| **Cost meter** | 호출당 토큰 + USD가 `CostMeter`에 기록 → workflow record의 `cost_usd` 컬럼에 roll-up |
+| **Persistence** | `agent_workflows` Prisma 테이블에 모든 워크플로 입력 / 출력 / cost / status 영구 저장 |
+| **Dangling sweep** | 프로세스 재시작 시 `pending` / `running` 상태로 5분 이상 stale → 자동 `failed` 마킹 |
+| **Sandbox (Modal/E2B)** | **미구현 (M28b deferred)**. LLM이 생성한 Python을 직접 실행하지 않음. `GenericDagSim`의 simpleeval 평가가 우회 솔루션 |
+
+---
+
+## 5. 사용자 노출 매트릭스
 
 | 기능 | Free 사용자 (베타) | Free 사용자 (정식) | Premium |
 |---|---|---|---|
-| 3 기본 섹터 탐색 (메모리 · 우주 · SOFC) | ✓ | ✓ | ✓ |
-| 종목 그리드 + 30일 projection | ✓ | ✓ | ✓ |
-| 관심 종목 (★) | ✓ | ✓ | ✓ |
-| 종목 vs 종목 비교 | ✓ | ✓ | ✓ |
-| 시뮬레이션 슬라이더 | ✓ | ✓ | ✓ |
-| 인과 그래프 편집 (edge weight) | ✓ | ✓ | ✓ |
+| 3 기본 비전 탐색 (SDC · Memory · SOFC) | ✓ | ✓ | ✓ |
+| 시뮬레이션 슬라이더 (Playground) | ✓ | ✓ | ✓ |
 | 시나리오 저장 / 공유 | ✓ | ✓ | ✓ |
-| **`/propose` 에이전트로 시뮬레이터 생성** | ✓ | ✗ | ✓ |
-| **`/my-sectors` 내가 만든 시뮬레이터** | ✓ | (Premium-only sectors) | ✓ |
-| Agent 실행 우선순위 / quota | (공용 queue) | — | (전용 queue · M25+ 향후) |
-| 추후 추가 기능 (research / driver-inference / code-gen / code-review) | — | — | ✓ (출시 시) |
+| Community 3.0 (proposal vote / prediction) | ✓ | ✓ | ✓ |
+| **Vision Builder (admin)** | (admin only) | (admin only) | (admin only) |
+| **legacy `/propose` agent sim 생성** | ✓ (workflow) | ✗ | ✓ |
+| Agent 실행 우선순위 | (공용 queue) | — | (전용 queue, 향후) |
 
-베타 종료 시점에 free 사용자에게 안내 메일 발송 + settings 페이지의 Premium 업그레이드 CTA 가 실제 결제로 연결되도록 전환 예정.
+베타 종료 시점에 free 사용자에게 안내 메일 + settings 페이지의 Premium
+CTA가 실제 Stripe 결제로 연결되도록 전환 예정. 베타 동안은 결제가
+`ENABLE_BILLING=false`로 꺼져 있어요.
 
-## 5. 보안 / 안전 정책
+---
 
-- **에이전트 생성 코드는 절대 sandbox 밖에서 실행하지 않음** (현재는 Python code-gen 미구현 → 해당 없음).
-- **GenericDagSim의 formula 평가**는 simpleeval 기반 — 산술/내장 함수 whitelist만 허용, dunder/import/lambda/comprehension은 모두 차단.
-- **모든 mutation은 audit_logs 에 기록**. agent → sector 변환 → activate / archive 모든 단계가 trace 가능.
-- **사용자별 비용 제한**은 아직 미구현. 정식 출시 시 monthly budget / rate limit 도입 예정.
-- **데이터 출처(provenance)**는 in-code 섹터에만 적용. 에이전트 생성 섹터의 출처 부착은 `research.md` 워크플로 활성화 시 자동화.
+## 6. 보안 / 안전 정책
 
-## 6. 향후 로드맵
+- **LLM이 생성한 코드는 sandbox 밖에서 실행 금지** (현재는 Python
+  code-gen 미작동 → 해당 없음). Modal / E2B sandbox는 M28b로 deferred.
+- **GenericDagSim의 formula 평가**는 simpleeval 기반 — 산술 / 내장 함수
+  whitelist만 허용. dunder / import / lambda / comprehension은 모두
+  차단.
+- **모든 mutation은 `audit_logs`에 기록**. agent → vision 변환,
+  proposal apply, activate / archive 모든 단계가 추적 가능.
+- **모든 데이터 포인트에 `source_url` + `timestamp` + `confidence`**.
+  LLM이 숫자를 fabricate하지 못하도록 Pydantic 스키마에서 `source_ref`
+  강제. Capability rationale + Signal extraction 모두 적용.
+- **사용자별 비용 제한**: `AgentBudget` 시스템이 monthly $USD 한도와
+  동시 실행 한도를 시행. 베타 동안은 한도가 0이라 free queue 공용.
 
-1. **`ResearchWorkflow` 활성화** — 자연어 prompt 받으면 Gemini Deep Search 로 numeric anchor + citations 수집 → DecompositionRequest 의 reference_data 로 자동 주입.
-2. **`DriverInferenceWorkflow` 활성화** — Decomposition 의 drivers 에 caliberated defaults / ranges / 분기별 history / source URLs 자동 부착.
-3. **`CodeGenWorkflow` + `CodeReviewWorkflow` 체인** — GenericDagSim 의 simpleeval 한계를 넘어 진짜 Python `SimulationBase` subclass 생성 → Modal/E2B 샌드박스 실행.
-4. **Pricing & quota wiring** — `user.tier` 기반 hard gate + monthly budget + rate limit.
-5. **모델 router 자동 최적화** — 비용 / latency / 정확도 trade-off 에 따라 Haiku ↔ Sonnet ↔ Opus 동적 선택.
+---
+
+## 7. 향후 로드맵
+
+1. **M44 — Fusion Power second vision**: Vision Builder가 새 비전에서
+   잘 작동하는지 first real pressure test.
+2. **M46e — Admin proposal queue 1-click apply**: 커뮤니티 proposal을
+   한 번에 적용. 각 proposal kind별 `proposal-applier` 모듈이 필요.
+3. **M28b — Modal / E2B sandbox**: agent가 만든 capability scoring
+   code를 실제로 격리 실행 (현재는 simpleeval로 우회).
+4. **Observability — LangSmith / Helicone**: 각 워크플로의 트레이스를
+   기록해서 어떤 stage에서 시간 / 비용이 가장 많이 나가는지 가시화.
+5. **Pricing & quota wiring**: `user.tier` 기반 hard gate +
+   monthly budget + rate limit. Stripe 활성화는 M44 이후.
+6. **모델 router 자동 최적화**: 비용 / latency / 정확도 trade-off에
+   따라 haiku ↔ sonnet ↔ opus 동적 선택.

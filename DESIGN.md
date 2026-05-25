@@ -1,15 +1,17 @@
 # DESIGN.md — Vision Feasibility Monitor
 
-**Owner**: Ayoung · **Last updated**: 2026-05-23 (pivot rewrite)
+**Owner**: Ayoung · **Last updated**: 2026-05-25.
 
 > 운영/개발 컨텍스트는 [CLAUDE.md](./CLAUDE.md). 전략 메모는
 > [docs/PIVOT.md](./docs/PIVOT.md). 파일별 refactor inventory는
 > [docs/REFACTOR.md](./docs/REFACTOR.md). 현재 작업은
-> [docs/tasks/current.md](./docs/tasks/current.md).
+> [docs/tasks/current.md](./docs/tasks/current.md). 에이전트 인벤토리는
+> [docs/agent-capabilities.md](./docs/agent-capabilities.md).
 >
-> M36-M47 pivot 진행 중. 이 문서는 *durable strategic content*만 유지 —
-> 로드맵 / business model / IA sitemap / equities 등 superseded 섹션은
-> 통째로 삭제됐고 git history에 보존됨. PIVOT.md를 first read로.
+> M36 → M43 + M45a/b + M46a/b/c ✅ shipped. M44 + M46d/e/f + M47 in
+> flight. 이 문서는 *durable strategic content*만 유지 — 로드맵 /
+> business model / IA sitemap / equities 등 superseded 섹션은 통째로
+> 삭제됐고 git history에 보존됨. PIVOT.md를 first read로.
 
 ---
 
@@ -99,44 +101,60 @@ ScoreUpdaterAgent (sonnet) → CapabilityScore time series → VisionAggregator
 
 Anchored to milestones — see [docs/tasks/current.md](./docs/tasks/current.md).
 
-### F1. Vision creation (admin, M41+)
-Natural-language vision question → Vision Builder Conductor →
-research → capability tree → actor list → risk drafts → scoring code
-→ admin approval → live. Cost target: < $5 per new vision.
+### F1. Vision creation (M41 ✅)
+Natural-language vision question → Vision Builder Conductor
+(PromptValidator → Research → VisionDecomposition → DataSourceSelector
+→ ValidationGate) → admin approval → tRPC commit. Cost target met
+on shipped 5-vision eval set (~$2 / vision). Sandbox for scoring-code
+execution remains deferred (M28b).
 
-### F2. Signal ingest (M39+)
+### F2. Signal ingest (M39 ✅, M40 ✅)
 - arXiv (papers) — daily, free
 - USPTO PatentsView (patents) — daily, free
 - NewsAPI.org (news) — daily, free tier
 - Future: KIPO patents, government RSS, social listening
-- Each signal → ExtractorAgent → per-dim deltas + actor tags + confidence
+- Each signal → SignalExtractor (haiku) → per-dim deltas + actor tags +
+  confidence → ScoreUpdater (sonnet) → CapabilityScore time series →
+  daily `recompute_feasibility` cron
 
-### F3. The Hero (M37 ✅)
+### F3. The Hero (M37 ✅ → polish)
 One screen per vision; 5-second comprehension. FeasibilityGauge +
-trajectory + ETA window + capability cards + economics curve + risk
-board + live signal feed. Sub-nav drills into 7 sub-pages.
+trajectory + ETA window + capability cards + actors band + economics
+curve + risk board + live signal feed. Sub-nav drills into 8 sub-pages
+(Overview / Capabilities / Actors / Signals / Risks / Economics /
+Playground / Sources).
 
-### F4. Playground (M37 ✅ → M42)
-The original simulator demoted to a sub-tab. User moves driver
-sliders; M42 adds a WhatIfFeasibility callout showing how the index
-shifts with current assumptions.
+### F4. Playground (M37 ✅ → M42 ✅)
+Simulator as a sub-tab. Driver sliders + driver→capability badges +
+WhatIfFeasibility callout above the sim chart showing how the index
+would shift under the current assumptions (client-side Liebig
+aggregator mirrors `simulation_service/feasibility/`).
 
-### F5. Provenance (M36 ✅ ongoing)
+### F5. Provenance (ongoing, foundational)
 Every number on the Hero drills to source. `Signal.source_url` is
-mandatory. Capability rationale references sources. No hallucinated
-numbers.
+mandatory. Capability rationale references sources. Pydantic enforces
+`source_ref` on every LLM-generated draft.
 
-### F6. Community 2.0 (M46+)
-Per-vision proposal flow (ADD_ACTOR / ADD_DATA_SOURCE /
-ADD_CAPABILITY / REVISE_CAPABILITY_SCORE / FLAG_SIGNAL / REWORD_RISK /
-ADD_RISK / ADD_NEW_VISION). Threshold-driven admin queue.
-Approve → mutation applies + audit log linkage. Wikipedia-meets-
-Polymarket; community curation as moat.
+### F6. Community 3.0 (M46 train)
+Per-vision proposal flow (`add_driver / add_equity / add_capability /
+add_risk / add_actor / add_signal_source / edit / other`) with vote +
+admin queue + per-kind applier. Plus tiered predictions (Easy /
+Medium / Hard auto-assigned by horizon × spread × volatility,
+auto-resolved against EquityQuote close) and reputation tiers + Follow
+graph + `/u/[id]` profiles. M46a/b/c ✅ shipped; M46d (evidence
+sources) + M46e (admin queue) + M46f (per-sector tab) pending.
 
 ### F7. Backtest harness (deferred, M31 reframed)
 Vision feasibility backtest — "what did we score this capability 12mo
 ago vs. how did it actually evolve?" The original equity-price
 backtest is dropped with the pivot.
+
+### F8. i18n + theme (shipped polish slice)
+Cookie-backed ko/en (ko default) and dark/light/system theme, both
+mirrored on `User.locale` / `User.theme` for cross-device sync.
+Translation registry at `apps/web/src/lib/i18n/dict.ts`; tone target
+is natural-friendly 존댓말 in Korean, conversational in English. Not
+formal translation-ese in either.
 
 ---
 

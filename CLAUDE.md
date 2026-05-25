@@ -19,23 +19,36 @@
 - **Capability** = 비전을 구성하는 기술/경제/규제/공급 요건 (4-dim score).
 - **Signal** = 매일 들어오는 source-grounded 이벤트 (arXiv / 특허 / 뉴스 /
   공시). Extractor 에이전트가 capability score delta로 변환.
-- **Risk / Actor / FeasibilityIndex** = 보조 도메인. PIVOT.md §3 참조.
+- **Actor** = capability를 끌어가는 회사 / 연구소 / 정부 기관 (M45 layer).
+- **Risk / FeasibilityIndex** = 보조 도메인. PIVOT.md §3 참조.
 
 ---
 
 ## Current Phase
 
-**Phase 3 — Vision Feasibility Monitor pivot (M36→M47)**. 2026-05-23
-pivot from Sector Simulator + investment tools → single-page
-Feasibility Monitor.
+**Phase 3 — Vision Feasibility Monitor pivot**. 2026-05-23 pivot from
+Sector Simulator + investment tools → single-page Feasibility Monitor.
 
-M36 + M37 ✅ shipped. 다음 PR sequence는 current.md 참조; 매 milestone
-시작 전 PIVOT.md §5 entry → REFACTOR.md 관련 sections → §12 PR sequence
-순서로 읽기.
+Shipped so far (in order): M36 ✅ schema · M37 ✅ Hero + Playground +
+onboarding · M45a ✅ Actor schema + Hero band · M38 ✅ capability seed
+(3 visions) · M45b ✅ Actor DB seed + capability_actor · M39 ✅ signal
+ingest (arXiv + USPTO + NewsAPI + extractor agent) · M40 ✅ feasibility
+scoring engine + ScoreUpdater · M41 ✅ Vision Builder agent (5 PRs) ·
+M42 ✅ Playground reposition + WhatIf callout · M43 ✅ investment
+features archived behind flag · M46a ✅ Proposal schema + feed · M46b ✅
+PredictionV2 tiered + leaderboard · M46c ✅ Reputation + Follow + /u/[id].
 
-Investment-side features (Equity / Prediction / Watchlist / Community)
-archive behind `ENABLE_LEGACY_INVESTMENT_FEATURES` at M43. Sim
-infrastructure stays — Playground sub-tab.
+Polish slices since: i18n (ko/en) + theme switcher + wider layouts ·
+visions visual hub revamp · multi-step proposal/prediction wizards ·
+legacy pre-pivot routes deleted · 20 migrations squashed to a single init.
+
+In flight / next: **M44** (Fusion Power second showcase + 4-tile public
+landing + Twitter demo) · M46d (Evidence URL OG + R2 upload) · M46e
+(Admin queue + 1-click apply) · M46f (Per-sector community tab) ·
+M47 (Discussions + reputation polish — gated on M46 production data).
+
+매 milestone 시작 전: PIVOT.md §5 entry → REFACTOR.md 관련 sections
+(§1-§13) → §12 PR sequence 순서로 읽기.
 
 ---
 
@@ -50,6 +63,7 @@ infrastructure stays — Playground sub-tab.
 | Data | Postgres 16 + TimescaleDB ext + pgvector; Cloudflare R2 (artifacts); Redis (cache + pubsub) |
 | Infra | Turborepo + pnpm; Vercel (frontend) / Railway or Fly.io (services) → AWS EKS later; Cloudflare; Terraform; GitHub Actions; Doppler / AWS Secrets Manager |
 | Observability | LangSmith / Helicone (LLM cost + trace); Sentry; Grafana/Datadog (planned) |
+| i18n / theme (web) | Cookie-backed `tssp_locale` (ko default, en parity) + `tssp_theme` (dark default, light + system). Server reads via `getT()`; client via `useT()` / `useTheme()`. Inline boot script avoids FOUC. User table mirrors both columns for cross-device sync. |
 
 ### LLM auth + tier routing (M35)
 
@@ -61,12 +75,12 @@ infrastructure stays — Playground sub-tab.
 - Dev fallback (no GCP): `GEMINI_API_KEY` (AI Studio). opus calls fail in
   this mode.
 - Tier map (`packages/agent-tools/llm_client.py`):
-  - `opus` → `claude-opus-4-7` (critical reasoning — Decomposition /
-    EdgeInference / CodeGen / CodeReview)
-  - `sonnet` → `gemini-3.5-flash` (balanced — Research / DriverInference /
-    ScoreUpdater / prediction.analyzeRationale)
-  - `haiku` → `gemini-3.5-flash-lite` (extraction / routing / signal
-    extractor)
+  - `opus` → `claude-opus-4-7` (critical reasoning — VisionDecomposition /
+    CapabilityDependencies / CapabilityScoringCode / CodeReview)
+  - `sonnet` → `gemini-3.5-flash` (balanced — VisionResearch /
+    DataSourceSelector / ScoreUpdater / prediction.analyzeRationale)
+  - `haiku` → `gemini-3.5-flash-lite` (extraction / routing /
+    SignalExtractor / PromptValidator)
 - All agent output validated via Pydantic schema. Gemini uses native
   `response_schema`; Claude uses tool-use trick (forced `tool_choice`).
 - `adaptive_thinking=True`:
@@ -81,26 +95,24 @@ infrastructure stays — Playground sub-tab.
 
 ```
 apps/
-├── web/                          Next.js, end users
-├── admin/                        Admin console
-└── docs/                         Documentation site (planned)
+├── web/                          Next.js, end users → /visions
+└── admin/                        Admin console (Vision Builder UI, proposals queue)
 services/
 ├── sector-service/               Fastify + tRPC entry point
-├── simulation-service/           Python sim runner + feasibility engine (M40)
-├── data-pipeline/                Signal ingest + cron (M39)
-├── agent-orchestration/          Vision Builder + extractor/updater agents
-└── report-service/               (planned) PDF/Notion export
+├── simulation-service/           Python sim runner + feasibility engine
+├── data-pipeline/                Signal ingest (arXiv / USPTO / NewsAPI) + crons
+└── agent-orchestration/          Vision Builder Conductor + extractor / updater agents
 packages/
 ├── sdk-python/                   SimulationBase, Driver, Output
 ├── sdk-ts/                       Frontend SDK
-├── ui/                           Shared shadcn components + hero components (M37)
+├── ui/                           Shared shadcn + Hero components (FeasibilityGauge / CapabilityCard / ActorCard / SignalRow / ...)
 ├── shared-types/                 tRPC + Zod
 ├── agent-tools/                  Dual-provider LLMClient + MCP tools
 └── db/                           Prisma schema + seeds
 infra/{terraform,k8s,docker,secrets,seeds}/
-prompts/                          Agent system prompts (versioned)
-tests/{integration,e2e,agent-evals}/
-docs/{adr,tasks}/                 + PIVOT.md + REFACTOR.md
+prompts/                          Agent system prompts (versioned, see prompts/README.md)
+tests/{integration,e2e,agent_evals}/
+docs/{adr,tasks}/                 + PIVOT.md + REFACTOR.md + agent-capabilities.md
 ```
 
 ---
@@ -112,7 +124,7 @@ docs/{adr,tasks}/                 + PIVOT.md + REFACTOR.md
 pnpm install
 cp .env.example .env                     # see infra/secrets/README.md
 pnpm db:migrate dev                      # Prisma migrations
-pnpm seed                                # 3 seed sectors
+pnpm seed                                # 3 seed sectors (+ capabilities / risks / actors / feasibility on full chain)
 
 # Dev
 pnpm dev                                 # all services (turbo)
@@ -124,7 +136,7 @@ pnpm test                                # all unit
 pnpm test --filter <pkg>
 pnpm test:integration
 pnpm test:e2e                            # Playwright
-pnpm test:agent-evals                    # M41+
+pnpm test:agent-evals                    # offline by default; GEMINI_EVAL_LIVE=1 for live
 
 # Quality gates (must pass before merge)
 pnpm typecheck                           # tsc + mypy
@@ -170,7 +182,7 @@ pnpm deploy:prod                         # main merge → GitHub Actions
 - Unit: beside source (`foo.ts` + `foo.test.ts`)
 - Integration: `tests/integration/`
 - E2E: Playwright in `tests/e2e/`
-- Agent evals: `tests/agent-evals/<agent>/cases.yaml`
+- Agent evals: `tests/agent_evals/<workflow>/cases.py` (underscore dir)
 - Coverage targets: services 70% / apps 50%
 
 ### LLM calls
@@ -183,26 +195,29 @@ pnpm deploy:prod                         # main merge → GitHub Actions
 
 ## Common Tasks
 
-### New Vision (M41+)
-1. Admin enters one-line vision at `/admin/visions/new`
-2. Vision Builder Conductor runs (Research → Decomposition →
-   CapabilityScoringCode → CodeReview → checkpoint → KeywordExpander)
-3. Admin reviews capability + risk + actor drafts
-4. Approve → live at `/visions/<slug>`
+### New Vision (M41 — shipped)
+1. Admin opens `/admin/visions/new`, types a one-line question
+2. Conductor runs PromptValidator (haiku) → VisionResearch (sonnet) →
+   VisionDecomposition (opus) → DataSourceSelector (sonnet) →
+   ValidationGate (DAG + FK + weight-sum checks)
+3. Admin reviews proposed capability tree + risk drafts + actor list
+4. Approve → tRPC commits Capabilities + Risks + Actors + Feasibility
+   snapshot in one Prisma transaction → live at `/visions/<slug>`
 
-### New sim (pre-M41 / manual)
-1. `services/simulation-service/sims/<slug>.py` extends `SimulationBase`
-2. `pnpm db:migrate dev --name add-<sector>-data`
-3. Seed in `infra/seeds/<sector>.sql`
-4. Integration test in `tests/integration/sims/<sector>.test.ts`
+### New sim (manual, edge case)
+1. `services/simulation-service/simulation_service/sims/<slug>.py`
+   extends `SimulationBase`
+2. `pnpm db:migrate dev --name add-<slug>`
+3. Seed in `packages/db/prisma/seed.ts` (and capability seed if vision-eligible)
+4. Integration test in `tests/integration/sims/<slug>.test.ts`
 5. Verify `pnpm typecheck && pnpm test`
 
-### New signal adapter (M39+)
+### New signal adapter (M39 baseline)
 1. `services/data-pipeline/data_pipeline/signals/<name>.py` implementing
-   `SignalSource` Protocol
+   the `SignalSource` Protocol
 2. Per-vision keyword set in `signals/keywords/<slug>.json`
-3. Register in `signal_ingest.py` cron
-4. Health-check endpoint
+3. Register in `signal_ingest` job
+4. Health endpoint exposed via the data-pipeline FastAPI app
 5. Test with mocked HTTP (vcr or aioresponses)
 
 ### New tRPC procedure
@@ -214,8 +229,14 @@ pnpm deploy:prod                         # main merge → GitHub Actions
 ### New UI component
 1. Build in `packages/ui/src/`
 2. Add subpath export to `packages/ui/package.json`
-3. Re-export from `index.ts`
-4. Use from apps
+3. Re-export from `src/index.ts`
+4. Use from apps via `@platform/ui` or `@platform/ui/<component>`
+
+### New user-facing string
+1. Add ko + en pair in `apps/web/src/lib/i18n/dict.ts`
+2. Client: `const t = useT();` then `t("namespace.key")`
+3. Server (RSC): `const t = await getT();` (reads cookie)
+4. Korean tone goes natural-friendly 존댓말, not 번역체
 
 ---
 
@@ -256,6 +277,9 @@ Target: per-user month LLM cost < $30 (Pro plan goal $20-$30/mo).
 ### 한국어 / English
 - Code / variables / commits / ADR: **English**
 - User-facing UI text: i18n (ko/en parity; ko default)
+- Translation registry: `apps/web/src/lib/i18n/dict.ts` — all visible
+  strings go here as `{ ko, en }` pairs. Tone in both languages: friendly,
+  not formal-translation-ese.
 - Comments / internal docs: 혼용 OK
 
 ---
@@ -265,9 +289,13 @@ Target: per-user month LLM cost < $30 (Pro plan goal $20-$30/mo).
 Non-trivial decisions → `docs/adr/`. Format `ADR-NNN-short-title.md` with
 status / context / decision / consequences. PR description links the ADR.
 
+Current ADRs:
+- [ADR-0001](./docs/adr/0001-pivot-vision-monitor.md) — Pivot to Vision
+  Feasibility Monitor (accepted, 2026-05-23)
+
 ## Open Questions
 
-1. `DESIGN.md` §9 risks (above) — first surface
+1. `DESIGN.md` §9 risks — first surface
 2. `docs/tasks/current.md` acceptance criteria — second
 3. Still ambiguous → ADR draft, ask admin; do not block code on this —
    isolate to branch and progress other tasks
@@ -279,6 +307,8 @@ status / context / decision / consequences. PR description links the ADR.
 - [docs/REFACTOR.md](./docs/REFACTOR.md) — file-by-file refactor inventory
 - [docs/tasks/current.md](./docs/tasks/current.md) — live milestone status
 - [docs/adr/](./docs/adr/) — ADRs
+- [docs/agent-capabilities.md](./docs/agent-capabilities.md) — agent / workflow inventory
 - [prompts/](./prompts) — agent system prompts (versioned)
 - [packages/sdk-python/README.md](./packages/sdk-python/README.md) — Simulation SDK
 - [packages/agent-tools/README.md](./packages/agent-tools/README.md) — MCP tool authoring
+- [packages/ui/README.md](./packages/ui/README.md) — Shared UI components

@@ -1,8 +1,12 @@
 # Prompts
 
-Versioned system prompts for each Phase 2 agent. Filenames map to the
-agent role (kebab-case). Each prompt is plain markdown so it
-diff-reviews well in PRs.
+Versioned system prompts for every agent / workflow on the platform.
+Filenames map to the agent role (kebab-case for legacy, snake_case for
+post-pivot). Each prompt is plain markdown so it diff-reviews well
+in PRs.
+
+Agent / workflow inventory + role per prompt:
+[`docs/agent-capabilities.md`](../docs/agent-capabilities.md).
 
 ## File shape
 
@@ -11,14 +15,14 @@ followed by the prompt body:
 
 ```markdown
 ---
-role: Decomposition Agent
+role: Vision Decomposition Agent
 tier: opus
-inputs: DecompositionRequest
-outputs: Decomposition
+inputs: VisionDecompositionRequest
+outputs: VisionDecomposition
 version: 1
 ---
 
-# Decomposition Agent
+# Vision Decomposition Agent
 
 ...prompt body...
 ```
@@ -38,22 +42,39 @@ line-oriented `key: value`, no nesting, no quoting tricks. Keep the
 format narrow so it stays diff-friendly.
 
 **`load_prompt(name)` returns the body only** — the front-matter is
-stripped before the markdown reaches Claude as a system prompt. Adding
+stripped before the markdown reaches the LLM as a system prompt. Adding
 or editing front-matter therefore does NOT invalidate the prompt cache.
 
 ## Bundled prompts
 
-| Name              | Tier    | Outputs                | Purpose                                          |
-| ----------------- | ------- | ---------------------- | ------------------------------------------------ |
-| `research`        | sonnet  | `ResearchBrief`        | Numeric anchors + citations for Decomposition.   |
-| `decomposition`   | opus    | `Decomposition`        | Sector concept → drivers / intermediates / outputs.|
-| `driver-inference`| sonnet  | `DriverInferenceResult`| Calibrated defaults, ranges, history, sources.   |
-| `edge-inference`  | opus    | `EdgeInferenceResult`  | Causal DAG: formulas, edges, assumptions.        |
-| `code-gen`        | sonnet  | `CodeGenResult`        | Generates the `SimulationBase` `.py` file.       |
-| `code-review`     | sonnet  | `CodeReviewResult`     | Gates the file for deployment.                   |
+### Vision Builder track (M41 — primary entry)
 
-Only `decomposition` is currently wired to a `Workflow` class — the
-other five prompts are ready inputs for future workflow slices.
+| Name                    | Tier   | Outputs                | Workflow |
+| ----------------------- | ------ | ---------------------- | -------- |
+| `prompt_validator`      | haiku  | `PromptValidation`     | `PromptValidatorWorkflow` |
+| `research`              | sonnet | `ResearchBrief`        | `ResearchWorkflow` (shared with legacy) |
+| `vision_decomposition`  | opus   | `VisionDecomposition`  | `VisionDecompositionWorkflow` |
+| `data_source_selector`  | sonnet | `DataSourceSelection`  | `DataSourceSelectorWorkflow` |
+
+### Signal pipeline (M39 + M40)
+
+| Name                    | Tier   | Outputs                  | Workflow |
+| ----------------------- | ------ | ------------------------ | -------- |
+| `signal_extractor`      | haiku  | `SignalScoring`          | `SignalExtractorWorkflow` |
+| `score_updater`         | sonnet | `CapabilityScoreUpdate`  | `CapabilityScoreUpdaterWorkflow` |
+
+### Legacy sim-builder track (pre-pivot, retained)
+
+| Name              | Tier    | Outputs                 | Workflow |
+| ----------------- | ------- | ----------------------- | -------- |
+| `decomposition`   | opus    | `Decomposition`         | `DecompositionWorkflow` |
+| `edge-inference`  | opus    | `EdgeInferenceResult`   | `EdgeInferenceWorkflow` |
+| `driver-inference`| sonnet  | `DriverInferenceResult` | `DriverInferenceWorkflow` |
+| `code-gen`        | sonnet  | `CodeGenResult`         | `CodeGenWorkflow` |
+| `code-review`     | sonnet  | `CodeReviewResult`      | `CodeReviewWorkflow` |
+
+The sim-builder chain still powers agent-generated `Sector` rows
+(legacy `/propose` flow), now consumed by the Playground sub-tab.
 
 ## When to bump `version`
 
@@ -75,3 +96,15 @@ therefore stay byte-stable across runs — interpolating dates, request
 IDs, or per-tenant data into the prompt body breaks the cache prefix.
 Volatile context belongs in the `user` turn (the orchestrator handles
 this).
+
+## Provider notes
+
+The platform routes via Vertex AI:
+- `opus` → Anthropic Claude 4.7 (forced `tool_choice` trick for
+  structured output)
+- `sonnet` → Gemini 3.5 Flash (native `response_schema`)
+- `haiku` → Gemini 3.5 Flash Lite
+
+Pydantic structured-output validation runs on every call regardless of
+provider — schema mismatches surface as a typed exception, not silent
+drift. See [CLAUDE.md "LLM auth + tier routing"](../CLAUDE.md#llm-auth--tier-routing-m35).

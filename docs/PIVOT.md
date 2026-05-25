@@ -1,9 +1,11 @@
 # PIVOT — From "Sector Simulator" to "Vision Feasibility Monitor"
 
-**Date**: 2026-05-23 (initial), 2026-05-23 (Actor + Community 2.0 extension)
+**Date**: 2026-05-23 (initial decision), Actor + Community extensions
+added same day. **Last updated**: 2026-05-25.
 **Owner**: Ayoung
 **Companion**: [REFACTOR.md](./REFACTOR.md) (file-by-file inventory) +
-[ADR-0001](./adr/0001-pivot-vision-monitor.md) (decision record).
+[ADR-0001](./adr/0001-pivot-vision-monitor.md) (decision record) +
+[tasks/current.md](./tasks/current.md) (live milestone status).
 
 ---
 
@@ -107,25 +109,31 @@ keeps the legacy name; product language flips.
 ## 5. Milestones
 
 See [docs/tasks/current.md](./tasks/current.md) for live status. Per-PR
-sequencing in [REFACTOR.md §16](./REFACTOR.md#section-16--order-of-operations-within-each-milestone).
+sequencing in [REFACTOR.md §12](./REFACTOR.md#12-pr-sequence-per-milestone).
 
 | ID | Title | Days | Status | Notes |
 |---|---|---|---|---|
-| M36 | Capability/Signal/Risk/Feasibility schema + tRPC | 2-3 | ✅ | foundation |
-| M37 | Hero page (hardcoded SDC) + Playground migration | 4-6 | ✅ | demo gate met |
-| M45a | Actor schema + tRPC + Hero band (fixtures) | 4-5 | next | demo lift |
-| M38 | Capability/Risk/Feasibility manual seed | 3-4 | | real DB data |
-| M45b | Actor DB seed + capability_actor + signal tagging | 2-3 | | |
-| M39 | Signal ingest (arXiv + USPTO + News) + extractor agent | 6-8 | | high risk (adapter flakiness) |
-| M40 | Feasibility scoring engine + Score Updater agent | 4-5 | | Liebig binding constraint |
-| M41 | Vision Builder agent (one-liner → full tree + actors) | 6-8 | | high risk (LLM hallucination) |
-| M42 | Simulation → Playground reposition + WhatIf callout | 2-3 | | |
-| M43 | Archive investment behind `ENABLE_LEGACY_INVESTMENT_FEATURES` | 1-2 | | flag-only, no data delete |
-| M44 | Fusion Power showcase + 4-tile landing + Twitter demo | 4-6 | | |
-| M46 | Community 2.0: VisionProposal + voting + admin apply | 5-7 | after M44 | replaces /community |
-| M47 | Discussions + reputation (optional polish) | 4-5 | after 4w M46 prod | |
+| M36 | Capability/Signal/Risk/Feasibility schema + tRPC | 2-3 | ✅ | foundation, 6 Prisma models / 5 routers |
+| M37 | Hero page (hardcoded SDC) + Playground migration | 4-6 | ✅ | demo gate met (5 PRs) |
+| M45a | Actor schema + tRPC + Hero band (fixtures) | 4-5 | ✅ | demo lift |
+| M38 | Capability/Risk/Feasibility manual seed | 3-4 | ✅ | real DB data on Hero, 3 visions curated |
+| M45b | Actor DB seed + capability_actor + signal tagging | 2-3 | ✅ | |
+| M39 | Signal ingest (arXiv + USPTO + News) + extractor agent | 6-8 | ✅ | 6 PRs (M39a-f); monitoring health card included |
+| M40 | Feasibility scoring engine + Score Updater agent | 4-5 | ✅ | Liebig binding + ETA inference + daily cron |
+| M41 | Vision Builder agent (one-liner → full tree + actors) | 6-8 | ✅ | 5 PRs (M41a-e) including 5-vision eval set |
+| M42 | Simulation → Playground reposition + WhatIf callout | 2-3 | ✅ | client-side Liebig mirror; driver→capability badges |
+| M43 | Archive investment behind `ENABLE_LEGACY_INVESTMENT_FEATURES` | 1-2 | ✅ | flag-only, no data delete; legacy routes 410 |
+| M46a | Community 3.0: Proposal schema + tRPC + feed | 2-3 | ✅ | |
+| M46b | Community 3.0: PredictionV2 (tiered) + leaderboard | 3 | ✅ | Easy/Medium/Hard auto-assigned by horizon×spread×vol |
+| M46c | Reputation tiers + Follow + `/u/[id]` | 2-3 | ✅ | |
+| — | i18n / theme / wide-layout / wizards / legacy cleanup | — | ✅ | polish slices, post-M43 |
+| M44 | Fusion Power showcase + 4-tile landing + Twitter demo | 4-6 | next | second-vision pressure test |
+| M46d | Evidence sources (URL OG + R2 upload) | 3-4 | | |
+| M46e | Admin proposal queue + 1-click apply + audit | 2-3 | | |
+| M46f | Per-sector community tab + cold-start seed | 2-3 | | |
+| M47 | Discussions + reputation polish | 4-5 | after 4w M46 prod | |
 
-Total: ~45-55 days, 9-11 weeks.
+Total: ~45-55 days, 9-11 weeks. Shipped ~30 days as of 2026-05-25.
 
 ### 5.1 M45 — Actor domain (split into M45a + M45b)
 
@@ -155,33 +163,57 @@ Hero immediately actionable.
 (sorted by relevance). Capability cards get "Active actors:" footer
 showing top 3.
 
-### 5.2 M46-M47 — Community 2.0
+### 5.2 M46 train — Community 3.0
 
-**Why**: `/community/predict` is a stock-prediction game — residue of
-the investment surface. The right mechanic for a Vision Monitor is
-per-vision *proposals* (data sources, actors, capabilities, score
-challenges) with voting + admin-applied changes. Wikipedia-meets-
-Polymarket; community curation as a moat.
+**Why**: pre-pivot `/community/predict` was a stock-prediction game —
+residue of the investment surface. The right mechanic for a Vision
+Monitor is per-vision *proposals* (data sources, actors, capabilities,
+score challenges) with voting + admin-applied changes, plus tiered
+*predictions* on equities driving the binding capabilities. Wikipedia-
+meets-Polymarket; community curation as a moat.
 
-**7 proposal kinds**:
-- `ADD_ACTOR` — propose a new company/lab → calls actor.upsert on apply
-- `ADD_DATA_SOURCE` — propose an RSS/API feed → updates ingest config
-- `ADD_CAPABILITY` → calls capability.upsert
-- `REVISE_CAPABILITY_SCORE` — challenge with evidence → writes new
-  CapabilityScore with rationale referencing proposal_id
-- `FLAG_SIGNAL` — auto-applies (sets Signal.is_hidden=true)
-- `REWORD_RISK` → calls risk.upsert
-- `ADD_RISK` → calls risk.upsert (create)
-- `ADD_NEW_VISION` — kicks off Vision Builder agent (M41)
+Shipped as three slices so the schema and feed could land before the
+admin-side and per-sector polish:
 
-**Flow**: submit → community votes (+1/-1, weight 1.0 default) → +5 net
-moves to admin queue → admin approves → tRPC mutation applies + audit
-log linkage → `Proposal.status=applied`, `applied_audit_log_id=...`.
-Auto-apply for non-destructive kinds.
+- **M46a** ✅ — Proposal schema + tRPC router + `/community/proposals`
+  feed (Hot / New sorts, status pills, vote button).
+- **M46b** ✅ — PredictionV2 with auto-tier assignment (Easy 10p /
+  Medium 25p / Hard 50p) from horizon × spread × volatility; resolution
+  cron settles against EquityQuote close at horizon; `/community/predictions`
+  Live / Resolved / Leaderboard tabs.
+- **M46c** ✅ — Reputation tiers + Follow graph + `/u/[id]` profile
+  (cumulative reward, accuracy, top predictions, followers/following).
 
-**M47 reputation**: per-user vote-weight multiplier 1.0× → up to 2× based
-on proposal-approval rate + discussion score. Calibrate after 4 weeks
-of M46 production data.
+Remaining slices:
+
+- **M46d** — Evidence sources: URL OG fetch (server-side) + PDF/image
+  upload to R2 so proposals + predictions can attach linkable evidence
+  beyond plain text.
+- **M46e** — Admin proposal queue: pending list with bulk-approve,
+  per-kind apply via `lib/proposal-applier`, audit-log linkage on
+  status transitions.
+- **M46f** — Per-sector `/visions/[slug]/community` tab + cold-start
+  seed (a couple of curated proposals + predictions per vision) so the
+  page never lands empty.
+
+**7 proposal kinds** (schema-side, M46a):
+- `add_driver` — propose a new sim driver → calls driver upsert
+- `add_equity` — propose a new equity → calls equity upsert
+- `add_capability` → calls capability upsert
+- `add_risk` → calls risk upsert
+- `add_actor` → calls actor upsert (M45b actor table)
+- `add_signal_source` — propose a new keyword set → updates ingest config
+- `edit` / `other` — free-form proposal body for anything that doesn't
+  fit a structured kind
+
+**Flow**: submit → community votes (+1/-1, weight 1.0 default) → admin
+queue → admin approves → tRPC mutation applies (per-kind applier) +
+audit-log row → `Proposal.status=applied`,
+`applied_audit_log_id=…`. Auto-apply for non-destructive kinds.
+
+**M47 reputation**: per-user vote-weight multiplier 1.0× → up to 2×
+based on proposal-approval rate + prediction accuracy. Calibrate after
+4 weeks of M46 production data.
 
 ---
 
@@ -225,4 +257,5 @@ If pivot misses (no traction by M44 + 30d), flip flag → done.
 
 ---
 
-*M45a follows next. See REFACTOR.md §18 for file-by-file plan.*
+*M44 is next, followed by the M46d/e/f sub-slices and then M47. See
+REFACTOR.md §12 PR sequence and `docs/tasks/current.md` for live status.*

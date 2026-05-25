@@ -9,8 +9,12 @@ For strategy / personas / business model see [DESIGN.md](./DESIGN.md). For
 coding conventions see [CLAUDE.md](./CLAUDE.md). For active milestone
 status see [docs/tasks/current.md](./docs/tasks/current.md).
 
-**Status**: M36 + M37 ✅ shipped (2026-05-23). Active pivot M38 → M47.
-Pre-pivot history in git log.
+**Status** (2026-05-25): M36 → M43 + M45a/b + M46a/b/c ✅ shipped.
+Polish slices in: i18n (ko/en), theme switcher (dark/light/system), wider
+layouts, multi-step wizards, legacy-route cleanup. Active next: **M44**
+(Fusion Power second showcase + 4-tile public landing + Twitter demo)
+and the M46 d/e/f sub-slices (Evidence sources / Admin queue /
+Per-sector tab). Pre-pivot history (M1-M35) lives in git log.
 
 ---
 
@@ -30,12 +34,14 @@ Pre-pivot history in git log.
 ## Solution
 
 각 Vision은 ~10개의 **Capability** (기술 / 경제 / 규제 / 공급)로 분해. 매일
-들어오는 **Signal** (arXiv 논문 / 특허 / 뉴스 / 정부 보고서)이 extractor
-agent를 통과해 capability score delta로 변환. **FeasibilityIndex**가
-Bayesian 집계 + Liebig binding constraint로 vision 단위 0-100 점수와 ETA
-분포를 도출.
+들어오는 **Signal** (arXiv 논문 / 특허 / 뉴스 / 정부 보고서)이 SignalExtractor
+agent를 통과해 capability score delta로 변환되고, ScoreUpdater agent가
+4-차원 점수에 반영. **FeasibilityIndex**가 Bayesian 집계 + Liebig binding
+constraint로 vision 단위 0-100 점수와 ETA 분포를 도출. **Actor** layer
+(M45)가 각 capability를 끌어가는 회사 · 연구소 · 정부 기관을 추적.
 
-시뮬레이션은 부수 기능 — 사용자가 슬라이더로 산업을 이해하는 Playground.
+시뮬레이션은 부수 기능 — 사용자가 슬라이더로 산업을 이해하는 Playground
+(M42에서 driver→capability 배지 + WhatIfFeasibility callout 추가).
 
 ---
 
@@ -84,9 +90,9 @@ Browser
   → /api/sim/trpc/* (Next rewrite)
   → sector-service:8001 (Fastify + tRPC)
       ├─ Prisma → Postgres 16 + TimescaleDB + pgvector
-      ├─ → simulation-service:8000 (Python, sim + feasibility math)
+      ├─ → simulation-service:8000 (Python, sim + feasibility engine)
       ├─ → data-pipeline:8003 (Python, signal ingest + crons)
-      └─ → agent-orchestration:8002 (Python, Vision Builder agents)
+      └─ → agent-orchestration:8002 (Python, Vision Builder + extractor/updater)
                   └─ Anthropic Claude (opus) + Google Gemini (sonnet/haiku)
                       via Vertex AI (same SA JSON)
 ```
@@ -99,36 +105,42 @@ Services + packages — see [CLAUDE.md "Repository Structure"](./CLAUDE.md#repos
 
 | | Status | Notes |
 |---|---|---|
-| `/visions` landing + Hero page | ✅ M37 | Fixture-backed SDC (9 capabilities + 5 risks + 8 signals + ETA window + trajectory + economics curve) |
-| `/visions/[slug]` sub-nav | ✅ M37 | Overview / Capabilities / Signals / Risks / Economics / Playground / Sources |
-| Playground (sliders) | ✅ M37 | Reuses existing sim infrastructure |
-| Capability / Signal / Risk / Feasibility schema + tRPC | ✅ M36 | 6 new Prisma models, 5 routers, 20 tests |
-| Onboarding + page tours | ✅ M37e | 3-step Vision intro; per-page tour content |
-| Dual-provider LLM client | ✅ M35 | Claude opus + Gemini sonnet/haiku via Vertex AI |
-| Capability manual seed (3 visions) | pending M38 | Real DB data on Hero |
-| Actor domain | pending M45 | Companies + labs per capability — the WHO layer |
-| Signal ingest (arXiv + USPTO + News) | pending M39 | + Signal Extractor agent (haiku) |
-| Feasibility scoring engine | pending M40 | 4-dim aggregation + Liebig binding + ETA inference |
-| Vision Builder agent | pending M41 | One-liner → full capability tree + actors |
-| Fusion Power showcase | pending M44 | Second vision; 4-tile public landing |
-| Community 2.0 (proposals + voting) | pending M46 | Replaces archived prediction game |
+| `/visions` landing + Hero | ✅ M37 + visual-hub revamp | Vision cards with domain themes + filter chips |
+| `/visions/[slug]` sub-nav | ✅ M37 → M40 | Overview / Capabilities / Actors / Signals / Risks / Economics / Playground / Sources — DB-backed |
+| Playground (sliders + WhatIfFeasibility callout) | ✅ M37 → M42 | Driver→capability badges + live Feasibility preview above sim chart |
+| Capability / Signal / Risk / Feasibility schema + tRPC | ✅ M36 | 6 Prisma models, 5 routers |
+| Capability / Risk / Feasibility manual seed (3 visions) | ✅ M38 | space-data-center, memory-semi, sofc curated |
+| Actor domain + Hero band + capability footer | ✅ M45a/b | Schema, fixtures, then DB swap; signal extractor tags `actor_id` |
+| Signal ingest (arXiv + USPTO + NewsAPI) | ✅ M39 | + SignalExtractor (haiku) + Signals tab + monitoring health card |
+| Feasibility scoring engine | ✅ M40 | 4-dim aggregation + Liebig binding + ETA inference + daily recompute cron |
+| Vision Builder agent (one-liner → full tree) | ✅ M41 | PromptValidator → Research → VisionDecomposition → DataSourceSelector → ValidationGate → admin commit |
+| Investment surface archived behind flag | ✅ M43 | `ENABLE_LEGACY_INVESTMENT_FEATURES=false` (default); crons off; routes 410 |
+| Community 3.0 — proposals + tiered predictions + reputation | ✅ M46a-c | Proposal schema + feed, PredictionV2 + leaderboard, Reputation + Follow + `/u/[id]` |
+| Multi-step proposal + prediction wizards | ✅ slice | 5-step proposal · 3-step prediction with live tier preview |
+| i18n (ko/en) + theme switcher + bilingual UI | ✅ slice | Cookie-backed, mirrored on `User.locale` / `User.theme`; friendly tone in both |
+| Fusion Power second showcase + 4-tile landing | pending M44 | Pressure-tests the framework on a second vision |
+| Evidence URL OG fetch + R2 upload | pending M46d | |
+| Admin proposal queue + 1-click apply | pending M46e | |
+| Per-sector community tab + cold-start seed | pending M46f | |
+| Discussions + reputation polish | pending M47 | Gated on M46 production data (~4 weeks post-M46f) |
 
-Investment surface (Equity / Prediction / Watchlist / Community) is
-behind `ENABLE_LEGACY_INVESTMENT_FEATURES` flag (default false at M43).
-Rows preserved; UI hidden. Reversible config flip.
+Investment surface (Equity / Prediction-v1 / Watchlist / sector
+suggestion / pre-pivot community) is behind
+`ENABLE_LEGACY_INVESTMENT_FEATURES` (default false at M43). Tables
+preserved; routes 410 when flag off. Reversible config flip.
 
 ---
 
 ## Common operations
 
-### Trigger signal ingest manually (M39+)
+### Trigger signal ingest manually
 
 ```bash
 curl -X POST http://localhost:8003/jobs/signal-ingest
-curl  http://localhost:8003/jobs/signal-ingest/last  # health
+curl     http://localhost:8003/jobs/signal-ingest/last   # last-run health
 ```
 
-### Recompute feasibility for one vision (M40+)
+### Recompute feasibility for one vision
 
 ```bash
 # tRPC procedure (admin)
@@ -137,11 +149,24 @@ curl -X POST 'http://localhost:8001/trpc/feasibility.recompute' \
   -d '{"sector_slug":"space-data-center"}'
 ```
 
-### Create a new vision (M41+)
+### Create a new vision
 
 Via admin UI: `http://localhost:3100/visions/new`. Submit a one-line
-question; Vision Builder Conductor runs through Research / Decomposition
-/ ScoringCode / CodeReview, then waits at the admin approval checkpoint.
+question. The Vision Builder Conductor runs:
+
+```
+PromptValidator (haiku)
+  → VisionResearch (sonnet)
+  → VisionDecomposition (opus)
+  → DataSourceSelector (sonnet)
+  → ValidationGate (DAG + FK + weight-sum checks)
+  → admin checkpoint
+  → tRPC commit (single Prisma transaction)
+```
+
+Eval set (`tests/agent_evals/`): 5 canonical visions — SDC, fusion,
+quantum, humanoid, mRNA. Offline by default;
+`GEMINI_EVAL_LIVE=1 pnpm test:agent-evals` for live API.
 
 ### Apply Prisma migrations
 
@@ -151,6 +176,10 @@ pnpm db:migrate:deploy                   # CI/prod, deploy committed migrations
 pnpm db:studio                           # Prisma Studio
 pnpm db:reset                            # wipe + reseed (dev only)
 ```
+
+After M40 the seed chain runs:
+`migrate → seed (3 sectors) → seed:capabilities → seed:risks →
+seed:feasibility → seed:actors → seed:capability-actors`.
 
 ---
 
@@ -164,20 +193,22 @@ See [CLAUDE.md "Repository Structure"](./CLAUDE.md#repository-structure).
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.local.yml up --build  # full stack, hot reload
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up            # CI-like
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up           # prod (no hot reload)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml   up          # CI-like
+docker compose -f docker-compose.yml -f docker-compose.prod.yml  up          # prod (no hot reload)
 ```
 
-Bring up only specific services: `docker compose ... up postgres sector-service`.
+Bring up only specific services:
+`docker compose ... up postgres sector-service`.
 
 ---
 
 ## References
 
-- [docs/PIVOT.md](./docs/PIVOT.md) — strategic memo + extensions
+- [docs/PIVOT.md](./docs/PIVOT.md) — strategic memo + milestone outline
 - [docs/REFACTOR.md](./docs/REFACTOR.md) — file-by-file disposition
-- [docs/tasks/current.md](./docs/tasks/current.md) — milestone status
+- [docs/tasks/current.md](./docs/tasks/current.md) — live milestone status
 - [docs/adr/](./docs/adr/) — Architectural Decision Records
+- [docs/agent-capabilities.md](./docs/agent-capabilities.md) — agent / workflow inventory
 - [CLAUDE.md](./CLAUDE.md) — operational context (read every session)
 - [DESIGN.md](./DESIGN.md) — vision, personas, NFRs
 - [prompts/](./prompts) — agent system prompts (versioned)
