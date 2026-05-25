@@ -87,6 +87,22 @@ _DEFAULT_FINANCIALS_QUARTERS = 8
 # 08:30 UTC quote refresh so the resolver sees today's freshly-ingested
 # closes when target_date is yesterday. (M33b)
 _DEFAULT_RESOLVE_PREDICTIONS_CRON = "0 9 * * *"
+
+
+def _legacy_investment_enabled() -> bool:
+    """M43 — gate legacy investment-frame crons behind a single flag.
+
+    Default `false` means the data-pipeline doesn't run the financials
+    refresh (EDGAR/DART) or the legacy v1 prediction resolver — those
+    surfaces are archived. PredictionV2 resolver + quote refresh
+    (used by V2's anchor + vol calc) stay on regardless.
+
+    Flip `ENABLE_LEGACY_INVESTMENT_FEATURES=true` to revive the legacy
+    crons for backtest / migration / debugging.
+    """
+    return os.environ.get(
+        "ENABLE_LEGACY_INVESTMENT_FEATURES", "false"
+    ).lower() in {"1", "true", "yes", "on"}
 # M46b — PredictionV2 resolver runs hourly so a 1-day prediction
 # placed at 10:00 UTC resolves the morning after the next-day close
 # lands in equity_quotes, instead of waiting until the next 09:00 UTC
@@ -250,42 +266,57 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
             )
             log.info("data-pipeline: quote-refresh armed (cron=%r UTC)", cron)
 
-        # Weekly financials refresh (M10c).
-        fin_cron = os.environ.get("REFRESH_FINANCIALS_CRON", _DEFAULT_FINANCIALS_CRON)
-        try:
-            fin_trigger = CronTrigger.from_crontab(fin_cron, timezone="UTC")
-        except ValueError as e:
-            log.error("data-pipeline: bad REFRESH_FINANCIALS_CRON=%r (%s)", fin_cron, e)
+        # M43 — Weekly financials refresh (M10c) gated behind the legacy
+        # investment flag. EDGAR/DART pull is investment-frame; PredictionV2
+        # doesn't use it.
+        if _legacy_investment_enabled():
+            fin_cron = os.environ.get("REFRESH_FINANCIALS_CRON", _DEFAULT_FINANCIALS_CRON)
+            try:
+                fin_trigger = CronTrigger.from_crontab(fin_cron, timezone="UTC")
+            except ValueError as e:
+                log.error("data-pipeline: bad REFRESH_FINANCIALS_CRON=%r (%s)", fin_cron, e)
+            else:
+                scheduler.add_job(
+                    _run_refresh_financials_job,
+                    trigger=fin_trigger,
+                    kwargs={"app": app},
+                    id="refresh_financials_weekly",
+                    replace_existing=True,
+                )
+                log.info("data-pipeline: financials-refresh armed (cron=%r UTC)", fin_cron)
         else:
-            scheduler.add_job(
-                _run_refresh_financials_job,
-                trigger=fin_trigger,
-                kwargs={"app": app},
-                id="refresh_financials_weekly",
-                replace_existing=True,
-            )
-            log.info("data-pipeline: financials-refresh armed (cron=%r UTC)", fin_cron)
-
-        # Daily prediction resolution (M33b).
-        resolve_cron = os.environ.get(
-            "RESOLVE_PREDICTIONS_CRON", _DEFAULT_RESOLVE_PREDICTIONS_CRON
-        )
-        try:
-            resolve_trigger = CronTrigger.from_crontab(resolve_cron, timezone="UTC")
-        except ValueError as e:
-            log.error(
-                "data-pipeline: bad RESOLVE_PREDICTIONS_CRON=%r (%s)", resolve_cron, e
-            )
-        else:
-            scheduler.add_job(
-                _run_resolve_predictions_job,
-                trigger=resolve_trigger,
-                kwargs={"app": app},
-                id="resolve_predictions_daily",
-                replace_existing=True,
-            )
             log.info(
-                "data-pipeline: predictions-resolve armed (cron=%r UTC)", resolve_cron
+                "data-pipeline: financials-refresh SKIPPED "
+                "(ENABLE_LEGACY_INVESTMENT_FEATURES=false)"
+            )
+
+        # M43 — Legacy v1 prediction resolver (M33b) also gated. PredictionV2
+        # resolver (below, M46b) is the active one.
+        if _legacy_investment_enabled():
+            resolve_cron = os.environ.get(
+                "RESOLVE_PREDICTIONS_CRON", _DEFAULT_RESOLVE_PREDICTIONS_CRON
+            )
+            try:
+                resolve_trigger = CronTrigger.from_crontab(resolve_cron, timezone="UTC")
+            except ValueError as e:
+                log.error(
+                    "data-pipeline: bad RESOLVE_PREDICTIONS_CRON=%r (%s)", resolve_cron, e
+                )
+            else:
+                scheduler.add_job(
+                    _run_resolve_predictions_job,
+                    trigger=resolve_trigger,
+                    kwargs={"app": app},
+                    id="resolve_predictions_daily",
+                    replace_existing=True,
+                )
+                log.info(
+                    "data-pipeline: predictions-resolve armed (cron=%r UTC)", resolve_cron
+                )
+        else:
+            log.info(
+                "data-pipeline: legacy predictions-resolve SKIPPED "
+                "(ENABLE_LEGACY_INVESTMENT_FEATURES=false). PredictionV2 still runs."
             )
 
         # M46b — hourly PredictionV2 resolver. Skipped when DATABASE_URL
