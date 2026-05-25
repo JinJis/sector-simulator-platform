@@ -145,6 +145,7 @@ model SectorEquity {
   graph_nodes     GraphNode[]
   watchlist_items WatchlistItem[]
   predictions     Prediction[]
+  predictions_v2  PredictionV2[]
 
   @@unique([sector_slug, ticker, exchange])
   @@index([sector_slug])
@@ -384,6 +385,8 @@ model User {
   community_proposal_decisions CommunityProposal[] @relation("ProposalDecidedBy")
   community_proposal_votes  ProposalVote[]
   community_proposal_replies ProposalReply[]
+  // M46b — PredictionV2
+  predictions_v2            PredictionV2[]      @relation("UserPredictionsV2")
 
   @@map("users")
 }
@@ -1274,4 +1277,93 @@ model ProposalReply {
   @@index([proposal_id, created_at])
   @@index([parent_reply_id])
   @@map("proposal_replies")
+}
+
+// =====================================================================
+// M46b — Community 3.0: PredictionV2
+//
+// Per-equity price-band predictions with auto-assigned difficulty
+// tiers. Replaces the legacy `predictions` table conceptually (kept in
+// place; legacy UI moves behind ENABLE_LEGACY_INVESTMENT_FEATURES at
+// M43). The tier (easy/medium/hard) is derived from (horizon,
+// annualized_vol, spread_pct) by the placer; reward is computed at
+// resolution time as `score × tier_multiplier × 10` where:
+//   easy   → 1×   max  10p
+//   medium → 2.5× max  25p
+//   hard   → 5×   max  50p
+//
+// Score is 1.0 inside the band, decays linearly to 0 at distance
+// = spread outside the band, clamped to [0, 1]. So a tight band with
+// the actual price 0.5×spread outside → 0.5 points; 1.0×spread
+// outside → 0 points.
+//
+// Resolution: the M46b data-pipeline cron runs hourly, picks up
+// predictions whose resolves_at has passed, finds the next available
+// EquityQuote close, computes score + reward, writes resolved_at.
+// =====================================================================
+
+model PredictionV2 {
+  id String @id @default(cuid())
+
+  user_id String @map("user_id")
+  user    User   @relation("UserPredictionsV2", fields: [user_id], references: [id], onDelete: Cascade)
+
+  // We tie predictions to SectorEquity rows so we get the
+  // pre-curated ticker + exchange + sector_slug for free. Cross-
+  // sector predictions on the same ticker create separate rows.
+  equity_id String       @map("equity_id")
+  equity    SectorEquity @relation(fields: [equity_id], references: [id], onDelete: Cascade)
+
+  // Time horizon. Drives `resolves_at` and the tier rules.
+  //   1d — single trading day (always Hard)
+  //   1w — one week
+  //   1m — one month
+  horizon String
+
+  // The prediction band. Actual close at resolution time within
+  // [min, max] = full score; outside, linear decay (see comment above).
+  expected_price_min Float @map("expected_price_min")
+  expected_price_max Float @map("expected_price_max")
+
+  // Snapshot of the anchor close at placement time. Used by the
+  // detail page to render "from X to your band". Also lets us
+  // audit-trail what the placer was looking at.
+  anchor_price Float    @map("anchor_price")
+  anchor_date  DateTime @map("anchor_date")
+
+  // Auto-assigned by `lib/prediction-tier.ts`. NOT a free field —
+  // server recomputes on placement to prevent client-side spoofing.
+  // `tier_explanation` is the human-readable "why" surfaced as a
+  // tooltip next to the badge.
+  tier             String
+  tier_explanation String? @map("tier_explanation")
+
+  placed_at   DateTime  @default(now()) @map("placed_at")
+  resolves_at DateTime  @map("resolves_at")
+  resolved_at DateTime? @map("resolved_at")
+
+  actual_price  Float? @map("actual_price")
+  // 0..1; see comment block above.
+  score         Float?
+  // Final integer points awarded. Null until resolved.
+  reward_points Int?   @map("reward_points")
+
+  // open | resolved (cron sets `resolved` after writing score +
+  // reward_points). No "cancelled" — once placed, it resolves.
+  status String @default("open")
+
+  // Optional plain-text rationale. Markdown rendering is a v2 polish.
+  rationale String?
+
+  created_at DateTime @default(now()) @map("created_at")
+  updated_at DateTime @updatedAt @map("updated_at")
+
+  @@index([user_id, placed_at(sort: Desc)])
+  // Resolution cron: WHERE status='open' AND resolves_at <= now()
+  @@index([status, resolves_at])
+  // Equity-level live + resolved feed
+  @@index([equity_id, placed_at(sort: Desc)])
+  // Leaderboard helper (status='resolved' GROUP BY user_id SUM reward_points)
+  @@index([status, reward_points(sort: Desc)])
+  @@map("predictions_v2")
 }

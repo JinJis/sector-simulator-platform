@@ -77,6 +77,12 @@ export default async function CommunityHubPage() {
           >
             🆕 Community proposals
           </Link>
+          <Link
+            href="/community/predictions"
+            className="rounded border border-cyan-700/60 bg-neutral-900 px-3 py-1.5 text-xs font-medium text-cyan-100 hover:border-cyan-600 hover:bg-cyan-900/40"
+          >
+            🎯 Predictions V2 (tiered)
+          </Link>
         </div>
       </section>
 

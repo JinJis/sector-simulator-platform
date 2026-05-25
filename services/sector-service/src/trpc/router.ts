@@ -18,6 +18,7 @@ import { router } from "./init.js";
 import { lifecycleRouter } from "./lifecycle.js";
 import { monitoringRouter } from "./monitoring.js";
 import { predictionRouter } from "./prediction.js";
+import { prediction2Router } from "./prediction2.js";
 import { riskRouter } from "./risk.js";
 import { scenarioRouter } from "./scenario.js";
 import { sectorRouter } from "./sector.js";
@@ -44,6 +45,8 @@ export const appRouter = router({
   admin: userAdminRouter,
   billing: billingRouter,
   prediction: predictionRouter,
+  // M46b — PredictionV2 (auto-tiered band predictions, see chat plan §4).
+  prediction2: prediction2Router,
   suggestion: suggestionRouter,
   community: communityRouter,
   // M46a — Community 3.0 proposals (driver/equity/capability/risk/actor/

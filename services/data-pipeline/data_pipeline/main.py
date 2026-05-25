@@ -61,9 +61,17 @@ from data_pipeline.jobs.resolve_predictions import (
     ResolvePredictionsResult,
     resolve_due_predictions,
 )
+from data_pipeline.jobs.resolve_predictions_v2 import (
+    ResolvePredictionsV2Result,
+    resolve_due_predictions_v2,
+)
 from data_pipeline.prediction_repo import (
     PredictionResolverRepository,
     build_resolver_repository,
+)
+from data_pipeline.prediction2_repo import (
+    PredictionV2ResolverRepository,
+    build_resolver_v2_repository,
 )
 from data_pipeline.repo import EquityRepository, build_repository
 
@@ -79,6 +87,11 @@ _DEFAULT_FINANCIALS_QUARTERS = 8
 # 08:30 UTC quote refresh so the resolver sees today's freshly-ingested
 # closes when target_date is yesterday. (M33b)
 _DEFAULT_RESOLVE_PREDICTIONS_CRON = "0 9 * * *"
+# M46b — PredictionV2 resolver runs hourly so a 1-day prediction
+# placed at 10:00 UTC resolves the morning after the next-day close
+# lands in equity_quotes, instead of waiting until the next 09:00 UTC
+# tick.
+_DEFAULT_RESOLVE_PREDICTIONS_V2_CRON = "5 * * * *"
 
 # M39c — signal ingest cron. 09:00 UTC = 18:00 KST daily (after KOSPI
 # close / few hours after US news cycle). Separate env so it can be
@@ -147,6 +160,21 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         app.state.resolver_repo = await build_resolver_repository(
             os.environ.get("DATABASE_URL")
         )
+    if not hasattr(app.state, "resolver_v2_repo"):
+        # M46b — PredictionV2 resolver. Same DATABASE_URL but separate
+        # pool to isolate from the legacy resolver. Tests pre-set
+        # `app.state.resolver_v2_repo` to inject an in-memory backing.
+        try:
+            app.state.resolver_v2_repo = await build_resolver_v2_repository(
+                os.environ.get("DATABASE_URL")
+            )
+        except RuntimeError:
+            log.warning(
+                "data-pipeline: DATABASE_URL unset — prediction-v2 resolver disabled"
+            )
+            app.state.resolver_v2_repo = None
+    if not hasattr(app.state, "last_resolve_v2_result"):
+        app.state.last_resolve_v2_result = None
     if not hasattr(app.state, "source"):
         app.state.source = _build_source()
     if not hasattr(app.state, "fx"):
@@ -260,6 +288,37 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
                 "data-pipeline: predictions-resolve armed (cron=%r UTC)", resolve_cron
             )
 
+        # M46b — hourly PredictionV2 resolver. Skipped when DATABASE_URL
+        # is absent (`resolver_v2_repo is None`) so dev compose without
+        # a DB doesn't error-loop.
+        if app.state.resolver_v2_repo is not None:
+            resolve_v2_cron = os.environ.get(
+                "RESOLVE_PREDICTIONS_V2_CRON",
+                _DEFAULT_RESOLVE_PREDICTIONS_V2_CRON,
+            )
+            try:
+                resolve_v2_trigger = CronTrigger.from_crontab(
+                    resolve_v2_cron, timezone="UTC"
+                )
+            except ValueError as e:
+                log.error(
+                    "data-pipeline: bad RESOLVE_PREDICTIONS_V2_CRON=%r (%s)",
+                    resolve_v2_cron,
+                    e,
+                )
+            else:
+                scheduler.add_job(
+                    _run_resolve_predictions_v2_job,
+                    trigger=resolve_v2_trigger,
+                    kwargs={"app": app},
+                    id="resolve_predictions_v2_hourly",
+                    replace_existing=True,
+                )
+                log.info(
+                    "data-pipeline: predictions-v2-resolve armed (cron=%r UTC)",
+                    resolve_v2_cron,
+                )
+
         # M39c — signal ingest cron. Skip if signal_repo couldn't connect
         # (DATABASE_URL missing → app.state.signal_repo is None).
         if (
@@ -335,6 +394,9 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         resolver_repo = getattr(app.state, "resolver_repo", None)
         if resolver_repo is not None:
             await resolver_repo.close()
+        resolver_v2_repo = getattr(app.state, "resolver_v2_repo", None)
+        if resolver_v2_repo is not None:
+            await resolver_v2_repo.close()
 
 
 async def _run_refresh_job(*, app: FastAPI) -> RefreshQuotesResult:
@@ -350,6 +412,20 @@ async def _run_resolve_predictions_job(*, app: FastAPI) -> ResolvePredictionsRes
     repo: PredictionResolverRepository = app.state.resolver_repo
     result = await resolve_due_predictions(repo=repo)
     app.state.last_resolve_result = result
+    return result
+
+
+async def _run_resolve_predictions_v2_job(
+    *, app: FastAPI
+) -> ResolvePredictionsV2Result | None:
+    """M46b — band-based prediction resolver. Runs hourly so 1D/1W
+    bets resolve as soon as the corresponding EquityQuote row lands."""
+    repo: PredictionV2ResolverRepository | None = app.state.resolver_v2_repo
+    if repo is None:
+        log.warning("resolve_predictions_v2: repo not configured — skipping")
+        return None
+    result = await resolve_due_predictions_v2(repo=repo)
+    app.state.last_resolve_v2_result = result
     return result
 
 
@@ -554,6 +630,38 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status_code=404,
                 detail="no prediction-resolve has run since the process started",
+            )
+        return last
+
+    # ---- M46b PredictionV2 resolver ---------------------------------
+    @app.post(
+        "/jobs/resolve-predictions-v2",
+        response_model=ResolvePredictionsV2Result,
+    )
+    async def trigger_resolve_predictions_v2() -> ResolvePredictionsV2Result:
+        if app.state.resolver_v2_repo is None:
+            raise HTTPException(
+                status_code=503,
+                detail="prediction-v2 resolver unavailable — DATABASE_URL not configured",
+            )
+        log.info("data-pipeline: manual /jobs/resolve-predictions-v2 triggered")
+        result = await _run_resolve_predictions_v2_job(app=app)
+        if result is None:
+            raise HTTPException(status_code=503, detail="prediction-v2 resolver skipped")
+        return result
+
+    @app.get(
+        "/jobs/resolve-predictions-v2/last",
+        response_model=ResolvePredictionsV2Result,
+    )
+    async def last_resolve_predictions_v2() -> ResolvePredictionsV2Result:
+        last: ResolvePredictionsV2Result | None = getattr(
+            app.state, "last_resolve_v2_result", None
+        )
+        if last is None:
+            raise HTTPException(
+                status_code=404,
+                detail="no prediction-v2 resolve has run since process start",
             )
         return last
 
