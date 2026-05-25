@@ -43,7 +43,7 @@ export default async function CommunityHomePage() {
   ]);
 
   return (
-    <main className="mx-auto max-w-[100rem] px-6 py-10">
+    <main className="mx-auto max-w-6xl px-6 py-10">
       <header className="rounded-xl border border-violet-900/40 bg-gradient-to-br from-violet-950/30 via-neutral-950 to-cyan-950/20 p-6">
         <span className="rounded-full border border-violet-700/60 bg-violet-950/50 px-2.5 py-0.5 text-[10px] uppercase tracking-wider text-violet-300">
           {t("community.badge")}

@@ -115,7 +115,7 @@ export interface SourceKindMeta {
 
 const FALLBACK_KIND: SourceKindMeta = {
   label: "unclassified",
-  description: "출처 종류 미지정",
+  description: "Unclassified source · 출처 종류 미지정",
   pillClass: "bg-neutral-800 text-neutral-400 border-neutral-700",
   accent: "#737373",
 };
@@ -123,49 +123,49 @@ const FALLBACK_KIND: SourceKindMeta = {
 export const SOURCE_KINDS: Record<string, SourceKindMeta> = {
   paper: {
     label: "paper",
-    description: "학술/기술 논문 (peer-reviewed, technical reports)",
+    description: "Academic & technical papers (peer-reviewed) · 학술/기술 논문",
     pillClass: "bg-violet-950/60 text-violet-300 border-violet-800/70",
     accent: "#a78bfa",
   },
   vendor_doc: {
     label: "vendor",
-    description: "벤더 공식 문서 (datasheet, spec, 제조사 발표)",
+    description: "Vendor docs — datasheets, specs, manufacturer announcements · 벤더 공식 문서",
     pillClass: "bg-amber-950/60 text-amber-300 border-amber-800/70",
     accent: "#fbbf24",
   },
   analyst: {
     label: "analyst",
-    description: "애널리스트 리포트/추정 (sell-side, consulting)",
+    description: "Analyst reports & estimates (sell-side, consulting) · 애널리스트 리포트",
     pillClass: "bg-sky-950/60 text-sky-300 border-sky-800/70",
     accent: "#38bdf8",
   },
   benchmark: {
     label: "benchmark",
-    description: "산업 벤치마크 (MLPerf, SPECpower 등 표준 테스트)",
+    description: "Industry benchmarks (MLPerf, SPECpower, etc.) · 산업 벤치마크",
     pillClass: "bg-emerald-950/60 text-emerald-300 border-emerald-800/70",
     accent: "#34d399",
   },
   gov_report: {
     label: "gov",
-    description: "정부 기관 보고서 (FAA, NASA, ESA, NREL 등)",
+    description: "Government reports (FAA, NASA, ESA, NREL, …) · 정부 기관 보고서",
     pillClass: "bg-rose-950/60 text-rose-300 border-rose-800/70",
     accent: "#fb7185",
   },
   dataset: {
     label: "dataset",
-    description: "데이터셋/모델 출력 (관측 데이터, 시뮬레이션 결과)",
+    description: "Datasets & model outputs (observations, simulation results) · 데이터셋/모델 출력",
     pillClass: "bg-teal-950/60 text-teal-300 border-teal-800/70",
     accent: "#2dd4bf",
   },
   news: {
     label: "news",
-    description: "보도 자료 / 뉴스 기사",
+    description: "Press releases & news articles · 보도 자료/뉴스",
     pillClass: "bg-pink-950/60 text-pink-300 border-pink-800/70",
     accent: "#f472b6",
   },
   filing: {
     label: "filing",
-    description: "공시 / 재무 보고 (10-K, 실적 발표 등)",
+    description: "Filings & financials (10-K, earnings, …) · 공시/재무 보고",
     pillClass: "bg-orange-950/60 text-orange-300 border-orange-800/70",
     accent: "#fb923c",
   },

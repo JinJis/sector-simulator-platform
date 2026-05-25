@@ -52,11 +52,68 @@ html.light body {
 
 html.light .bg-neutral-950       { background-color: rgb(250 250 250) !important; }
 html.light .bg-neutral-900       { background-color: rgb(245 245 245) !important; }
-html.light .bg-neutral-900\/40   { background-color: rgba(229, 229, 229, 0.5) !important; }
-html.light .bg-neutral-900\/30   { background-color: rgba(229, 229, 229, 0.4) !important; }
-html.light .bg-neutral-950\/40   { background-color: rgba(245, 245, 245, 0.5) !important; }
-html.light .bg-neutral-950\/60   { background-color: rgba(250, 250, 250, 0.7) !important; }
+html.light .bg-neutral-900\/40,
+html.light .bg-neutral-900\/30,
+html.light .bg-neutral-900\/50   { background-color: rgba(245, 245, 245, 0.85) !important; }
+html.light .bg-neutral-950\/40,
+html.light .bg-neutral-950\/30,
+html.light .bg-neutral-950\/60,
+html.light .bg-neutral-950\/85   { background-color: rgba(250, 250, 250, 0.92) !important; }
 html.light .bg-neutral-800       { background-color: rgb(229 229 229) !important; }
+
+/* Gradient anchor classes used in hero cards / community headers.
+ * In light mode the colored washes (violet/cyan/emerald/amber) get
+ * dropped — the colored borders + chip backgrounds carry enough
+ * signal. The neutral via/to anchors become light gray so the
+ * gradient is visible but subtle. */
+html.light [class*="via-neutral-950"]   { --tw-gradient-via: rgb(250 250 250) !important; }
+html.light [class*="from-neutral-950"],
+html.light [class*="from-neutral-900"]  { --tw-gradient-from: rgb(250 250 250) !important; }
+html.light [class*="to-neutral-950"],
+html.light [class*="to-neutral-900"]    { --tw-gradient-to: rgb(245 245 245) !important; }
+
+html.light [class*="from-violet-950"],
+html.light [class*="from-cyan-950"],
+html.light [class*="from-emerald-950"],
+html.light [class*="from-amber-950"],
+html.light [class*="from-rose-950"],
+html.light [class*="from-indigo-950"],
+html.light [class*="from-sky-950"],
+html.light [class*="from-fuchsia-950"],
+html.light [class*="from-lime-950"]      { --tw-gradient-from: transparent !important; }
+html.light [class*="via-violet-950"],
+html.light [class*="via-cyan-950"]       { --tw-gradient-via: transparent !important; }
+html.light [class*="to-cyan-950"],
+html.light [class*="to-violet-950"],
+html.light [class*="to-emerald-950"]     { --tw-gradient-to: transparent !important; }
+
+/* Colored-tint backdrops common in the proposal/prediction wizards
+ * (bg-cyan-900/30 selection states, bg-emerald-950/20 review cards,
+ * bg-rose-950/20, etc.). On white these look like neon stickers —
+ * dial them way down. */
+html.light .bg-cyan-900\/30,
+html.light .bg-cyan-900\/40,
+html.light .bg-cyan-950\/30,
+html.light .bg-cyan-950\/40              { background-color: rgba(207, 250, 254, 0.6) !important; }
+html.light .bg-emerald-950\/10,
+html.light .bg-emerald-950\/20,
+html.light .bg-emerald-950\/30,
+html.light .bg-emerald-950\/40           { background-color: rgba(209, 250, 229, 0.6) !important; }
+html.light .bg-amber-900\/40,
+html.light .bg-amber-950\/20,
+html.light .bg-amber-950\/30,
+html.light .bg-amber-950\/40             { background-color: rgba(254, 243, 199, 0.6) !important; }
+html.light .bg-rose-950\/20,
+html.light .bg-rose-950\/30,
+html.light .bg-rose-950\/40              { background-color: rgba(255, 228, 230, 0.6) !important; }
+html.light .bg-indigo-950\/40            { background-color: rgba(224, 231, 255, 0.6) !important; }
+html.light .bg-violet-950\/30,
+html.light .bg-violet-950\/40,
+html.light .bg-violet-950\/50            { background-color: rgba(237, 233, 254, 0.6) !important; }
+html.light .bg-fuchsia-950\/40           { background-color: rgba(250, 232, 255, 0.6) !important; }
+html.light .bg-sky-950\/40               { background-color: rgba(224, 242, 254, 0.6) !important; }
+html.light .bg-lime-950\/40              { background-color: rgba(236, 252, 203, 0.6) !important; }
+html.light .bg-red-950\/40               { background-color: rgba(254, 226, 226, 0.6) !important; }
 
 html.light .text-neutral-50,
 html.light .text-neutral-100     { color: rgb(23 23 23) !important; }

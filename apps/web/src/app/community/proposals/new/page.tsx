@@ -9,6 +9,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { getT } from "@/lib/i18n/server";
 import { fetchMe } from "@/lib/sim-client";
 import { fetchVisions } from "@/lib/vision-client";
 
@@ -28,25 +29,25 @@ export default async function NewProposalPage({ searchParams }: Props) {
       `/sign-in?next=${encodeURIComponent("/community/proposals/new")}`,
     );
   }
+  const t = await getT();
   const visions = await fetchVisions({ include_legacy: true }).catch(() => []);
   const sectorChoices = visions
     .map((v) => ({ slug: v.slug, name: v.name }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <main className="mx-auto max-w-[100rem] px-6 py-10">
+    <main className="mx-auto max-w-3xl px-6 py-10">
       <nav className="mb-3 flex gap-2 text-[11px] text-neutral-500">
         <Link href="/community/proposals" className="hover:text-neutral-300">
-          ← Proposals
+          {t("proposal.new.backLink")}
         </Link>
       </nav>
       <header>
         <h1 className="text-2xl font-bold tracking-tight text-neutral-50">
-          새 제안 작성
+          {t("proposal.new.title")}
         </h1>
         <p className="mt-1 text-[13px] text-neutral-400">
-          5단계로 끝납니다 — 종류를 고르고, 섹터를 정하고, 본문을 쓰고,
-          상세 필드를 채우고, 근거를 첨부한 뒤 공개합니다.
+          {t("proposal.new.subtitle")}
         </p>
       </header>
 

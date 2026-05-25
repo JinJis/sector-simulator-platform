@@ -16,6 +16,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { useT } from "@/lib/i18n/provider";
 import {
   fetchLive,
   runSim,
@@ -64,6 +65,7 @@ export function ManualPanel({
   defaults,
   driverCapabilityMap,
 }: Props) {
+  const t = useT();
   const initial = defaults;
   const setValues = onChangeValues;
   const [outputs, setOutputs] = useState<OutputSchema[]>([]);
@@ -165,7 +167,7 @@ export function ManualPanel({
           <h2 className="text-sm font-semibold text-neutral-100">
             Outputs{" "}
             <span className="ml-1 text-[11px] font-normal text-neutral-500">
-              현재 슬라이더 값으로 계산
+              {t("manual.outputsSubtitle")}
             </span>
           </h2>
           {isPending && (
@@ -183,7 +185,7 @@ export function ManualPanel({
         </div>
         {sensitivity && <SensitivityCard sensitivity={sensitivity} outputs={scalarOutputs} />}
         {outputs.length === 0 && !error && (
-          <p className="text-sm text-neutral-500">시뮬레이션 실행 중…</p>
+          <p className="text-sm text-neutral-500">{t("manual.simulating")}</p>
         )}
       </section>
     </div>
@@ -205,6 +207,7 @@ function PresetBar({
   onReset: () => void;
   onInitFromLive: () => void;
 }) {
+  const t = useT();
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-3">
       <div className="mb-2 flex items-baseline justify-between">
@@ -218,7 +221,7 @@ function PresetBar({
           <button
             onClick={onInitFromLive}
             className="text-[11px] text-cyan-400 underline-offset-4 hover:underline"
-            title="현재 라이브 데이터로 드라이버 초기화"
+            title={t("manual.initFromLive")}
           >
             ↻ from live
           </button>
@@ -485,6 +488,7 @@ function SensitivityCard({
   sensitivity: SensitivityResponse;
   outputs: OutputSchema[];
 }) {
+  const t = useT();
   const availableOutputs = Object.keys(sensitivity.by_output);
   const initialOutput = outputs.find((o) => o.name === "npv_savings_vs_ground_usd")?.name
     ?? availableOutputs[0];
@@ -520,7 +524,7 @@ function SensitivityCard({
         </select>
       </div>
       <p className="mt-1 text-[11px] text-neutral-500">
-        각 드라이버를 min↔max로 휘둘렀을 때 결과의 swing. 막대 길이가 길수록 그 드라이버에 더 민감.
+        {t("manual.sensitivityHint")}
       </p>
       <div className="mt-3 h-72">
         <ResponsiveContainer>

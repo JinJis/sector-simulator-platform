@@ -16,12 +16,15 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { PAGE_TOURS, type PageTourEntry } from "./page-tour-content";
+import { useLocale } from "@/lib/i18n/provider";
+
+import { PAGE_TOURS, pickL, type PageTourEntry } from "./page-tour-content";
 import { useFocusTrap } from "./use-focus-trap";
 
 export function PageTour() {
   const pathname = usePathname() ?? "";
   const entry = resolveTour(pathname);
+  const { locale, t } = useLocale();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
   const lastFocusedRef = useRef<HTMLElement | null>(null);
@@ -71,12 +74,12 @@ export function PageTour() {
         type="button"
         onClick={() => setOpen(true)}
         className="fixed bottom-4 right-4 z-30 inline-flex items-center gap-1 rounded-full border border-cyan-700 bg-cyan-950/80 px-3 py-2 text-xs font-medium text-cyan-200 shadow-lg backdrop-blur transition hover:bg-cyan-900/80"
-        title="이 페이지 둘러보기"
-        aria-label="이 페이지 둘러보기"
+        title={t("tour.openTitle")}
+        aria-label={t("tour.openTitle")}
       >
         <span aria-hidden>📍</span>
-        <span className="hidden sm:inline">이 페이지 둘러보기</span>
-        <span className="sm:hidden">도움말</span>
+        <span className="hidden sm:inline">{t("tour.openTitle")}</span>
+        <span className="sm:hidden">{t("tour.openShort")}</span>
       </button>
 
       {open && (
@@ -96,7 +99,7 @@ export function PageTour() {
           >
             <header className="flex items-center justify-between gap-3 border-b border-neutral-800 px-5 py-3">
               <span className="rounded border border-cyan-700 bg-cyan-950/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-300">
-                {entry.label}
+                {pickL(entry.label, locale)}
               </span>
               <div className="flex items-center gap-3">
                 <span className="text-[11px] text-neutral-500">
@@ -106,7 +109,7 @@ export function PageTour() {
                   type="button"
                   onClick={() => setOpen(false)}
                   className="text-[11px] text-neutral-500 hover:text-neutral-200"
-                  aria-label="닫기"
+                  aria-label={t("tour.close")}
                 >
                   ✕
                 </button>
@@ -117,14 +120,14 @@ export function PageTour() {
                 id="page-tour-title"
                 className="text-base font-semibold text-neutral-50"
               >
-                {current.title}
+                {pickL(current.title, locale)}
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-neutral-300">
-                {current.body}
+                {pickL(current.body, locale)}
               </p>
               {current.tip && (
                 <div className="mt-3 rounded border border-cyan-900/40 bg-cyan-950/20 p-3 text-xs leading-relaxed text-cyan-200">
-                  💡 {current.tip}
+                  💡 {pickL(current.tip, locale)}
                 </div>
               )}
             </div>
@@ -135,7 +138,7 @@ export function PageTour() {
                 disabled={step === 0}
                 className="rounded border border-neutral-800 bg-neutral-900 px-3 py-1 text-xs text-neutral-300 hover:border-neutral-700 disabled:opacity-50"
               >
-                이전
+                {t("tour.prev")}
               </button>
               {isLast ? (
                 <button
@@ -143,7 +146,7 @@ export function PageTour() {
                   onClick={() => setOpen(false)}
                   className="rounded bg-cyan-600 px-3 py-1 text-xs font-medium text-cyan-50 hover:bg-cyan-500"
                 >
-                  닫기
+                  {t("tour.close")}
                 </button>
               ) : (
                 <button
@@ -151,7 +154,7 @@ export function PageTour() {
                   onClick={() => setStep((s) => Math.min(total - 1, s + 1))}
                   className="rounded bg-cyan-600 px-3 py-1 text-xs font-medium text-cyan-50 hover:bg-cyan-500"
                 >
-                  다음 →
+                  {t("tour.next")}
                 </button>
               )}
             </footer>

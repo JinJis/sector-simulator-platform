@@ -3,10 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { useT } from "@/lib/i18n/provider";
 import { signUp } from "@/lib/sim-client";
 
 export function SignupForm() {
   const router = useRouter();
+  const t = useT();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -17,7 +19,7 @@ export function SignupForm() {
     e.preventDefault();
     setError(null);
     if (password.length < 8) {
-      setError("비밀번호는 8자 이상이어야 합니다.");
+      setError(t("auth.signup.pwTooShort"));
       return;
     }
     setSubmitting(true);
@@ -30,7 +32,7 @@ export function SignupForm() {
       router.push("/?onboard=1");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "가입 실패");
+      setError(err instanceof Error ? err.message : t("auth.signup.fail"));
     } finally {
       setSubmitting(false);
     }
@@ -39,15 +41,15 @@ export function SignupForm() {
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-3">
       <Field
-        label="이름 (선택)"
+        label={t("auth.signup.nameOptional")}
         type="text"
         autoComplete="name"
         value={name}
         onChange={setName}
-        placeholder="홍길동"
+        placeholder={t("auth.signup.namePlaceholder")}
       />
       <Field
-        label="이메일"
+        label={t("auth.email")}
         type="email"
         autoComplete="email"
         value={email}
@@ -55,14 +57,14 @@ export function SignupForm() {
         required
       />
       <Field
-        label="비밀번호"
+        label={t("auth.password")}
         type="password"
         autoComplete="new-password"
         value={password}
         onChange={setPassword}
         required
         minLength={8}
-        hint="8자 이상"
+        hint={t("settings.newPwHint")}
       />
       {error && (
         <p className="rounded border border-rose-900/60 bg-rose-950/40 px-3 py-2 text-xs text-rose-300">
@@ -74,10 +76,10 @@ export function SignupForm() {
         disabled={submitting}
         className="mt-2 rounded bg-cyan-600 px-4 py-2 text-sm font-medium text-cyan-50 transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {submitting ? "가입 중…" : "가입하기"}
+        {submitting ? t("auth.signup.submitting") : t("auth.signup.cta")}
       </button>
       <p className="mt-1 text-[11px] text-neutral-600">
-        가입하면 이용 약관과 개인정보 처리방침에 동의하는 것으로 간주됩니다. (현재 약관은 작성 중)
+        {t("auth.signup.tos")}
       </p>
     </form>
   );

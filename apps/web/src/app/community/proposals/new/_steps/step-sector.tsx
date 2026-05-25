@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n/provider";
 import { themeForVision } from "../../../../visions/_components/domain-theme";
 
 export interface SectorChoice {
@@ -16,19 +17,20 @@ export function StepSector({
   value: string;
   onChange: (slug: string) => void;
 }) {
+  const t = useT();
   return (
     <div className="space-y-4">
       <header>
         <h2 className="text-lg font-semibold text-neutral-100">
-          어떤 비전 / 섹터에 적용되나요?
+          {t("proposal.sector.heading")}
         </h2>
         <p className="mt-1 text-[12px] text-neutral-500">
-          제안이 영향을 줄 비전을 선택하세요.
+          {t("proposal.sector.subheading")}
         </p>
       </header>
       {choices.length === 0 ? (
         <p className="rounded border border-dashed border-neutral-800 bg-neutral-950/40 p-6 text-center text-[12px] text-neutral-500">
-          비전을 불러오지 못했습니다. 새로고침해 보세요.
+          {t("proposal.sector.empty")}
         </p>
       ) : (
         <div className="grid gap-2 sm:grid-cols-2">

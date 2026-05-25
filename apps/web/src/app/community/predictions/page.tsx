@@ -35,7 +35,7 @@ export default async function PredictionsHubPage({ searchParams }: Props) {
         : "live";
 
   return (
-    <main className="mx-auto max-w-[100rem] px-6 py-10">
+    <main className="mx-auto max-w-5xl px-6 py-10">
       <header className="flex flex-wrap items-baseline justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-neutral-100">

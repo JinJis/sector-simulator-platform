@@ -76,10 +76,10 @@ export function SettingsForm({ user }: Props) {
   async function onChangePassword(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setPwError(null);
-    setPwStatus("변경 중…");
+    setPwStatus(t("settings.changing"));
     if (newPw.length < 8) {
       setPwStatus(null);
-      setPwError("새 비밀번호는 8자 이상이어야 합니다.");
+      setPwError(t("settings.newPwTooShort"));
       return;
     }
     try {
@@ -89,10 +89,10 @@ export function SettingsForm({ user }: Props) {
       });
       setCurrentPw("");
       setNewPw("");
-      setPwStatus("✓ 변경됨 — 다른 디바이스의 세션은 모두 만료되었습니다.");
+      setPwStatus(t("settings.changeOk"));
     } catch (err) {
       setPwStatus(null);
-      setPwError(err instanceof Error ? err.message : "변경 실패");
+      setPwError(err instanceof Error ? err.message : t("settings.changeFail"));
     }
   }
 
@@ -164,11 +164,11 @@ export function SettingsForm({ user }: Props) {
 
       <section className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-5">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-300">
-          비밀번호 변경
+          {t("settings.passwordSection")}
         </h2>
         <form onSubmit={onChangePassword} className="flex flex-col gap-3">
           <Field
-            label="현재 비밀번호"
+            label={t("settings.currentPw")}
             type="password"
             value={currentPw}
             onChange={setCurrentPw}
@@ -176,21 +176,21 @@ export function SettingsForm({ user }: Props) {
             required
           />
           <Field
-            label="새 비밀번호"
+            label={t("settings.newPw")}
             type="password"
             value={newPw}
             onChange={setNewPw}
             autoComplete="new-password"
             required
             minLength={8}
-            hint="8자 이상"
+            hint={t("settings.newPwHint")}
           />
           <div className="mt-2 flex items-center gap-3">
             <button
               type="submit"
               className="rounded bg-cyan-600 px-3 py-1.5 text-xs font-medium text-cyan-50 hover:bg-cyan-500"
             >
-              변경
+              {t("settings.changeCta")}
             </button>
             {pwStatus && (
               <span className="text-[11px] text-emerald-400">{pwStatus}</span>
@@ -205,7 +205,7 @@ export function SettingsForm({ user }: Props) {
 
       <section className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-5">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-300">
-          앱
+          {t("settings.appSection")}
         </h2>
         <div className="flex flex-wrap items-center gap-3">
           <button
@@ -213,20 +213,20 @@ export function SettingsForm({ user }: Props) {
             onClick={replayOnboarding}
             className="rounded border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-300 hover:border-cyan-700 hover:text-cyan-200"
           >
-            ↻ 온보딩 다시 보기
+            {t("settings.replayOnboarding")}
           </button>
           <p className="text-[11px] text-neutral-500">
-            플랫폼의 핵심 4-5개 페이지를 다시 안내합니다.
+            {t("settings.replayHint")}
           </p>
         </div>
       </section>
 
       <section className="rounded-lg border border-rose-900/40 bg-rose-950/10 p-5">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-rose-400">
-          위험 구역
+          {t("settings.dangerSection")}
         </h2>
         <p className="text-[11px] text-neutral-500">
-          계정 삭제는 현재 수동 절차입니다 — 관리자에게 문의해 주세요. 자가 삭제는 추후 활성화됩니다.
+          {t("settings.dangerHint")}
         </p>
       </section>
     </div>
@@ -312,6 +312,7 @@ function SelectField({
 }
 
 function PremiumSection({ user }: { user: CurrentUser }) {
+  const { t } = useLocale();
   const [billing, setBilling] = useState<BillingStatus | null>(null);
   const [sub, setSub] = useState<BillingSubscription>(null);
   const [busy, setBusy] = useState<"checkout" | "portal" | null>(null);
@@ -340,7 +341,7 @@ function PremiumSection({ user }: { user: CurrentUser }) {
       const { url } = await startCheckout();
       window.location.href = url;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "결제 시작 실패");
+      setError(e instanceof Error ? e.message : t("settings.checkoutStartFail"));
       setBusy(null);
     }
   }
@@ -352,7 +353,7 @@ function PremiumSection({ user }: { user: CurrentUser }) {
       const { url } = await openBillingPortal();
       window.location.href = url;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Portal 열기 실패");
+      setError(e instanceof Error ? e.message : t("settings.portalOpenFail"));
       setBusy(null);
     }
   }
@@ -366,7 +367,7 @@ function PremiumSection({ user }: { user: CurrentUser }) {
       <div className="flex items-baseline justify-between gap-3">
         <div className="min-w-0">
           <h2 className="mb-1 flex items-baseline gap-2 text-sm font-semibold uppercase tracking-wider text-amber-300">
-            <span>현재 플랜</span>
+            <span>{t("settings.currentPlan")}</span>
             {premium ? (
               <span className="rounded border border-amber-700/60 bg-amber-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200">
                 ★ Premium
@@ -380,16 +381,16 @@ function PremiumSection({ user }: { user: CurrentUser }) {
           <p className="text-[11px] leading-relaxed text-neutral-400">
             {premium ? (
               <>
-                Premium 사용 중. 다음 갱신일{" "}
+                {t("settings.premiumActiveRenew")}{" "}
                 {sub?.current_period_end
                   ? new Date(sub.current_period_end).toISOString().slice(0, 10)
                   : "—"}
-                {sub?.cancel_at_period_end ? " (다음 갱신일에 해지 예정)" : ""}.
+                {sub?.cancel_at_period_end ? t("settings.willCancel") : ""}.
               </>
             ) : betaFree ? (
-              "Free 플랜은 기본 섹터(메모리·우주·SOFC)를 모두 탐색할 수 있습니다. 에이전트로 직접 시뮬레이터를 만들 수 있는 기능은 베타 기간 모두에게 무료로 열려 있으며, 정식 출시 후 Premium 전용으로 전환됩니다."
+              t("settings.freePlanBetaHint")
             ) : (
-              "에이전트로 시뮬레이터를 직접 만들고, 우선 응답과 더 많은 월별 사용량을 받으려면 Premium으로 업그레이드해 주세요."
+              t("settings.freePlanNonBeta")
             )}
           </p>
         </div>
@@ -401,7 +402,7 @@ function PremiumSection({ user }: { user: CurrentUser }) {
               disabled={busy === "portal"}
               className="rounded border border-amber-700 bg-amber-900/40 px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-800/60 disabled:opacity-50"
             >
-              {busy === "portal" ? "여는 중…" : "결제 관리"}
+              {busy === "portal" ? t("settings.opening") : t("settings.managePayment")}
             </button>
           ) : (
             <button
@@ -410,16 +411,16 @@ function PremiumSection({ user }: { user: CurrentUser }) {
               disabled={busy === "checkout"}
               title={
                 stripeReady
-                  ? "Stripe Checkout 으로 이동"
-                  : "결제 시스템이 구성되지 않았습니다. 베타 동안 무료로 사용해 주세요."
+                  ? t("settings.checkoutHintReady")
+                  : t("settings.checkoutHintNotConfigured")
               }
               className="rounded border border-amber-700 bg-amber-900/40 px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-800/60 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy === "checkout"
-                ? "결제 페이지 여는 중…"
+                ? t("settings.openingCheckout")
                 : stripeReady
-                  ? "★ Premium 업그레이드"
-                  : "★ Premium (베타 중 무료)"}
+                  ? t("settings.upgradePremium")
+                  : t("settings.premiumFreeBeta")}
             </button>
           )}
           {error && (
@@ -432,6 +433,7 @@ function PremiumSection({ user }: { user: CurrentUser }) {
 }
 
 function BudgetMeterSection({ user }: { user: CurrentUser }) {
+  const { t } = useLocale();
   const [budget, setBudget] = useState<AgentBudget | null>(null);
 
   useEffect(() => {
@@ -452,9 +454,9 @@ function BudgetMeterSection({ user }: { user: CurrentUser }) {
     return (
       <section className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-5">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-neutral-300">
-          이번 달 에이전트 사용량
+          {t("settings.monthlyAgentUsage")}
         </h2>
-        <p className="text-[11px] text-neutral-500">불러오는 중…</p>
+        <p className="text-[11px] text-neutral-500">{t("settings.usageLoading")}</p>
       </section>
     );
   }
@@ -468,9 +470,9 @@ function BudgetMeterSection({ user }: { user: CurrentUser }) {
   return (
     <section className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-5">
       <h2 className="mb-2 flex items-baseline justify-between gap-2 text-sm font-semibold uppercase tracking-wider text-neutral-300">
-        <span>이번 달 에이전트 사용량</span>
+        <span>{t("settings.monthlyAgentUsage")}</span>
         <span className="text-[10px] text-neutral-500 normal-case">
-          {budget.tier === "premium" ? "★ Premium 한도" : "Free 한도"}
+          {budget.tier === "premium" ? t("settings.premiumQuota") : t("settings.freeQuota")}
         </span>
       </h2>
       {limit > 0 ? (
@@ -480,7 +482,7 @@ function BudgetMeterSection({ user }: { user: CurrentUser }) {
               ${used.toFixed(2)} / ${limit.toFixed(2)} USD
             </span>
             <span className="text-[11px] text-neutral-500">
-              남은 한도 ${budget.remaining_usd.toFixed(2)}
+              {t("settings.remaining")} ${budget.remaining_usd.toFixed(2)}
             </span>
           </div>
           <div className="relative h-2 w-full overflow-hidden rounded bg-neutral-950">
@@ -494,23 +496,22 @@ function BudgetMeterSection({ user }: { user: CurrentUser }) {
         </>
       ) : betaFree ? (
         <p className="rounded border border-cyan-900/40 bg-cyan-950/20 px-3 py-2 text-[11px] text-cyan-200">
-          🎁 베타 기간 — 에이전트 시뮬레이터 생성이 모두에게 무료로 열려 있습니다.
-          정식 출시 후엔 Premium 사용자에게 매월 ${" "}
-          {(budget.limit_usd > 0 ? budget.limit_usd : 20).toFixed(0)} 한도가 부여됩니다.
+          {t("settings.betaMessage")}${" "}
+          {(budget.limit_usd > 0 ? budget.limit_usd : 20).toFixed(0)}
+          {t("settings.afterRelease")}
         </p>
       ) : (
         <p className="text-[11px] text-neutral-500">
-          Free 플랜에서는 에이전트 시뮬레이터 생성이 제공되지 않습니다.
-          Premium으로 업그레이드하면 매월 사용량 한도가 부여됩니다.
+          {t("settings.freeNoAgent")}
         </p>
       )}
       <p className="mt-2 text-[10px] text-neutral-600">
-        동시 실행 한도: {budget.concurrent_limit}개 · 현재 실행 중{" "}
-        {budget.in_flight}개
+        {t("settings.concurrentLimit")}: {budget.concurrent_limit} · {t("settings.currentlyRunning")}{" "}
+        {budget.in_flight}
       </p>
       {user.tier !== "premium" && !betaFree && limit === 0 && (
         <p className="mt-2 text-[10px] text-amber-400">
-          ★ Premium 업그레이드로 에이전트 기능을 풀어보세요.
+          {t("settings.unlockAgentByUpgrade")}
         </p>
       )}
     </section>

@@ -30,7 +30,7 @@ export default async function VisionLayout({ children, params }: Props) {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <div className="mx-auto max-w-[100rem] px-6 pt-6">
+      <div className="mx-auto max-w-7xl px-6 pt-6">
         <Breadcrumbs
           className="mb-3"
           items={[
@@ -50,7 +50,7 @@ export default async function VisionLayout({ children, params }: Props) {
         </header>
         <SubNav items={subnav} className="mb-6" />
       </div>
-      <div className="mx-auto max-w-[100rem] px-6 pb-16">{children}</div>
+      <div className="mx-auto max-w-7xl px-6 pb-16">{children}</div>
     </div>
   );
 }

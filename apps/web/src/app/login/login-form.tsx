@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { useT } from "@/lib/i18n/provider";
 import { signIn } from "@/lib/sim-client";
 
 interface Props {
@@ -12,6 +13,7 @@ interface Props {
 
 export function LoginForm({ redirect }: Props) {
   const router = useRouter();
+  const t = useT();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -24,11 +26,9 @@ export function LoginForm({ redirect }: Props) {
     try {
       await signIn({ email, password });
       router.push(redirect);
-      // refresh so the RSC header re-fetches `auth.me` and the user
-      // menu hydrates with the new identity.
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "로그인 실패");
+      setError(err instanceof Error ? err.message : t("auth.login.fail"));
     } finally {
       setSubmitting(false);
     }
@@ -37,7 +37,7 @@ export function LoginForm({ redirect }: Props) {
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-3">
       <Field
-        label="이메일"
+        label={t("auth.email")}
         type="email"
         autoComplete="email"
         value={email}
@@ -45,7 +45,7 @@ export function LoginForm({ redirect }: Props) {
         required
       />
       <Field
-        label="비밀번호"
+        label={t("auth.password")}
         type="password"
         autoComplete="current-password"
         value={password}
@@ -62,7 +62,7 @@ export function LoginForm({ redirect }: Props) {
         disabled={submitting}
         className="mt-2 rounded bg-cyan-600 px-4 py-2 text-sm font-medium text-cyan-50 transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {submitting ? "로그인 중…" : "로그인"}
+        {submitting ? t("auth.login.submitting") : t("auth.login.cta")}
       </button>
     </form>
   );

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { useT } from "@/lib/i18n/provider";
 import {
   placePrediction,
   type PredictionQuoteResult,
@@ -13,12 +14,6 @@ import { StepBet } from "./_steps/step-bet";
 import { StepReview } from "./_steps/step-review";
 import { StepStock, type SectorChoice } from "./_steps/step-stock";
 import { EMPTY_PREDICTION, type EquityChoice, type PredictionDraft } from "./_steps/types";
-
-const STEPS: WizardStep[] = [
-  { id: 1, label: "Stock" },
-  { id: 2, label: "Bet" },
-  { id: 3, label: "Review" },
-];
 
 interface Props {
   sectorChoices: SectorChoice[];
@@ -34,10 +29,17 @@ export function PredictionWizard({
   initialEquityId,
 }: Props) {
   const router = useRouter();
+  const t = useT();
   const [step, setStep] = useState(1);
   const [equityChoices, setEquityChoices] = useState<EquityChoice[]>(
     initialEquityChoices,
   );
+
+  const STEPS: WizardStep[] = [
+    { id: 1, label: t("prediction.steps.stock") },
+    { id: 2, label: t("prediction.steps.bet") },
+    { id: 3, label: t("prediction.steps.review") },
+  ];
   const [draft, setDraft] = useState<PredictionDraft>({
     ...EMPTY_PREDICTION,
     sector_slug: initialSector,
@@ -175,10 +177,10 @@ export function PredictionWizard({
           disabled={step === 1 || submitting}
           className="rounded-lg border border-neutral-700 px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          ← 이전
+          {t("wizard.back")}
         </button>
         <p className="text-[10px] text-neutral-500">
-          Step {step} / {STEPS.length}
+          {t("wizard.step")} {step} / {STEPS.length}
         </p>
         {step < STEPS.length ? (
           <button
@@ -187,7 +189,7 @@ export function PredictionWizard({
             disabled={!canAdvance}
             className="rounded-lg border border-cyan-700 bg-cyan-900/40 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-800/60 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            다음 →
+            {t("wizard.next")}
           </button>
         ) : (
           <button
@@ -196,7 +198,7 @@ export function PredictionWizard({
             disabled={submitting}
             className="rounded-lg border border-emerald-600 bg-emerald-800 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-40"
           >
-            {submitting ? "Placing…" : "🎯 베팅 등록 →"}
+            {submitting ? t("wizard.placing") : t("prediction.review.placeCta")}
           </button>
         )}
       </nav>

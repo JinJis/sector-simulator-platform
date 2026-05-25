@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { useT } from "@/lib/i18n/provider";
 import { themeForVision } from "../../../../visions/_components/domain-theme";
 
 import type { EquityChoice } from "./types";
@@ -30,6 +31,7 @@ export function StepStock({
   onPickSector: (slug: string) => void;
   onPickEquity: (id: string) => void;
 }) {
+  const t = useT();
   const [filter, setFilter] = useState("");
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -51,16 +53,16 @@ export function StepStock({
     <div className="space-y-5">
       <header>
         <h2 className="text-lg font-semibold text-neutral-100">
-          어떤 종목을 베팅하시겠어요?
+          {t("prediction.stock.heading")}
         </h2>
         <p className="mt-1 text-[12px] text-neutral-500">
-          섹터를 먼저 고르면 그 안의 종목 카드가 펼쳐집니다.
+          {t("prediction.stock.subheading")}
         </p>
       </header>
 
       <section>
         <p className="mb-2 text-[10px] uppercase tracking-wider text-neutral-500">
-          섹터
+          {t("prediction.stock.sectorLabel")}
         </p>
         <div className="flex flex-wrap gap-2">
           {sectorChoices.map((s) => {
@@ -88,18 +90,18 @@ export function StepStock({
       <section>
         <div className="mb-2 flex items-baseline justify-between">
           <p className="text-[10px] uppercase tracking-wider text-neutral-500">
-            종목 — {equityChoices.length}개
+            {t("prediction.stock.equityLabel")} — {equityChoices.length}
           </p>
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder="ticker / 회사명 검색"
+            placeholder={t("prediction.stock.filter")}
             className="rounded border border-neutral-800 bg-neutral-950 px-2 py-1 text-[11px] text-neutral-100 focus:border-cyan-700 focus:outline-none"
           />
         </div>
         {equityChoices.length === 0 ? (
           <p className="rounded-lg border border-dashed border-neutral-800 bg-neutral-950/40 p-6 text-center text-[12px] text-neutral-500">
-            이 섹터에 종목이 없습니다.
+            {t("prediction.stock.empty")}
           </p>
         ) : (
           <div className="grid max-h-[420px] gap-2 overflow-y-auto pr-1 sm:grid-cols-2">

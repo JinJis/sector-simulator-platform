@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n/provider";
 import type { ProposalTargetKind } from "@/lib/community-proposal-client";
 
 export function StepPayload({
@@ -11,15 +12,15 @@ export function StepPayload({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
 }) {
+  const t = useT();
   return (
     <div className="space-y-4">
       <header>
         <h2 className="text-lg font-semibold text-neutral-100">
-          상세 정보를 채워주세요
+          {t("proposal.payload.heading")}
         </h2>
         <p className="mt-1 text-[12px] text-neutral-500">
-          이 값들은 admin 승인 시 그대로 DB에 반영됩니다. 잘 모르는 항목은
-          비워두면 admin이 채워 넣습니다.
+          {t("proposal.payload.subheading")}
         </p>
       </header>
       <Form targetKind={targetKind} payload={payload} onChange={onChange} />
@@ -36,6 +37,7 @@ function Form({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
 }) {
+  const t = useT();
   function patch(key: string, value: unknown) {
     onChange({ ...payload, [key]: value });
   }
@@ -45,44 +47,44 @@ function Form({
       return (
         <div className="grid gap-3 sm:grid-cols-2">
           <TextField
-            label="이름 (snake_case)"
+            label={t("payload.nameSnake")}
             value={(payload.name as string) ?? ""}
             placeholder="rad_hard_chip_yield_pct"
             mono
             onChange={(v) => patch("name", v)}
           />
           <TextField
-            label="그룹"
+            label={t("payload.group")}
             value={(payload.group as string) ?? ""}
             placeholder="Compute / Demand / Costs"
             onChange={(v) => patch("group", v)}
           />
           <TextField
-            label="단위"
+            label={t("payload.unit")}
             value={(payload.unit as string) ?? ""}
             placeholder="% / $/kg / units"
             onChange={(v) => patch("unit", v)}
           />
           <NumberField
-            label="기본값"
+            label={t("payload.default")}
             value={(payload.default as number) ?? 0}
             onChange={(v) => patch("default", v)}
           />
           <NumberField
-            label="최솟값"
+            label={t("payload.min")}
             value={(payload.min as number) ?? 0}
             onChange={(v) => patch("min", v)}
           />
           <NumberField
-            label="최댓값"
+            label={t("payload.max")}
             value={(payload.max as number) ?? 0}
             onChange={(v) => patch("max", v)}
           />
           <div className="sm:col-span-2">
             <TextAreaField
-              label="설명"
+              label={t("payload.description")}
               value={(payload.description as string) ?? ""}
-              placeholder="이 드라이버가 무엇을 조정하는지 한두 문장으로"
+              placeholder={t("payload.driver.descPh")}
               onChange={(v) => patch("description", v)}
             />
           </div>
@@ -105,20 +107,20 @@ function Form({
             onChange={(v) => patch("exchange", v)}
           />
           <TextField
-            label="회사명"
+            label={t("payload.equity.companyName")}
             value={(payload.company_name as string) ?? ""}
             placeholder="Taiwan Semiconductor"
             onChange={(v) => patch("company_name", v)}
           />
           <TextField
-            label="ISO 국가 (2자 대문자)"
+            label={t("payload.iso2")}
             value={(payload.iso_country as string) ?? ""}
             placeholder="TW"
             mono
             onChange={(v) => patch("iso_country", v.toUpperCase().slice(0, 2))}
           />
           <NumberField
-            label="섹터 노출 %"
+            label={t("payload.equity.sectorExposure")}
             value={(payload.sector_exposure_pct as number) ?? 50}
             min={0}
             max={100}
@@ -126,9 +128,9 @@ function Form({
           />
           <div className="sm:col-span-2">
             <TextAreaField
-              label="포함 근거"
+              label={t("payload.equity.rationale")}
               value={(payload.rationale as string) ?? ""}
-              placeholder="왜 이 종목이 이 섹터의 핵심 swing 종목인지 한 문단"
+              placeholder={t("payload.equity.rationalePh")}
               onChange={(v) => patch("rationale", v)}
             />
           </div>
@@ -145,29 +147,29 @@ function Form({
             onChange={(v) => patch("key", v)}
           />
           <TextField
-            label="이름"
+            label={t("payload.name")}
             value={(payload.name as string) ?? ""}
             placeholder="Quantum error correction"
             onChange={(v) => patch("name", v)}
           />
           <div className="sm:col-span-2">
             <TextAreaField
-              label="설명"
+              label={t("payload.description")}
               value={(payload.description as string) ?? ""}
-              placeholder="이 capability가 기술적으로 무엇인지"
+              placeholder={t("payload.cap.descPh")}
               onChange={(v) => patch("description", v)}
             />
           </div>
           <div className="sm:col-span-2">
             <TextAreaField
-              label="비전에 왜 필요한가"
+              label={t("payload.cap.rationale")}
               value={(payload.rationale as string) ?? ""}
-              placeholder="이 capability가 익숙하지 않을 때 비전 전체에 미치는 영향"
+              placeholder={t("payload.cap.rationalePh")}
               onChange={(v) => patch("rationale", v)}
             />
           </div>
           <NumberField
-            label="가중치 (0.02-0.50)"
+            label={t("payload.cap.weight")}
             value={(payload.weight as number) ?? 0.1}
             min={0.02}
             max={0.5}
@@ -176,28 +178,28 @@ function Form({
           />
           <div />
           <NumberField
-            label="초기 Technical (0-100)"
+            label={t("payload.cap.initTech")}
             value={(payload.initial_technical as number) ?? 50}
             min={0}
             max={100}
             onChange={(v) => patch("initial_technical", v)}
           />
           <NumberField
-            label="초기 Economic"
+            label={t("payload.cap.initEcon")}
             value={(payload.initial_economic as number) ?? 50}
             min={0}
             max={100}
             onChange={(v) => patch("initial_economic", v)}
           />
           <NumberField
-            label="초기 Regulatory"
+            label={t("payload.cap.initReg")}
             value={(payload.initial_regulatory as number) ?? 50}
             min={0}
             max={100}
             onChange={(v) => patch("initial_regulatory", v)}
           />
           <NumberField
-            label="초기 Supply"
+            label={t("payload.cap.initSupply")}
             value={(payload.initial_supply as number) ?? 50}
             min={0}
             max={100}
@@ -216,7 +218,7 @@ function Form({
             onChange={(v) => patch("key", v)}
           />
           <TextField
-            label="이름"
+            label={t("payload.name")}
             value={(payload.name as string) ?? ""}
             placeholder="ITAR export controls"
             onChange={(v) => patch("name", v)}
@@ -255,15 +257,15 @@ function Form({
           />
           <div className="sm:col-span-2">
             <TextAreaField
-              label="설명"
+              label={t("payload.description")}
               value={(payload.description as string) ?? ""}
-              placeholder="이 위험이 비전에 어떻게 영향을 미치는지"
+              placeholder={t("payload.risk.descPh")}
               onChange={(v) => patch("description", v)}
             />
           </div>
           <div className="sm:col-span-2">
             <TextField
-              label="영향 capability keys (콤마 구분)"
+              label={t("payload.risk.affected")}
               value={
                 Array.isArray(payload.affected_capability_keys)
                   ? (payload.affected_capability_keys as string[]).join(", ")
@@ -295,13 +297,13 @@ function Form({
             onChange={(v) => patch("key", v)}
           />
           <TextField
-            label="이름"
+            label={t("payload.name")}
             value={(payload.name as string) ?? ""}
             placeholder="Taiwan Semiconductor"
             onChange={(v) => patch("name", v)}
           />
           <TextField
-            label="ISO 국가 (2자)"
+            label={t("payload.iso2Short")}
             value={(payload.iso_country as string) ?? ""}
             placeholder="TW"
             mono
@@ -336,15 +338,15 @@ function Form({
           />
           <div className="sm:col-span-2">
             <TextAreaField
-              label="Blurb (1줄 설명)"
+              label={t("payload.actor.blurb")}
               value={(payload.blurb as string) ?? ""}
-              placeholder="Foundry leader; 3nm 양산."
+              placeholder={t("payload.actor.blurbPh")}
               onChange={(v) => patch("blurb", v)}
             />
           </div>
           <div className="sm:col-span-2">
             <TextField
-              label="Signal keywords (콤마 구분)"
+              label={t("payload.actor.signals")}
               value={
                 Array.isArray(payload.signal_keywords)
                   ? (payload.signal_keywords as string[]).join(", ")
@@ -368,14 +370,14 @@ function Form({
       return (
         <div className="space-y-3">
           <TextField
-            label="대상 Capability key"
+            label={t("payload.sig.capability")}
             value={(payload.capability_key as string) ?? ""}
             placeholder="rad_hard_compute"
             mono
             onChange={(v) => patch("capability_key", v)}
           />
           <TextField
-            label="arXiv 키워드 (콤마 구분, 필수)"
+            label={t("payload.sig.arxiv")}
             value={
               Array.isArray(payload.arxiv_keywords)
                 ? (payload.arxiv_keywords as string[]).join(", ")
@@ -393,7 +395,7 @@ function Form({
             }
           />
           <TextField
-            label="USPTO 키워드 (선택)"
+            label={t("payload.sig.uspto")}
             value={
               Array.isArray(payload.uspto_keywords)
                 ? (payload.uspto_keywords as string[]).join(", ")
@@ -411,7 +413,7 @@ function Form({
             }
           />
           <TextField
-            label="News 키워드 (선택)"
+            label={t("payload.sig.news")}
             value={
               Array.isArray(payload.news_keywords)
                 ? (payload.news_keywords as string[]).join(", ")
@@ -433,13 +435,17 @@ function Form({
     case "edit":
     case "other":
     default:
-      return (
-        <div className="rounded-lg border border-dashed border-neutral-800 bg-neutral-950/40 p-4 text-[12px] leading-relaxed text-neutral-400">
-          이 종류는 구조화 필드가 없습니다. 본문 + 근거 자료로 admin이 검토 후
-          반영합니다. 다음 단계로 진행해주세요.
-        </div>
-      );
+      return <EditOtherHint />;
   }
+}
+
+function EditOtherHint() {
+  const t = useT();
+  return (
+    <div className="rounded-lg border border-dashed border-neutral-800 bg-neutral-950/40 p-4 text-[12px] leading-relaxed text-neutral-400">
+      {t("proposal.payload.editOtherHint")}
+    </div>
+  );
 }
 
 // ===== Reusable atoms ====================================================

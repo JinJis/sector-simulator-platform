@@ -22,6 +22,8 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { useT } from "@/lib/i18n/provider";
+
 import { useFocusTrap } from "./use-focus-trap";
 
 const STORAGE_KEY = "sss_onboard_v3";
@@ -30,18 +32,20 @@ interface VisionOption {
   slug: string;
   name: string;
   emoji: string;
-  /** Picker-card tagline (one short line). */
-  tagline: string;
-  /** Step 2 framing question — italicized in the modal. */
+  /** Picker-card tagline (translation key). */
+  taglineKey: string;
+  /** Step 2 framing question — kept English for analytical clarity. */
   question: string;
-  /** Step 2 paragraph context. */
-  brief: string;
-  /** Step 3 headline values (curated to mirror the live fixture). */
+  /** Step 2 paragraph context (translation key). */
+  briefKey: string;
+  /** Step 3 headline values. */
   preview: {
     composite: number;
     delta90d: number;
     etaYear: number;
-    binding: string;
+    /** Translation key OR literal English string. */
+    bindingKey: string;
+    bindingLiteral?: boolean;
   };
 }
 
@@ -50,45 +54,43 @@ const VISIONS: VisionOption[] = [
     slug: "space-data-center",
     name: "Space Data Centers",
     emoji: "🛰️",
-    tagline: "궤도에 컴퓨트가 떠 있는 시점",
+    taglineKey: "vision.space-data-center.tagline",
     question: "By when will compute in orbit be commercially viable?",
-    brief:
-      "발사 비용 하락 + 광학 다운링크 + 우주 방사선에 견디는 칩이 동시에 ready 되어야 가능. 지금은 라드-하드 칩이 가장 큰 병목.",
+    briefKey: "vision.space-data-center.brief",
     preview: {
       composite: 73,
       delta90d: 8,
       etaYear: 2034,
-      binding: "Radiation-hard compute",
+      bindingKey: "Radiation-hard compute",
+      bindingLiteral: true,
     },
   },
   {
     slug: "memory-semi",
     name: "AI Memory Supercycle",
     emoji: "💾",
-    tagline: "HBM 사이클이 멈추지 않는다면",
+    taglineKey: "vision.memory-semi.tagline",
     question: "Does the AI HBM cycle hold for the next 5 years?",
-    brief:
-      "AI 학습/추론 수요가 메모리 capex를 끌고 가는 구조가 얼마나 지속되는가. 가격 · 점유 · 신규 capa가 동시에 변수.",
+    briefKey: "vision.memory-semi.brief",
     preview: {
       composite: 64,
       delta90d: 3,
       etaYear: 2030,
-      binding: "TBD (M38 seed)",
+      bindingKey: "vision.binding.tbd",
     },
   },
   {
     slug: "sofc",
     name: "Solid Oxide Fuel Cells at Grid Scale",
     emoji: "⚡",
-    tagline: "SOFC가 그리드 패리티에 도달하는 시점",
+    taglineKey: "vision.sofc.tagline",
     question: "Can SOFCs deliver grid-parity LCOE by 2035?",
-    brief:
-      "AI 데이터센터의 전력 수요 + 탄소 가격 상승이 SOFC 경제성을 끌어올리지만, 스택 수명과 양산 비용이 여전히 큰 변수.",
+    briefKey: "vision.sofc.brief",
     preview: {
       composite: 42,
       delta90d: 1,
       etaYear: 2038,
-      binding: "TBD (M38 seed)",
+      bindingKey: "vision.binding.tbd",
     },
   },
 ];
@@ -98,6 +100,7 @@ export function OnboardingModal() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const forced = searchParams?.get("onboard") === "1";
+  const t = useT();
 
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(1);
@@ -169,7 +172,7 @@ export function OnboardingModal() {
       >
         <header className="flex items-center justify-between border-b border-neutral-800 px-5 py-3">
           <span className="rounded border border-cyan-700 bg-cyan-950/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-300">
-            Vision Monitor — 3분 가이드
+            {t("onboarding.guideLabel")}
           </span>
           <div className="flex items-center gap-3">
             <span className="text-[11px] text-neutral-500">{step} / 3</span>
@@ -178,7 +181,7 @@ export function OnboardingModal() {
               onClick={() => close(true)}
               className="text-[11px] text-neutral-500 hover:text-neutral-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
             >
-              건너뛰기
+              {t("onboarding.skip")}
             </button>
           </div>
         </header>
@@ -204,35 +207,39 @@ export function OnboardingModal() {
 }
 
 function Step1Pick({ onPick }: { onPick: (v: VisionOption) => void }) {
+  const t = useT();
   return (
     <div className="px-6 py-6">
       <h2 id="onboarding-title" className="text-lg font-semibold text-neutral-50">
-        어떤 기술 비전이 가장 궁금하신가요?
+        {t("onboarding.step1.heading")}
       </h2>
       <p className="mt-1 text-sm text-neutral-400">
-        하나 고르면, 이 플랫폼이 그 비전의 실현 가능성을 어떻게 추적하는지 함께 보여드릴게요.
+        {t("onboarding.step1.sub")}
       </p>
       <ul className="mt-5 grid gap-3 sm:grid-cols-3">
-        {VISIONS.map((v) => (
-          <li key={v.slug}>
-            <button
-              type="button"
-              onClick={() => onPick(v)}
-              className="group flex h-full w-full flex-col items-start gap-2 rounded-lg border border-neutral-800 bg-neutral-900/40 p-4 text-left transition hover:border-cyan-700 hover:bg-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
-              aria-label={`${v.name} — ${v.tagline}`}
-            >
-              <span className="text-3xl" aria-hidden="true">
-                {v.emoji}
-              </span>
-              <span className="text-sm font-semibold text-neutral-100 group-hover:text-cyan-200">
-                {v.name}
-              </span>
-              <span className="text-[11px] leading-relaxed text-neutral-500">
-                {v.tagline}
-              </span>
-            </button>
-          </li>
-        ))}
+        {VISIONS.map((v) => {
+          const tagline = t(v.taglineKey);
+          return (
+            <li key={v.slug}>
+              <button
+                type="button"
+                onClick={() => onPick(v)}
+                className="group flex h-full w-full flex-col items-start gap-2 rounded-lg border border-neutral-800 bg-neutral-900/40 p-4 text-left transition hover:border-cyan-700 hover:bg-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
+                aria-label={`${v.name} — ${tagline}`}
+              >
+                <span className="text-3xl" aria-hidden="true">
+                  {v.emoji}
+                </span>
+                <span className="text-sm font-semibold text-neutral-100 group-hover:text-cyan-200">
+                  {v.name}
+                </span>
+                <span className="text-[11px] leading-relaxed text-neutral-500">
+                  {tagline}
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -247,6 +254,7 @@ function Step2Question({
   onBack: () => void;
   onNext: () => void;
 }) {
+  const t = useT();
   return (
     <div className="px-6 py-6">
       <div className="mb-3 flex items-baseline gap-3">
@@ -259,19 +267,17 @@ function Step2Question({
       </div>
       <div className="rounded-lg border border-cyan-900/40 bg-gradient-to-br from-cyan-950/30 via-neutral-950 to-neutral-950 p-5">
         <p className="text-[10px] font-medium uppercase tracking-widest text-cyan-300">
-          The question
+          {t("onboarding.step2.question")}
         </p>
         <p className="mt-2 text-lg italic leading-relaxed text-neutral-100">
           &ldquo;{vision.question}&rdquo;
         </p>
       </div>
       <p className="mt-4 text-sm leading-relaxed text-neutral-400">
-        {vision.brief}
+        {t(vision.briefKey)}
       </p>
       <p className="mt-4 text-xs leading-relaxed text-neutral-500">
-        이 비전은 ~10개의 capability(기술 / 경제 / 규제 / 공급)로 쪼개지고, 각 capability는
-        매일 들어오는 신호(논문 · 특허 · 뉴스 · 공시)에 의해 score가 업데이트됩니다. 다음 화면에서
-        현재 상태를 5초 만에 읽는 법을 보여드릴게요.
+        {t("onboarding.step2.context")}
       </p>
       <footer className="mt-6 flex items-center justify-between">
         <button
@@ -279,14 +285,14 @@ function Step2Question({
           onClick={onBack}
           className="text-[11px] text-neutral-500 hover:text-neutral-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
         >
-          ← 다른 비전
+          {t("onboarding.step2.back")}
         </button>
         <button
           type="button"
           onClick={onNext}
           className="rounded bg-cyan-600 px-4 py-1.5 text-xs font-medium text-cyan-50 hover:bg-cyan-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
         >
-          5초 만에 읽는 법 →
+          {t("onboarding.step2.next")}
         </button>
       </footer>
     </div>
@@ -302,7 +308,8 @@ function Step3Preview({
   onBack: () => void;
   onFinish: () => void;
 }) {
-  const { composite, delta90d, etaYear, binding } = vision.preview;
+  const t = useT();
+  const { composite, delta90d, etaYear, bindingKey, bindingLiteral } = vision.preview;
   const compositeColor =
     composite < 30
       ? "text-rose-400"
@@ -318,13 +325,15 @@ function Step3Preview({
         ? "text-rose-400"
         : "text-neutral-300";
 
+  const bindingText = bindingLiteral ? bindingKey : t(bindingKey);
+
   return (
     <div className="px-6 py-6">
       <h2 id="onboarding-title" className="text-lg font-semibold text-neutral-50">
-        5초 만에 읽는 법
+        {t("onboarding.step3.heading")}
       </h2>
       <p className="mt-1 text-xs leading-relaxed text-neutral-500">
-        각 비전의 Hero 페이지 맨 위에는 세 가지 숫자가 있어요. 그것만 봐도 80%는 이해됩니다.
+        {t("onboarding.step3.sub")}
       </p>
 
       <div
@@ -332,10 +341,9 @@ function Step3Preview({
         role="group"
         aria-label="Hero headline metrics"
       >
-        {/* Feasibility */}
         <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4">
           <p className="text-[10px] uppercase tracking-widest text-neutral-500">
-            Feasibility
+            {t("onboarding.step3.feasibility")}
           </p>
           <p
             className={`mt-2 font-mono text-4xl font-semibold leading-none tabular-nums ${compositeColor}`}
@@ -344,13 +352,12 @@ function Step3Preview({
           </p>
           <p className="mt-1 text-[10px] text-neutral-500">/ 100</p>
           <p className="mt-3 text-[11px] leading-snug text-neutral-400">
-            지금 얼마나 가까운지. 0 = 불가능, 100 = 상용화.
+            {t("onboarding.step3.feasibilityHint")}
           </p>
         </div>
-        {/* 90d delta */}
         <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4">
           <p className="text-[10px] uppercase tracking-widest text-neutral-500">
-            90-day Δ
+            {t("onboarding.step3.delta")}
           </p>
           <p
             className={`mt-2 font-mono text-4xl font-semibold leading-none tabular-nums ${deltaColor}`}
@@ -359,19 +366,18 @@ function Step3Preview({
             {Math.abs(delta90d)}
           </p>
           <p className="mt-3 text-[11px] leading-snug text-neutral-400">
-            지난 90일 동안 점수가 어디로 움직였는지.
+            {t("onboarding.step3.deltaHint")}
           </p>
         </div>
-        {/* ETA */}
         <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4">
           <p className="text-[10px] uppercase tracking-widest text-neutral-500">
-            ETA (median)
+            {t("onboarding.step3.eta")}
           </p>
           <p className="mt-2 font-mono text-4xl font-semibold leading-none tabular-nums text-neutral-100">
             {etaYear}
           </p>
           <p className="mt-3 text-[11px] leading-snug text-neutral-400">
-            현재 추세가 이어진다면 도달 예상 연도.
+            {t("onboarding.step3.etaHint")}
           </p>
         </div>
       </div>
@@ -379,16 +385,15 @@ function Step3Preview({
       <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-950/10 p-3">
         <p className="text-[11px] text-amber-300">
           <span aria-hidden="true">⚠</span>{" "}
-          Binding: <span className="font-medium">{binding}</span>
+          {t("onboarding.step3.binding")}: <span className="font-medium">{bindingText}</span>
         </p>
         <p className="mt-1 text-[11px] leading-snug text-amber-200/70">
-          비전 점수의 천장을 결정하는 capability. 이걸 끌어올리는 신호가 가장 큰 영향을 줍니다.
+          {t("onboarding.step3.bindingHint")}
         </p>
       </div>
 
       <p className="mt-4 text-[11px] leading-relaxed text-neutral-500">
-        Hero 페이지에는 이 외에도 capability 카드(4-차원 막대), 리스크 보드, 최근 24h 신호 feed,
-        경제성 곡선이 함께 표시됩니다. Playground 탭에서 직접 가정을 조정해볼 수도 있어요.
+        {t("onboarding.step3.full")}
       </p>
 
       <footer className="mt-6 flex items-center justify-between gap-3">
@@ -397,14 +402,14 @@ function Step3Preview({
           onClick={onBack}
           className="text-[11px] text-neutral-500 hover:text-neutral-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
         >
-          ← 질문 다시 보기
+          {t("onboarding.step3.back")}
         </button>
         <button
           type="button"
           onClick={onFinish}
           className="rounded bg-cyan-600 px-4 py-1.5 text-xs font-medium text-cyan-50 hover:bg-cyan-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
         >
-          {vision.name} 직접 보기 →
+          {t("onboarding.step3.finishPrefix")}{vision.name}{t("onboarding.step3.finishSuffix")}
         </button>
       </footer>
     </div>

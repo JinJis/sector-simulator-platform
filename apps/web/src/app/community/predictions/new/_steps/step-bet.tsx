@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { useT } from "@/lib/i18n/provider";
 import {
   quotePrediction,
   type PredictionQuoteResult,
@@ -9,12 +10,7 @@ import {
 
 import type { EquityChoice, Horizon } from "./types";
 
-const HORIZON_CARDS: Array<{ value: Horizon; label: string; subtitle: string }> = [
-  { value: "1d", label: "1 day", subtitle: "내일 종가 기준 (Hard)" },
-  { value: "1w", label: "1 week", subtitle: "7일 안에" },
-  { value: "1m", label: "1 month", subtitle: "30일 안에" },
-];
-
+const HORIZONS: Horizon[] = ["1d", "1w", "1m"];
 const QUICK_SPREADS = [2, 5, 10, 20];
 
 interface Props {
@@ -38,6 +34,7 @@ export function StepBet({
   onChange,
   onQuote,
 }: Props) {
+  const t = useT();
   const [quote, setQuote] = useState<PredictionQuoteResult | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
@@ -92,26 +89,25 @@ export function StepBet({
     <div className="space-y-6">
       <header>
         <h2 className="text-lg font-semibold text-neutral-100">
-          베팅 조건을 정하세요
+          {t("prediction.bet.heading")}
         </h2>
         <p className="mt-1 text-[12px] text-neutral-500">
-          기간 + 가격 밴드를 설정하면 난이도(Easy / Medium / Hard)가 자동
-          산정되고 예상 보상도 미리 보입니다.
+          {t("prediction.bet.subheading")}
         </p>
       </header>
 
       <section>
         <p className="mb-2 text-[10px] uppercase tracking-wider text-neutral-500">
-          기간
+          {t("prediction.bet.horizon")}
         </p>
         <div className="grid gap-2 sm:grid-cols-3">
-          {HORIZON_CARDS.map((h) => {
-            const active = horizon === h.value;
+          {HORIZONS.map((h) => {
+            const active = horizon === h;
             return (
               <button
-                key={h.value}
+                key={h}
                 type="button"
-                onClick={() => onChange({ horizon: h.value })}
+                onClick={() => onChange({ horizon: h })}
                 className={`rounded-xl border p-3 text-left transition ${
                   active
                     ? "border-cyan-600 bg-cyan-900/30 shadow-lg shadow-cyan-900/30"
@@ -119,10 +115,10 @@ export function StepBet({
                 }`}
               >
                 <p className="text-base font-semibold text-neutral-100">
-                  {h.label}
+                  {t(`prediction.bet.horizon.${h}.label`)}
                 </p>
                 <p className="mt-0.5 text-[11px] text-neutral-500">
-                  {h.subtitle}
+                  {t(`prediction.bet.horizon.${h}.sub`)}
                 </p>
               </button>
             );
@@ -132,9 +128,9 @@ export function StepBet({
 
       <section>
         <p className="mb-2 flex items-baseline justify-between text-[10px] uppercase tracking-wider">
-          <span className="text-neutral-500">밴드 폭</span>
+          <span className="text-neutral-500">{t("prediction.bet.spread")}</span>
           <span className="font-mono text-neutral-300">
-            ±{(spread_pct / 2).toFixed(1)}% (총 {spread_pct}%)
+            ±{(spread_pct / 2).toFixed(1)}% · {spread_pct}%
           </span>
         </p>
         <input
@@ -168,7 +164,7 @@ export function StepBet({
 
       <section>
         <p className="mb-2 flex items-baseline justify-between text-[10px] uppercase tracking-wider">
-          <span className="text-neutral-500">방향성 (offset)</span>
+          <span className="text-neutral-500">{t("prediction.bet.offset")}</span>
           <span
             className={`font-mono ${
               offset_pct > 0
@@ -179,7 +175,7 @@ export function StepBet({
             }`}
           >
             {offset_pct > 0 ? "+" : ""}
-            {offset_pct}% 중심
+            {offset_pct}%
           </span>
         </p>
         <input
@@ -194,7 +190,7 @@ export function StepBet({
           className="w-full accent-cyan-400"
         />
         <p className="mt-1 text-[10px] text-neutral-600">
-          0% = 현재가 주변. + 값은 상승 예측, − 값은 하락 예측.
+          {t("prediction.bet.offsetHint")}
         </p>
       </section>
 
@@ -225,16 +221,17 @@ function TierPreview({
   expectedMin: number | null;
   expectedMax: number | null;
 }) {
+  const t = useT();
   return (
     <div className="rounded-xl border border-neutral-800 bg-neutral-950/40 p-4">
       <div className="flex items-baseline justify-between">
         <p className="text-[10px] uppercase tracking-wider text-neutral-400">
-          난이도 + 보상 미리보기
+          {t("prediction.bet.previewTitle")}
         </p>
         {loading && (
           <span className="flex items-center gap-1.5 text-[10px] text-neutral-500">
             <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
-            computing…
+            {t("prediction.bet.previewComputing")}
           </span>
         )}
       </div>
@@ -246,13 +243,13 @@ function TierPreview({
           <div className="mt-3 flex flex-wrap items-baseline gap-4">
             <TierBadge tier={quote.tier} />
             <div className="text-[13px] text-neutral-300">
-              max{" "}
+              {t("prediction.bet.previewMaxReward")}{" "}
               <span className="font-mono text-cyan-300">
                 +{Math.round(quote.multiplier * 10)}p
               </span>
             </div>
             <div className="text-[11px] text-neutral-500">
-              σ{" "}
+              {t("prediction.bet.previewVol")}{" "}
               {quote.annualized_vol_pct === null
                 ? "—"
                 : `${quote.annualized_vol_pct.toFixed(0)}%/yr`}
@@ -264,16 +261,16 @@ function TierPreview({
         </>
       ) : !loading && !error ? (
         <p className="mt-2 text-[11px] text-neutral-500">
-          밴드를 조정해주세요.
+          {t("prediction.bet.previewEmpty")}
         </p>
       ) : null}
       {anchor != null && expectedMin != null && expectedMax != null && (
         <p className="mt-3 border-t border-neutral-900 pt-2 text-[11px] text-neutral-400">
-          Anchor{" "}
+          {t("prediction.review.anchor")}{" "}
           <span className="font-mono text-neutral-200">
             {anchor.toFixed(2)}
           </span>{" "}
-          → 밴드{" "}
+          →{" "}
           <span className="font-mono text-cyan-300">
             {expectedMin.toFixed(2)}
           </span>

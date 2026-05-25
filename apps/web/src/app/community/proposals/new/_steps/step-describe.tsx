@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n/provider";
 import type { ProposalTargetKind } from "@/lib/community-proposal-client";
 
 export function StepDescribe({
@@ -15,6 +16,7 @@ export function StepDescribe({
   targetRef: string;
   onChange: (patch: { title?: string; body?: string; targetRef?: string }) => void;
 }) {
+  const t = useT();
   const needsTargetRef = targetKind === "edit";
   const titlePlaceholder: Record<ProposalTargetKind, string> = {
     add_driver: "Add radiation-hardened chip yield driver",
@@ -34,17 +36,17 @@ export function StepDescribe({
     <div className="space-y-5">
       <header>
         <h2 className="text-lg font-semibold text-neutral-100">
-          제안 내용을 설명해주세요
+          {t("proposal.describe.heading")}
         </h2>
         <p className="mt-1 text-[12px] text-neutral-500">
-          제목은 한 줄로 핵심을, 본문은 왜 이게 중요한지를 설명합니다.
+          {t("proposal.describe.subheading")}
         </p>
       </header>
 
       {needsTargetRef && (
         <Field
-          label="수정 대상 키"
-          hint="Driver 이름 · ticker · capability key 등 기존 항목의 식별자"
+          label={t("proposal.describe.targetRef")}
+          hint={t("proposal.describe.targetRefHint")}
         >
           <input
             value={targetRef}
@@ -56,9 +58,9 @@ export function StepDescribe({
       )}
 
       <Field
-        label="제목"
-        hint={`${title.length}/160 · 최소 5자`}
-        error={title.length > 0 && !titleOk ? "조금 더 길게 적어주세요" : null}
+        label={t("proposal.describe.title")}
+        hint={`${title.length}/160`}
+        error={title.length > 0 && !titleOk ? t("proposal.describe.titleMinErr") : null}
       >
         <input
           required
@@ -71,9 +73,9 @@ export function StepDescribe({
       </Field>
 
       <Field
-        label="본문 — 왜 이게 중요한가요?"
-        hint={`${body.length}/8000 · 최소 20자`}
-        error={body.length > 0 && !bodyOk ? "조금 더 길게 설명해 주세요" : null}
+        label={t("proposal.describe.body")}
+        hint={`${body.length}/8000`}
+        error={body.length > 0 && !bodyOk ? t("proposal.describe.bodyMinErr") : null}
       >
         <textarea
           required
@@ -81,7 +83,6 @@ export function StepDescribe({
           maxLength={8000}
           value={body}
           onChange={(e) => onChange({ body: e.target.value })}
-          placeholder="이 변경이 왜 섹터의 정확도를 높이는지, 어떤 사용 시나리오를 해결하는지를 적어주세요. 마크다운 렌더링은 추후 추가됩니다."
           className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm leading-relaxed text-neutral-100 focus:border-cyan-700 focus:outline-none"
         />
       </Field>

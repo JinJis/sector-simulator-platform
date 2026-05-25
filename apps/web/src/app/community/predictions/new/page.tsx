@@ -8,6 +8,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { getT } from "@/lib/i18n/server";
 import { fetchEquities, fetchMe } from "@/lib/sim-client";
 import { fetchVisions } from "@/lib/vision-client";
 
@@ -27,6 +28,7 @@ export default async function NewPredictionPage({ searchParams }: Props) {
       `/sign-in?next=${encodeURIComponent("/community/predictions/new")}`,
     );
   }
+  const t = await getT();
   const visions = await fetchVisions({ include_legacy: true }).catch(() => []);
   const sectorChoices = visions
     .map((v) => ({ slug: v.slug, name: v.name }))
@@ -38,19 +40,18 @@ export default async function NewPredictionPage({ searchParams }: Props) {
     : [];
 
   return (
-    <main className="mx-auto max-w-[100rem] px-6 py-10">
+    <main className="mx-auto max-w-3xl px-6 py-10">
       <nav className="mb-3 flex gap-2 text-[11px] text-neutral-500">
         <Link href="/community/predictions" className="hover:text-neutral-300">
-          ← Predictions
+          {t("prediction.new.backLink")}
         </Link>
       </nav>
       <header>
         <h1 className="text-2xl font-bold tracking-tight text-neutral-50">
-          새 베팅 등록
+          {t("prediction.new.title")}
         </h1>
         <p className="mt-1 text-[13px] text-neutral-400">
-          3단계 — 종목 선택, 기간 + 가격 밴드 설정, 확인 후 등록. 난이도는
-          자동으로 산정됩니다.
+          {t("prediction.new.subtitle")}
         </p>
       </header>
 

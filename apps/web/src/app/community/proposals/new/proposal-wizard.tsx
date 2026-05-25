@@ -8,6 +8,7 @@ import {
   type ProposalCreateEvidence,
   type ProposalTargetKind,
 } from "@/lib/community-proposal-client";
+import { useT } from "@/lib/i18n/provider";
 import { WizardProgress, type WizardStep } from "@/lib/wizard/progress";
 
 import { StepDescribe } from "./_steps/step-describe";
@@ -17,14 +18,6 @@ import { StepPayload } from "./_steps/step-payload";
 import { StepSector, type SectorChoice } from "./_steps/step-sector";
 import { EMPTY_DRAFT, type ProposalDraft } from "./_steps/types";
 
-const STEPS: WizardStep[] = [
-  { id: 1, label: "Kind" },
-  { id: 2, label: "Sector" },
-  { id: 3, label: "Describe" },
-  { id: 4, label: "Details" },
-  { id: 5, label: "Evidence" },
-];
-
 interface Props {
   sectorChoices: SectorChoice[];
   defaultSector?: string;
@@ -32,6 +25,7 @@ interface Props {
 
 export function ProposalWizard({ sectorChoices, defaultSector }: Props) {
   const router = useRouter();
+  const t = useT();
   const [step, setStep] = useState(1);
   const [draft, setDraft] = useState<ProposalDraft>({
     ...EMPTY_DRAFT,
@@ -39,6 +33,14 @@ export function ProposalWizard({ sectorChoices, defaultSector }: Props) {
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const STEPS: WizardStep[] = [
+    { id: 1, label: t("proposal.steps.kind") },
+    { id: 2, label: t("proposal.steps.sector") },
+    { id: 3, label: t("proposal.steps.describe") },
+    { id: 4, label: t("proposal.steps.details") },
+    { id: 5, label: t("proposal.steps.evidence") },
+  ];
 
   function setKind(kind: ProposalTargetKind) {
     setDraft({ ...draft, target_kind: kind, payload: {} });
@@ -177,10 +179,10 @@ export function ProposalWizard({ sectorChoices, defaultSector }: Props) {
           disabled={step === 1 || submitting}
           className="rounded-lg border border-neutral-700 px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          ← 이전
+          {t("wizard.back")}
         </button>
         <p className="text-[10px] text-neutral-500">
-          Step {step} / {STEPS.length}
+          {t("wizard.step")} {step} / {STEPS.length}
         </p>
         {step < STEPS.length ? (
           <button
@@ -189,7 +191,7 @@ export function ProposalWizard({ sectorChoices, defaultSector }: Props) {
             disabled={!canAdvance}
             className="rounded-lg border border-cyan-700 bg-cyan-900/40 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-800/60 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            다음 →
+            {t("wizard.next")}
           </button>
         ) : (
           <button
@@ -198,7 +200,7 @@ export function ProposalWizard({ sectorChoices, defaultSector }: Props) {
             disabled={submitting}
             className="rounded-lg border border-emerald-600 bg-emerald-800 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-40"
           >
-            {submitting ? "Publishing…" : "Publish proposal →"}
+            {submitting ? t("wizard.publishing") : t("proposal.review.publishCta")}
           </button>
         )}
       </nav>

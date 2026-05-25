@@ -76,7 +76,7 @@ export default async function VisionsIndexPage({ searchParams }: Props) {
   const rest = featured ? filtered.filter((t) => t.tile.slug !== featured.tile.slug) : filtered;
 
   return (
-    <main className="mx-auto min-h-screen max-w-[100rem] px-6 pb-16 pt-6">
+    <main className="mx-auto min-h-screen max-w-7xl px-6 pb-16 pt-6">
       <Breadcrumbs className="mb-3" items={[{ label: t("visions.title") }]} />
 
       <header className="mb-7 flex flex-col gap-2">
