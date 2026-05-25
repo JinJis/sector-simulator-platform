@@ -60,7 +60,7 @@ from crawler.repo import (
     PostgresCrawlRunRepository,
 )
 
-logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper())
 log = logging.getLogger("crawler")
 
 

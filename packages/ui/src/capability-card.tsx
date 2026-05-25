@@ -166,27 +166,37 @@ export function CapabilityCard({
     </div>
   );
 
+  // Overlay-link pattern: HTML forbids nested <a>/<button>, so we
+  // wrap the card in a positioning container, render cardContent
+  // above (z-10) and lay a transparent click target underneath
+  // (z-0). Children that are themselves anchors (ActorPill, etc.)
+  // stay inside cardContent and remain clickable independently —
+  // their hit area sits above the overlay because of the parent
+  // z-stacking. Clicking anywhere else on the card routes to the
+  // capability detail page through the overlay.
   if (href) {
     return (
-      <a
-        href={href}
-        className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
-        aria-label={`Capability detail: ${name}`}
-      >
-        {cardContent}
-      </a>
+      <div className="relative">
+        <div className="relative z-10">{cardContent}</div>
+        <a
+          href={href}
+          className="absolute inset-0 z-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
+          aria-label={`Capability detail: ${name}`}
+        />
+      </div>
     );
   }
   if (onClick) {
     return (
-      <button
-        type="button"
-        onClick={onClick}
-        className="block w-full rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
-        aria-label={`Capability detail: ${name}`}
-      >
-        {cardContent}
-      </button>
+      <div className="relative">
+        <div className="relative z-10">{cardContent}</div>
+        <button
+          type="button"
+          onClick={onClick}
+          className="absolute inset-0 z-0 w-full rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
+          aria-label={`Capability detail: ${name}`}
+        />
+      </div>
     );
   }
   return cardContent;

@@ -47,10 +47,12 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
 
   const session = await signSession(email);
   const store = await cookies();
-  store.set(ADMIN_SESSION_COOKIE, session.value, {
-    ...adminSessionCookieOptions(),
-    expires: session.expiresAt,
-  });
+  // `maxAge` from adminSessionCookieOptions() drives expiry on its
+  // own; passing both `maxAge` and `expires` is redundant and the
+  // exact precedence varies across browsers, so we use only one.
+  // `session.expiresAt` remains the source of truth used by HMAC
+  // verification.
+  store.set(ADMIN_SESSION_COOKIE, session.value, adminSessionCookieOptions());
 
   // Redirect throws — Next handles it as a 303 from the action.
   redirect(safeNext(nextParam));

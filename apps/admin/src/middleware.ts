@@ -24,11 +24,13 @@ export async function middleware(req: NextRequest) {
 // Skip the gate for:
 //   - /login itself (would loop)
 //   - /api/admin/auth/* (the login + logout endpoints set the cookie)
-//   - Next internals (_next/static, _next/image, favicon)
+//   - Next internals (all of /_next/* — static, image, data, HMR
+//     websocket in dev, error overlay stack frames). The narrower
+//     `_next/static|_next/image` matcher used initially missed
+//     `/_next/data/*` (App Router data fetches) and broke RSC nav.
+//   - favicon
 // `matcher` is a negative lookahead — anything NOT matching these is
 // guarded. Tweak only when adding new public asset paths.
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon\\.ico|login|api/admin/auth).*)",
-  ],
+  matcher: ["/((?!_next/|favicon\\.ico|login|api/admin/auth).*)"],
 };
