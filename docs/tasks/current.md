@@ -1,132 +1,286 @@
-# Current task — Phase 3 PIVOT: Vision Feasibility Monitor (M36+)
+# Current task — Phase 4: Real-time Intelligence (M48+)
 
-**Last updated**: 2026-05-25. 2026-05-23 pivot from Sector Simulator →
-Vision Feasibility Monitor. M36 → M43 + M45a/b + M46a/b/c ✅ shipped.
-M44 + M46d/e/f + M47 in flight.
+**Last updated**: 2026-05-25. Phase 4 starts now. Phase 3 (the pivot
+from Sector Simulator → Vision Feasibility Monitor) is shipped; the
+data-model + scoring-engine + community-proposal foundations it left
+behind are what Phase 4 builds on. Phase 3 history lives in git log.
 
-Strategy memo: [PIVOT.md](../PIVOT.md). File-by-file refactor inventory:
-[REFACTOR.md](../REFACTOR.md). Decision record:
-[ADR-0001](../adr/0001-pivot-vision-monitor.md). Agent / workflow
-inventory: [agent-capabilities.md](../agent-capabilities.md).
+Design ground-truth for this phase:
+[docs/architecture/composition.md](../architecture/composition.md).
+That doc has the per-surface fetcher map, the signal → insight → score
+pipeline, the bot proposal flow, the UX transparency rules, and the
+two additive tables (`CrawlRun`, `EconomicsDatapoint`).
 
-Pre-pivot M1-M35 history lives in git log — not duplicated here.
+---
 
-## Pivot summary
+## Phase 4 goal
 
-Investment-tool surface drifted away from the original vision ("우주
-데이터센터가 실현 가능한가?"). Reset to a single-page Feasibility Monitor
-for any bold technology vision.
+> Every vision is a living thing. Real internet data flows in
+> continuously, the user *sees* it flowing, every score number traces
+> back to its sources, and when new entities show up the bot proposes
+> them so the community can vote.
 
-| Before → after | |
-|---|---|
-| Top abstraction | `Sector` (sim) → `Vision` (feasibility) — DB unchanged |
-| Main UI | 4-tab workspace → 1-page Feasibility Monitor (hero) |
-| Simulation | 주연 → "Playground" sub-tab + WhatIfFeasibility callout (M42) |
-| Data ingest | yfinance quotes → arXiv + USPTO + NewsAPI (capability signals) |
-| Score | sim outputs → Feasibility Index (4-dim aggregation + Liebig binding) |
-| Investment surface (Equity / Prediction-v1 / Watchlist / pre-pivot Community) | core → archived behind `ENABLE_LEGACY_INVESTMENT_FEATURES` (M43, default off) |
-| Community | stock-prediction game → Community 3.0 (proposals + tiered predictions + reputation), M46 train |
+Six product-level outcomes Phase 4 ships:
 
-## Shipped milestones
+1. A standalone **crawler service** (Docker) that runs continuously,
+   per-surface fetchers, and the Gemini Deep Research Agent.
+2. **8-surface coverage** — every vision sub-tab (overview /
+   capabilities / actors / signals / risks / economics / playground /
+   sources) has a real-time data path or is derived from one.
+3. **Bot-authored proposals** for newly discovered actors /
+   capabilities / risks / sources, voted on by users via the existing
+   `CommunityProposal` flow.
+4. **Live Pulse UX** — every surface advertises its sync state; every
+   number has a "why" drawer; the Hero has a real-time ingest ticker.
+5. **Admin Crawler Cockpit** — one page covering live jobs, health,
+   bot proposal queue, and per-vision schedule.
+6. **4 visions fully seeded** (Space Data Centers, Fusion Power,
+   Memory Semiconductors, SOFC) with capabilities, actors, signals,
+   risks, economics, and source URLs.
+
+---
+
+## Milestones
 
 ```
-M36 ✅ → M37 ✅ → M45a ✅ → M38 ✅ → M45b ✅ → M39 ✅ → M40 ✅ → M41 ✅
-        → M42 ✅ → M43 ✅ → M46a ✅ → M46b ✅ → M46c ✅ → (polish slices) → M44 / M46d-f / M47
+M48 ──► M49 ──► M50 ──► M51 ──► M52 ──► M53 ──► M54
+ │       │       │       │       │       │       │
+ │       │       │       │       │       │       └─ 4-vision full seed
+ │       │       │       │       │       └─ Visualization pack
+ │       │       │       │       └─ Admin cockpit
+ │       │       │       └─ Live Pulse UX
+ │       │       └─ Bot user + auto-proposal
+ │       └─ Per-surface fetcher set + orchestrator
+ └─ Crawler service Docker + Deep Research wrapper
 ```
 
-- [x] **M36** — Capability/Signal/Risk/VisionFeasibility schema + tRPC.
-      6 Prisma models, 5 routers, ~20 tests. (3 PRs)
-- [x] **M37** — Hero page (hardcoded SDC) + Playground migration +
-      onboarding/tour rewrite. (5 PRs: M37a-e)
-- [x] **M45a** — Actor schema + tRPC + Hero "Actors" band + capability
-      card "active actors" footer + sub-nav tab. Fixture-backed.
-- [x] **M38** — Capability/Risk/Feasibility manual seed for 3 visions
-      (SDC / Memory / SOFC). Real DB data on the Hero +
-      capability-detail page. (2 PRs)
-- [x] **M45b** — Actor DB seed + capability_actor wiring + Hero/actors-
-      page swap from fixtures to DB.
-- [x] **M39** — Signal ingest pipeline + extractor + monitoring.
-      SignalSource Protocol + arXiv / USPTO / NewsAPI adapters,
-      SignalExtractor agent (haiku tier), ingest cron, full Signals tab,
-      admin monitoring health card. (6 PRs: M39a-f)
-- [x] **M40** — Feasibility scoring engine — 4-dim aggregator +
-      vision-aggregator (Liebig binding) + ETA inference + 90d delta +
-      ScoreUpdater agent + daily recompute_feasibility cron. (2 PRs)
-- [x] **M41** — Vision Builder agent. NL prompt → PromptValidator
-      (haiku) → VisionDecomposition (opus) → DataSourceSelector (sonnet)
-      → ValidationGate (DAG + FK + weight-sum) → tRPC commit (single
-      Prisma transaction) → admin /visions/new UI → 5-case eval set.
-      (5 PRs: M41a-e)
-- [x] **M42** — Simulation → Playground re-positioning. Driver →
-      capability badges + WhatIfFeasibility callout above the sim chart;
-      client-side Liebig aggregator mirrors
-      `simulation_service/feasibility/`;
-      `Capability.primary_driver_name` drives the driver→capability map.
-- [x] **M43** — Investment features archived behind
-      `ENABLE_LEGACY_INVESTMENT_FEATURES` (default false). yfinance +
-      prediction-resolve crons off by default; legacy tRPC routers gated
-      at register-time; legacy routes return 410. Reversible flag flip.
-- [x] **M46a** — Community 3.0: Proposal schema + tRPC + minimal
-      `/community/proposals` feed.
-- [x] **M46b** — Community 3.0: PredictionV2 (tiered: Easy/Medium/Hard
-      with auto-assigned multiplier) + resolution cron + leaderboard.
-- [x] **M46c** — Reputation tiers + Follow graph + `/u/[id]` profile
-      pages.
+Estimated total: ~7–9 weeks at 1-person pace. Each milestone is
+independently mergeable behind feature flags; the crawler service
+starts dormant and is enabled per-vision once its fetcher pack lands.
 
-### Polish slices (post-M43, no separate milestone tag)
+### M48 — Crawler service + Deep Research foundation  (5–7d)
 
-- [x] **i18n (ko/en) + theme switcher (dark/light/system) + wider
-      page layouts**. Cookie-backed + cross-device sync via
-      `User.locale`/`User.theme`. All visible strings in
-      `apps/web/src/lib/i18n/dict.ts`. Tone: friendly, not 번역체.
-- [x] **Visions visual hub revamp** — domain themes per card, filter
-      chips, hero treatment.
-- [x] **Multi-step wizards** for proposal (5 steps) + prediction
-      creation (3 steps with live tier preview).
-- [x] **Legacy UI cleanup** — pre-pivot `/sectors`, `/predict`,
-      `/propose`, `/watchlist`, `/my-sectors`,
-      `/community/{predict,leaderboard,suggestions,my-predictions}`
-      routes deleted (M43 had only archived them).
-- [x] **DB squash** — 20 historical migrations consolidated into a
-      single init migration to keep clone time bounded.
-- [x] **UI hygiene** — phase / version / M-milestone strings stripped
-      from visible text; Predictions + Proposals dropped from primary
-      nav (they live inside `/community`).
+New Docker service. The substrate for everything else.
 
-## In flight / next
+- New `services/crawler/` (FastAPI + asyncio worker, same pattern as
+  `data-pipeline/`). Docker image: `infra/docker/crawler.Dockerfile`.
+  Added to `docker-compose.yml` (always-on) and
+  `docker-compose.local.yml` (hot reload).
+- Job queue: Redis Streams (already in compose). Worker pulls
+  `crawl.queue`, writes `crawl.events` for the admin cockpit to tail.
+- `packages/agent-tools/deep_research.py` — async client around
+  `google-genai` Interactions API, `deep-research-preview-04-2026` +
+  `deep-research-max-preview-04-2026`. `collaborative_planning` flag
+  surfaced. 30d cache by `hash(prompt, surface, vision_slug)`. Cost
+  metering goes into the same LLMClient meter as opus/sonnet/haiku.
+- `CrawlRun` Prisma model + tRPC `crawler.runs.list` /
+  `crawler.runs.get` (read-only, admin-scoped).
+- Single end-to-end smoke fetcher (`HelloWorldFetcher`) that hits
+  Deep Research, writes a `CrawlRun` row, and surfaces in a stub
+  `/admin/crawler` page — proves the seam end-to-end.
 
-- [ ] **M44** — Fusion Power as second showcase vision + polish +
-      `/visions` 4-tile public landing + Twitter demo thread. Pressure-
-      tests the framework on a second vision. 4-6d.
-- [ ] **M46d** — Evidence sources: URL OG fetch + PDF/image upload to
-      R2 (linkable evidence on proposals + predictions). 3-4d.
-- [ ] **M46e** — Admin proposal queue + 1-click apply + audit-log
-      linkage. 2-3d.
-- [ ] **M46f** — Per-sector community tab + cold-start seed (a couple
-      of curated proposals + predictions per vision). 2-3d.
-- [ ] **M47** — Discussions + reputation polish. Reddit-style threads +
-      nested replies + vote-weight multiplier from proposal-approval
-      rate. Calibrate after ~4 weeks of M46 production data. 4-5d.
+**verify**: docker compose up → admin triggers HelloWorld fetcher →
+CrawlRun row appears with cost_usd > 0 and a Deep Research summary.
 
-Per-milestone PR sequence:
-[REFACTOR.md §12](../REFACTOR.md#12-pr-sequence-per-milestone).
+### M49 — Per-surface fetcher set + Orchestrator  (8–10d)
 
-## Deferred (resume after M47)
+The 5 fetcher classes from composition.md §3, plus the orchestrator
+that chooses which one to run.
+
+- `services/crawler/fetchers/capability.py` — per binding capability
+  per dim, Deep Research prompt template, writes `Signal` rows that
+  ripple through existing M40 ScoreUpdater.
+- `services/crawler/fetchers/actor.py` — per top-N actor refresh
+  (news + filings + hiring signals); ungated keyword scan for new
+  org names (feeds M50 EntityDetector).
+- `services/crawler/fetchers/signal.py` — extends M39 arXiv / USPTO /
+  NewsAPI sweeps with the new orchestrator-driven cadence.
+- `services/crawler/fetchers/risk.py` — regulatory keyword + safety
+  event watch; uses curated risk-keyword sets per vision.
+- `services/crawler/fetchers/economics.py` — analyst report + paper
+  benchmark extraction; writes new `EconomicsDatapoint` rows.
+- `services/crawler/orchestrator.py` — ranking score from
+  composition.md §4 (binding × stale × pinned − cost), per-vision
+  $/day cap, picks top-K each tick.
+- `EconomicsDatapoint` Prisma model + migration. `economics` tRPC
+  router (list / latest-per-metric).
+- Cron in `services/crawler/main.py` ticks the orchestrator every
+  15min; manual `/admin/crawler/runs?vision=...&fetcher=...&run=now`.
+
+**verify**: enable the 5 fetchers on Space Data Centers → 24h later,
+`Signal` table has fresh rows tagged from each fetcher, capability
+scores have moved, `EconomicsDatapoint` has at least one cost-curve
+point, cost stays under $2 for the day.
+
+### M50 — Bot user + Auto-proposal engine  (4–5d)
+
+The discovery loop from composition.md §5.
+
+- Additive schema: `User.is_bot Boolean` + `User.bot_kind String?`.
+  One migration. Seed: one bot user `@feasibility_bot`
+  (`bot_kind="research_agent"`).
+- `services/crawler/discovery/entity_detector.py` — sonnet-tier diff
+  against known actors / capabilities / risks / signal sources.
+  Fuzzy-match against `Actor.name`, `Capability.name`, `Risk.title`
+  (Jaro-Winkler ≥ 0.92). Confidence threshold + 2-signals-in-7d
+  recurrence rule.
+- `services/crawler/discovery/proposal_drafter.py` — given a detected
+  entity + its source signals, drafts a `CommunityProposal` row via
+  the existing M46a writer. Author = bot user. Audit-log row written
+  via existing audit pipeline.
+- UI guardrails: bot user excluded from leaderboard
+  (`predictions_v2.leaderboard`), reputation tier
+  (`UserReputation.tier`), follower mechanics, and proposal voting.
+- Bot proposal visual treatment in `apps/web/src/components/community/
+  ProposalCard.tsx`: gradient border, ✨ chip, "How this was drafted"
+  drawer linking source signals.
+
+**verify**: seed a "Starcloud Inc." fixture set (4 mock signals,
+no existing Actor row matching) → run discovery loop → exactly one
+`CommunityProposal` row appears with `author_id = bot`,
+`target_kind = "add_actor"`, payload populated, audit-log row linked.
+
+### M51 — Live Pulse UX + source-grounded transparency  (6–8d)
+
+The three UX rules from composition.md §6.
+
+- Hero `LivePulse` widget (`packages/ui/src/live-pulse/`) — 24h
+  source-grouped activity bars, latest insight line, click-to-drawer
+  with full fetched docs. Pulled from new tRPC
+  `crawler.pulse.byVision` aggregating `CrawlRun` + `Signal`.
+- Per-tab sync pill (`packages/ui/src/sync-pill/`) showing
+  `Synced Xm ago · N sources · M signals`. Color states: ≤24h green,
+  ≤72h amber, >72h red. Drops into every sub-tab header.
+- Capability-card "Signal → Insight → Score" mini-funnel under the
+  4-dim bars. Click → drawer with last 5 signals + extractor
+  rationale + per-dim score delta.
+- Score-number "why" drawer — any feasibility or capability number
+  becomes clickable; drawer shows last 5 signals + ScoreUpdater
+  rationale. Single shared `<ScoreWhyDrawer>` component reused
+  across Overview / Capabilities / Actors.
+- i18n: all new strings into `apps/web/src/lib/i18n/dict.ts` (ko + en
+  parity, friendly tone).
+
+**verify**: load `/visions/space-data-center` → Live Pulse shows
+non-zero counts for last 24h, every score number opens a drawer
+with at least 1 source-linked signal, sync pills show fresh-green
+across all 8 sub-tabs.
+
+### M52 — Admin Crawler Cockpit  (4–5d)
+
+`/admin/crawler` — composition.md §7. One page, four panes.
+
+- Live jobs table (auto-refresh 5s): `CrawlRun.status="running"`,
+  ETA, $ spent so far, abort button (writes
+  `CrawlRun.status="error"` + cancel signal to worker).
+- 24h health pane: per-source success rate, P95 latency, dedup rate,
+  $/day spent vs cap, error feed. Stripe-Status-style health pills.
+- Bot proposal queue: filtered `CommunityProposal.where(author.is_bot)`,
+  sorted by confidence × `vote_score`. Bulk approve / reject with
+  reason-capture (writes to existing audit log).
+- Fetcher schedule editor: per-vision orchestrator weight knobs,
+  $/day cap, cadence, "Run now" button per surface. Writes to
+  `CrawlerConfig` Json column (new — single row keyed by vision).
+- Optional: per-vision Deep Research collaborative-plan approval
+  flow — admin sees the proposed plan before approving the spend.
+
+**verify**: admin can trigger a Deep Research run, watch it live,
+see its cost meter increment, then approve the resulting bot
+proposal — all without leaving the cockpit.
+
+### M53 — Vision Visualization pack  (5–7d)
+
+5 chart components from composition.md §9.
+
+- `packages/ui/charts/CapabilityRadar.tsx` — Recharts radar, now vs
+  90d ago overlay, 4-dim axes.
+- `packages/ui/charts/FeasibilityTimeline.tsx` — line (score) + bar
+  (signal volume) dual-axis; click point → drawer with signals
+  that day.
+- `packages/ui/charts/CostCurveCrossover.tsx` — dual-line cost
+  intersection with crossover-year confidence band. Reads
+  `EconomicsDatapoint`.
+- `packages/ui/charts/ActorRelevanceBubble.tsx` — bubble chart,
+  x relevance · y 90d signal count · size stage.
+- `packages/ui/charts/RiskHeatmap.tsx` — likelihood × impact matrix,
+  cell colored by `Risk.severity_score`, side-by-side now vs 90d.
+- Embed in each surface: Radar → Overview + Capability detail;
+  Timeline → Overview; CostCurve → Economics; Bubble → Actors;
+  Heatmap → Risks.
+- All charts click-to-source (tooltip links the contributing
+  `Signal.source_url`).
+- Dark + light theme parity; Recharts theme tokens from
+  `packages/ui/src/charts/theme.ts`.
+
+**verify**: open all 8 sub-tabs on each of the 4 visions →
+visualizations render with real data, tooltips link sources,
+both themes look clean.
+
+### M54 — Full 4-vision seeding  (4–6d)
+
+Pressure-tests the whole stack on 4 visions in parallel.
+
+- For each of: Space Data Centers, Fusion Power, Memory
+  Semiconductors, SOFC — ensure baseline:
+  - ≥6 capabilities with `primary_driver_name` mapped + 4-dim seeded
+  - ≥10 actors with country / stage / ticker (where applicable)
+  - ≥5 risks with at least one concrete recent event each
+  - ≥3 economics datapoints (cost over time per vision)
+  - ≥30 historical signals (mix of arXiv / USPTO / news)
+  - ≥20 curated source URLs (the Sources tab is never empty)
+- Bootstrap path: Vision Builder agent (M41) drafts the tree → M48
+  crawler back-fills 30d of signals → admin curates → seed JSONs
+  written to `packages/db/prisma/seed/visions/<slug>/` for
+  reproducible local resets.
+- Each vision's Hero page is screenshot-quality (no empty bands,
+  no broken charts, no stale-amber sync pills on first load).
+
+**verify**: `pnpm db:reset && pnpm seed` → all 4 visions render
+fully populated; the Twitter demo thread plan from the original
+M44 brief is shootable.
+
+---
+
+## Open questions
+
+Park here; raise as ADR if they block a milestone.
+
+1. **Crawler service language** — Python (matches data-pipeline +
+   agent-orchestration, shares `packages/agent-tools/`). Calling it
+   now to avoid bikeshedding mid-M48.
+2. **Bot identity surfacing in feeds** — does the bot also write
+   short comments ("based on N signals this week") or is the drafted
+   proposal body sufficient? Default: proposal body only for v1.
+3. **Deep Research cost ceiling per vision** — $2/day default, but
+   needs calibration after M48 lands (one Deep Research Max run can
+   be $0.50+). Cap may need to move to per-week.
+4. **EntityDetector false positives on common names** — fuzzy-match
+   alone is insufficient ("Apple Inc." vs the fruit). Plan: pair
+   Jaro-Winkler with an LLM classification gate (`is_org=true` +
+   `domain_relevant_to_vision=true`).
+5. **Bot voting** — Phase 4 says no. Could change in Phase 5 if
+   high-confidence bot suggestions deserve a baseline +1 nudge.
+
+---
+
+## Deferred (still parked from Phase 3)
 
 - M29 — OAuth providers (Google / GitHub)
 - M30 — Multi-tenant scoping (tenant_id + Postgres RLS)
-- M31 — Backtest harness (reframed as vision-feasibility backtest, not
-  sector-sim backtest)
-- M28b — Modal/E2B sandbox for agent-generated capability scoring code
-  (M41 made the case for it; not yet a blocker)
-- M10b — DART/EDGAR adapters (deprecated; signals pipeline replaces)
+- M31 — Backtest harness (reframed as vision-feasibility backtest)
+- M28b — Modal/E2B sandbox for agent-generated code
+- M47 — Discussions + reputation polish (gated on real M46 production
+  data; revisit after Phase 4 visions are live for 4 weeks)
 - Observability — LangSmith / Helicone integration
+
+---
 
 ## Per-milestone workflow
 
-1. Read PIVOT.md §5 entry for the strategic context
-2. Read REFACTOR.md relevant sections (§1-§13 cover the full pivot —
-   schema / routes / services / prompts / components / seeds / tests
-   / infra / risks / PR sequence)
-3. Check REFACTOR.md §12 for the per-milestone PR sequence
-4. Execute slice-by-slice; one PR per slice
+1. Read [composition.md](../architecture/composition.md) §-section
+   matching the milestone (fetcher / bot / UX / cockpit / viz).
+2. One PR per slice; each PR independently mergeable behind a
+   feature flag (`ENABLE_CRAWLER`, `ENABLE_BOT_PROPOSALS`,
+   `ENABLE_LIVE_PULSE`).
+3. Update this file's milestone checkbox; never duplicate status
+   into README / DESIGN / CLAUDE.

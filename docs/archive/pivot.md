@@ -1,4 +1,12 @@
-# PIVOT — From "Sector Simulator" to "Vision Feasibility Monitor"
+# [ARCHIVED] PIVOT — From "Sector Simulator" to "Vision Feasibility Monitor"
+
+> **Archived 2026-05-25.** Phase 3 pivot is shipped; this memo is
+> kept as historical context only. Current work plan:
+> [docs/tasks/current.md](../tasks/current.md). Composition design:
+> [docs/architecture/composition.md](../architecture/composition.md).
+> Pivot decision record: [ADR-0001](../adr/0001-pivot-vision-monitor.md).
+
+---
 
 **Date**: 2026-05-23 (initial decision), Actor + Community extensions
 added same day. **Last updated**: 2026-05-25.

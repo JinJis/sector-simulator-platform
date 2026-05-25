@@ -1,9 +1,10 @@
 # CLAUDE.md
 
 매 세션 읽는 운영 컨텍스트. 짧고 actionable. 제품/전략은
-[DESIGN.md](./DESIGN.md) + [docs/PIVOT.md](./docs/PIVOT.md), 현재 작업은
-[docs/tasks/current.md](./docs/tasks/current.md), 파일별 refactor inventory는
-[docs/REFACTOR.md](./docs/REFACTOR.md).
+[DESIGN.md](./DESIGN.md), 현재 작업은
+[docs/tasks/current.md](./docs/tasks/current.md), Phase 4 데이터
+파이프라인 알고리즘 설계는
+[docs/architecture/composition.md](./docs/architecture/composition.md).
 
 ---
 
@@ -50,10 +51,12 @@ touched. Three questions:
 
 Important MD files (review when in scope):
 - `CLAUDE.md`, `README.md`, `DESIGN.md`
-- `docs/PIVOT.md`, `docs/REFACTOR.md`, `docs/tasks/current.md`,
+- `docs/tasks/current.md`, `docs/architecture/composition.md`,
   `docs/agent-capabilities.md`, `docs/adr/*.md`
 - `packages/*/README.md`, `prompts/README.md`,
   `infra/secrets/README.md`, `tests/agent_evals/README.md`
+- Archived (read only when historical context matters):
+  `docs/archive/pivot.md`, `docs/archive/refactor.md`
 
 Bloat to watch for: status repeated in many places (canonical = `current.md`,
 others link), restating what the code already says, historical PR
@@ -76,36 +79,46 @@ from overcomplication, clarifying questions arrive *before* implementation.
 - **Capability** = 비전을 구성하는 기술/경제/규제/공급 요건 (4-dim score).
 - **Signal** = 매일 들어오는 source-grounded 이벤트 (arXiv / 특허 / 뉴스 /
   공시). Extractor 에이전트가 capability score delta로 변환.
-- **Actor** = capability를 끌어가는 회사 / 연구소 / 정부 기관 (M45 layer).
-- **Risk / FeasibilityIndex** = 보조 도메인. PIVOT.md §3 참조.
+- **Actor** = capability를 끌어가는 회사 / 연구소 / 정부 기관.
+- **Risk / FeasibilityIndex** = 보조 도메인 — risk 카탈로그 + Bayesian
+  rollup. (Phase 3 archive: `docs/archive/pivot.md §3` for original framing.)
 
 ---
 
 ## Current Phase
 
-**Phase 3 — Vision Feasibility Monitor pivot**. 2026-05-23 pivot from
-Sector Simulator + investment tools → single-page Feasibility Monitor.
+**Phase 4 — Real-time Intelligence (M48+).** 모든 vision이 살아있는
+대상. 실제 인터넷 데이터를 계속 흘려보내고, 유저는 그 흐름을 *보고*,
+모든 점수는 source까지 traceable, 새 entity가 발견되면 봇이
+proposal을 제출 → 커뮤니티 투표.
 
-Shipped so far (in order): M36 ✅ schema · M37 ✅ Hero + Playground +
-onboarding · M45a ✅ Actor schema + Hero band · M38 ✅ capability seed
-(3 visions) · M45b ✅ Actor DB seed + capability_actor · M39 ✅ signal
-ingest (arXiv + USPTO + NewsAPI + extractor agent) · M40 ✅ feasibility
-scoring engine + ScoreUpdater · M41 ✅ Vision Builder agent (5 PRs) ·
-M42 ✅ Playground reposition + WhatIf callout · M43 ✅ investment
-features archived behind flag · M46a ✅ Proposal schema + feed · M46b ✅
-PredictionV2 tiered + leaderboard · M46c ✅ Reputation + Follow + /u/[id].
+배경: Phase 3 (Sector Simulator → Vision Feasibility Monitor pivot)
+는 끝났음. 데이터 스키마 (M36 Capability/Signal/Risk/Feasibility +
+M45 Actor + M46 CommunityProposal) + scoring engine (M40 Liebig
+rollup + ScoreUpdater) + Vision Builder agent (M41) 가 Phase 4가
+올라서는 토대. 시간 순서대로 보고 싶다면 git log (또는 historical
+context 가 필요할 때는 [docs/archive/pivot.md](./docs/archive/pivot.md)).
 
-Polish slices since: i18n (ko/en) + theme switcher + wider layouts ·
-visions visual hub revamp · multi-step proposal/prediction wizards ·
-legacy pre-pivot routes deleted · 20 migrations squashed to a single init.
+Phase 4 milestones (자세한 sequence는
+[docs/tasks/current.md](./docs/tasks/current.md), 설계 ground-truth는
+[docs/architecture/composition.md](./docs/architecture/composition.md)):
 
-In flight / next: **M44** (Fusion Power second showcase + 4-tile public
-landing + Twitter demo) · M46d (Evidence URL OG + R2 upload) · M46e
-(Admin queue + 1-click apply) · M46f (Per-sector community tab) ·
-M47 (Discussions + reputation polish — gated on M46 production data).
+- **M48** — Crawler Docker service + Gemini Deep Research wrapper
+- **M49** — Per-surface fetcher set (capability / actor / signal /
+  risk / economics) + cost-aware orchestrator
+- **M50** — Bot user (`@feasibility_bot`) + EntityDetector + auto-
+  proposal via existing `CommunityProposal` flow
+- **M51** — Live Pulse UX (Hero ticker · per-tab sync pill · "why"
+  drawer on every score number)
+- **M52** — Admin Crawler Cockpit (`/admin/crawler` — live jobs ·
+  health · bot proposal queue · schedule editor)
+- **M53** — Vision Visualization pack (CapabilityRadar ·
+  FeasibilityTimeline · CostCurveCrossover · ActorRelevanceBubble ·
+  RiskHeatmap)
+- **M54** — 4-vision full seeding (SDC · Fusion · Memory · SOFC)
 
-매 milestone 시작 전: PIVOT.md §5 entry → REFACTOR.md 관련 sections
-(§1-§13) → §12 PR sequence 순서로 읽기.
+매 milestone 시작 전: composition.md 관련 §-section → current.md
+의 milestone entry → 한 슬라이스 = 한 PR.
 
 ---
 
@@ -169,7 +182,7 @@ packages/
 infra/{terraform,k8s,docker,secrets,seeds}/
 prompts/                          Agent system prompts (versioned, see prompts/README.md)
 tests/{integration,e2e,agent_evals}/
-docs/{adr,tasks}/                 + PIVOT.md + REFACTOR.md + agent-capabilities.md
+docs/{adr,architecture,tasks,archive}/   + agent-capabilities.md
 ```
 
 ---
@@ -360,11 +373,12 @@ Current ADRs:
 ## References
 
 - [DESIGN.md](./DESIGN.md) — vision, personas, features, NFRs
-- [docs/PIVOT.md](./docs/PIVOT.md) — strategic pivot memo
-- [docs/REFACTOR.md](./docs/REFACTOR.md) — file-by-file refactor inventory
 - [docs/tasks/current.md](./docs/tasks/current.md) — live milestone status
+- [docs/architecture/composition.md](./docs/architecture/composition.md) —
+  Phase 4 data-pipeline + fetcher + bot + UX ground-truth
 - [docs/adr/](./docs/adr/) — ADRs
 - [docs/agent-capabilities.md](./docs/agent-capabilities.md) — agent / workflow inventory
+- [docs/archive/](./docs/archive/) — historical Phase 3 memos (pivot, refactor inventory)
 - [prompts/](./prompts) — agent system prompts (versioned)
 - [packages/sdk-python/README.md](./packages/sdk-python/README.md) — Simulation SDK
 - [packages/agent-tools/README.md](./packages/agent-tools/README.md) — MCP tool authoring

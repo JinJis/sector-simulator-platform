@@ -1,7 +1,14 @@
-# REFACTOR.md — File-by-file code surgery for the pivot
+# [ARCHIVED] REFACTOR.md — File-by-file code surgery for the pivot
 
-Companion to [PIVOT.md](./PIVOT.md). Read PIVOT.md §5 for the strategic
-context per milestone, this doc for what to actually touch.
+> **Archived 2026-05-25.** This was the pivot-era file inventory.
+> Phase 3 (M36 → M46c) is shipped; the surgery described here is
+> done. Kept as historical reference. Current work plan:
+> [docs/tasks/current.md](../tasks/current.md).
+
+---
+
+Companion to [pivot.md](./pivot.md). Originally written when both
+docs lived at `docs/`; both archived together 2026-05-25.
 
 **Last updated**: 2026-05-25. Most sections describe shipped surface
 (M36 → M43 + M45a/b + M46a/b/c). The remaining ✓-pending entries are

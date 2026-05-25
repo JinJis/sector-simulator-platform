@@ -7,14 +7,19 @@
 
 For strategy / personas / business model see [DESIGN.md](./DESIGN.md). For
 coding conventions see [CLAUDE.md](./CLAUDE.md). For active milestone
-status see [docs/tasks/current.md](./docs/tasks/current.md).
+status see [docs/tasks/current.md](./docs/tasks/current.md). For the
+Phase 4 data-pipeline / fetcher / bot / UX design ground-truth see
+[docs/architecture/composition.md](./docs/architecture/composition.md).
 
-**Status** (2026-05-25): M36 → M43 + M45a/b + M46a/b/c ✅ shipped.
-Polish slices in: i18n (ko/en), theme switcher (dark/light/system), wider
-layouts, multi-step wizards, legacy-route cleanup. Active next: **M44**
-(Fusion Power second showcase + 4-tile public landing + Twitter demo)
-and the M46 d/e/f sub-slices (Evidence sources / Admin queue /
-Per-sector tab). Pre-pivot history (M1-M35) lives in git log.
+**Now** (Phase 4 — Real-time Intelligence): building a continuous-ingest
+crawler service (Docker) with per-surface fetchers + Gemini Deep
+Research, a `@feasibility_bot` user that auto-proposes newly-discovered
+actors / capabilities / risks for community voting, a transparent
+"Live Pulse" UX that makes the source → judgment → score flow legible
+on every vision page, an admin crawler cockpit, a richer visualization
+pack, and a full data seed across 4 visions. Phase 3 (the Sector
+Simulator → Vision Feasibility Monitor pivot) is shipped — see git log
+or [docs/archive/pivot.md](./docs/archive/pivot.md) for history.
 
 ---
 
@@ -33,15 +38,17 @@ Per-sector tab). Pre-pivot history (M1-M35) lives in git log.
 
 ## Solution
 
-각 Vision은 ~10개의 **Capability** (기술 / 경제 / 규제 / 공급)로 분해. 매일
-들어오는 **Signal** (arXiv 논문 / 특허 / 뉴스 / 정부 보고서)이 SignalExtractor
-agent를 통과해 capability score delta로 변환되고, ScoreUpdater agent가
-4-차원 점수에 반영. **FeasibilityIndex**가 Bayesian 집계 + Liebig binding
-constraint로 vision 단위 0-100 점수와 ETA 분포를 도출. **Actor** layer
-(M45)가 각 capability를 끌어가는 회사 · 연구소 · 정부 기관을 추적.
+각 Vision은 ~10개의 **Capability** (기술 / 경제 / 규제 / 공급)로 분해.
+**크롤러 서비스**가 arXiv / 특허 / 뉴스 / 정부 / Gemini Deep Research를
+계속 흡수해서 **Signal** 로 떨어뜨리고, SignalExtractor agent가 capability
+score delta로 변환, ScoreUpdater agent가 4-차원 점수에 반영. **FeasibilityIndex**
+가 Bayesian 집계 + Liebig binding constraint로 vision 단위 0-100 점수와 ETA
+분포를 도출. **Actor** layer가 각 capability를 끌어가는 회사 · 연구소 ·
+정부 기관을 추적. 새로 발견된 entity는 **`@feasibility_bot`** 이 직접
+`CommunityProposal` 을 띄워 유저 투표로 큐레이션.
 
 시뮬레이션은 부수 기능 — 사용자가 슬라이더로 산업을 이해하는 Playground
-(M42에서 driver→capability 배지 + WhatIfFeasibility callout 추가).
+(driver→capability 배지 + WhatIfFeasibility callout).
 
 ---
 
@@ -103,31 +110,51 @@ Services + packages — see [CLAUDE.md "Repository Structure"](./CLAUDE.md#repos
 
 ## What works today
 
-| | Status | Notes |
-|---|---|---|
-| `/visions` landing + Hero | ✅ M37 + visual-hub revamp | Vision cards with domain themes + filter chips |
-| `/visions/[slug]` sub-nav | ✅ M37 → M40 | Overview / Capabilities / Actors / Signals / Risks / Economics / Playground / Sources — DB-backed |
-| Playground (sliders + WhatIfFeasibility callout) | ✅ M37 → M42 | Driver→capability badges + live Feasibility preview above sim chart |
-| Capability / Signal / Risk / Feasibility schema + tRPC | ✅ M36 | 6 Prisma models, 5 routers |
-| Capability / Risk / Feasibility manual seed (3 visions) | ✅ M38 | space-data-center, memory-semi, sofc curated |
-| Actor domain + Hero band + capability footer | ✅ M45a/b | Schema, fixtures, then DB swap; signal extractor tags `actor_id` |
-| Signal ingest (arXiv + USPTO + NewsAPI) | ✅ M39 | + SignalExtractor (haiku) + Signals tab + monitoring health card |
-| Feasibility scoring engine | ✅ M40 | 4-dim aggregation + Liebig binding + ETA inference + daily recompute cron |
-| Vision Builder agent (one-liner → full tree) | ✅ M41 | PromptValidator → Research → VisionDecomposition → DataSourceSelector → ValidationGate → admin commit |
-| Investment surface archived behind flag | ✅ M43 | `ENABLE_LEGACY_INVESTMENT_FEATURES=false` (default); crons off; routes 410 |
-| Community 3.0 — proposals + tiered predictions + reputation | ✅ M46a-c | Proposal schema + feed, PredictionV2 + leaderboard, Reputation + Follow + `/u/[id]` |
-| Multi-step proposal + prediction wizards | ✅ slice | 5-step proposal · 3-step prediction with live tier preview |
-| i18n (ko/en) + theme switcher + bilingual UI | ✅ slice | Cookie-backed, mirrored on `User.locale` / `User.theme`; friendly tone in both |
-| Fusion Power second showcase + 4-tile landing | pending M44 | Pressure-tests the framework on a second vision |
-| Evidence URL OG fetch + R2 upload | pending M46d | |
-| Admin proposal queue + 1-click apply | pending M46e | |
-| Per-sector community tab + cold-start seed | pending M46f | |
-| Discussions + reputation polish | pending M47 | Gated on M46 production data (~4 weeks post-M46f) |
+Grouped by surface; live milestone status lives only in
+[docs/tasks/current.md](./docs/tasks/current.md).
 
-Investment surface (Equity / Prediction-v1 / Watchlist / sector
-suggestion / pre-pivot community) is behind
-`ENABLE_LEGACY_INVESTMENT_FEATURES` (default false at M43). Tables
-preserved; routes 410 when flag off. Reversible config flip.
+**Vision pages** — `/visions` landing with domain themes + filter chips;
+`/visions/[slug]` 8-tab layout (Overview / Capabilities / Actors /
+Signals / Risks / Economics / Playground / Sources), DB-backed. Hero
+shows feasibility score · ETA window · capability bands · actor band.
+
+**Scoring pipeline** — 6 Prisma models for Capability / Signal / Risk /
+VisionFeasibility / Actor / CapabilityActor. 4-dim aggregation per
+capability + Liebig binding rollup + ETA inference; daily recompute
+cron. Signal ingest covers arXiv + USPTO + NewsAPI, fed through a
+SignalExtractor (haiku) and ScoreUpdater (sonnet); Signals tab + admin
+health card included.
+
+**Vision Builder agent** — admin types a one-line question →
+PromptValidator → VisionResearch → VisionDecomposition →
+DataSourceSelector → ValidationGate (DAG + FK + weight-sum checks) →
+single-Prisma-transaction commit. 5-vision eval set in
+`tests/agent_evals/`.
+
+**Playground** — sliders + WhatIfFeasibility callout + driver→capability
+badges; client-side Liebig aggregator mirrors the simulation service.
+
+**Community** — 3-kind community surface: `CommunityProposal` (7
+`target_kind`s, voting feed, admin queue), tiered `PredictionV2`
+(Easy/Medium/Hard auto-assigned from horizon × spread × volatility,
+resolution cron, leaderboard), `UserReputation` tiers + follow graph +
+`/u/[id]` profile pages. Multi-step proposal (5-step) + prediction
+(3-step) wizards.
+
+**i18n + theme** — ko default + en parity; dark default + light + system;
+cookie-backed (`tssp_locale` / `tssp_theme`) and mirrored on
+`User.locale` / `User.theme` for cross-device sync.
+
+**Legacy investment surface** — Equity / Prediction-v1 / Watchlist /
+sector suggestion / pre-pivot community gated by
+`ENABLE_LEGACY_INVESTMENT_FEATURES` (default false). Tables preserved;
+routes 410 when flag off. Reversible config flip.
+
+**Coming in Phase 4** (M48–M54) — Crawler Docker service · Gemini Deep
+Research integration · per-surface fetchers + orchestrator ·
+`@feasibility_bot` auto-proposals · Live Pulse UX · admin crawler
+cockpit · visualization pack · 4-vision full seeding. See
+[docs/tasks/current.md](./docs/tasks/current.md).
 
 ---
 
@@ -204,11 +231,11 @@ Bring up only specific services:
 
 ## References
 
-- [docs/PIVOT.md](./docs/PIVOT.md) — strategic memo + milestone outline
-- [docs/REFACTOR.md](./docs/REFACTOR.md) — file-by-file disposition
 - [docs/tasks/current.md](./docs/tasks/current.md) — live milestone status
+- [docs/architecture/composition.md](./docs/architecture/composition.md) — Phase 4 data-pipeline + fetcher + bot + UX ground-truth
 - [docs/adr/](./docs/adr/) — Architectural Decision Records
 - [docs/agent-capabilities.md](./docs/agent-capabilities.md) — agent / workflow inventory
+- [docs/archive/](./docs/archive/) — historical Phase 3 memos (pivot, refactor inventory)
 - [CLAUDE.md](./CLAUDE.md) — operational context (read every session)
 - [DESIGN.md](./DESIGN.md) — vision, personas, NFRs
 - [prompts/](./prompts) — agent system prompts (versioned)

@@ -2,16 +2,18 @@
 
 **Owner**: Ayoung · **Last updated**: 2026-05-25.
 
-> 운영/개발 컨텍스트는 [CLAUDE.md](./CLAUDE.md). 전략 메모는
-> [docs/PIVOT.md](./docs/PIVOT.md). 파일별 refactor inventory는
-> [docs/REFACTOR.md](./docs/REFACTOR.md). 현재 작업은
-> [docs/tasks/current.md](./docs/tasks/current.md). 에이전트 인벤토리는
+> 운영/개발 컨텍스트는 [CLAUDE.md](./CLAUDE.md). 현재 작업은
+> [docs/tasks/current.md](./docs/tasks/current.md). Phase 4
+> 데이터 파이프라인 설계는
+> [docs/architecture/composition.md](./docs/architecture/composition.md).
+> 에이전트 인벤토리는
 > [docs/agent-capabilities.md](./docs/agent-capabilities.md).
 >
-> M36 → M43 + M45a/b + M46a/b/c ✅ shipped. M44 + M46d/e/f + M47 in
-> flight. 이 문서는 *durable strategic content*만 유지 — 로드맵 /
-> business model / IA sitemap / equities 등 superseded 섹션은 통째로
-> 삭제됐고 git history에 보존됨. PIVOT.md를 first read로.
+> 이 문서는 *durable strategic content* 만 유지 — 로드맵 / business
+> model / IA sitemap / equities 등 superseded 섹션은 git history에
+> 보존됨. Phase 3 (Sector Simulator → Vision Feasibility Monitor pivot)
+> 의 historical context 가 필요하면
+> [docs/archive/pivot.md](./docs/archive/pivot.md).
 
 ---
 
@@ -44,8 +46,12 @@
 3. **FeasibilityIndex**가 Bayesian 집계 + Liebig binding constraint 으로
    vision 단위 0-100 점수와 ETA 분포를 도출
 4. **Actor** layer가 각 capability를 개발/경쟁하는 회사 + 연구소 +
-   정부 기관을 추적 (M45)
-5. 시뮬레이션은 Playground 부가 기능 — 사용자가 슬라이더로 산업을
+   정부 기관을 추적
+5. **크롤러 서비스** 가 실시간으로 인터넷 데이터를 흡수해 Signal/
+   Capability/Risk/Economics 로 떨어뜨리고, 새 entity 가 발견되면
+   **`@feasibility_bot`** 이 `CommunityProposal` 을 띄워 유저 투표로
+   큐레이션
+6. 시뮬레이션은 Playground 부가 기능 — 사용자가 슬라이더로 산업을
    이해하는 도구
 
 ### 1.4 Differentiator
@@ -63,9 +69,9 @@
 
 ## 2. Users & personas
 
-Priority order (highest → lowest in M44 launch):
+Priority order:
 
-| # | Persona | Core job | Pivot-era usage |
+| # | Persona | Core job | Primary use |
 |---|---|---|---|
 | 1 | Deep-tech VC partner | Thesis validation | "Should I write a $20M check into orbital DCs?" — 5min on Hero, sub-tabs as needed |
 | 2 | R&D policy planner (KISTEP / NSF / ARPA-E / DARPA) | Grant allocation | "Where to deploy program funding?" — compare 5+ visions side by side |
@@ -73,23 +79,27 @@ Priority order (highest → lowest in M44 launch):
 | 4 | Curious engineer / founder | "Worth working on?" | scroll feed of capability movements over time |
 | 5 | Tech journalist | Citation source | drill into source-grounded signals; embed Hero in articles |
 
-Domain contributor (proposal submitter, M46+) is everyone except #4.
+Domain contributor (proposal submitter, voter on bot-drafted proposals)
+is everyone except #4.
 
 ---
 
 ## 3. Core abstractions
 
-See [PIVOT.md §3](./docs/PIVOT.md#3-core-abstraction) for the
-canonical model. Quick summary:
-
 ```
 Vision (1 row = Sector with is_vision_eligible=true)
   ├─ Capability   tech / econ / reg / supply scores (CapabilityScore time series)
-  ├─ Actor        global Company/Lab/Govt entities; per-capability roles (M45)
+  ├─ Actor        global Company/Lab/Govt entities; per-capability roles
   ├─ Signal       paper / patent / news / filing / gov / vendor / dataset / social
   ├─ Risk         political / legal / supply / safety / env / fin / social
   └─ Feasibility  vision-level composite + ETA P10-median-P90
 ```
+
+Phase 4 layer on top: a continuous **Crawler** service pushes new
+`Signal` / `EconomicsDatapoint` rows into the model and asks
+`@feasibility_bot` to draft a `CommunityProposal` whenever a new
+Actor / Capability / Risk / signal source shows up. See
+[docs/architecture/composition.md](./docs/architecture/composition.md).
 
 Signal → ExtractorAgent (haiku tier) → per-dim deltas + actor tags →
 ScoreUpdaterAgent (sonnet) → CapabilityScore time series → VisionAggregator
@@ -99,57 +109,79 @@ ScoreUpdaterAgent (sonnet) → CapabilityScore time series → VisionAggregator
 
 ## 4. Features
 
-Anchored to milestones — see [docs/tasks/current.md](./docs/tasks/current.md).
+Live status is in [docs/tasks/current.md](./docs/tasks/current.md).
+This list is intentionally durable — feature *shape*, not feature *state*.
 
-### F1. Vision creation (M41 ✅)
+### F1. Vision creation
 Natural-language vision question → Vision Builder Conductor
 (PromptValidator → Research → VisionDecomposition → DataSourceSelector
-→ ValidationGate) → admin approval → tRPC commit. Cost target met
-on shipped 5-vision eval set (~$2 / vision). Sandbox for scoring-code
-execution remains deferred (M28b).
+→ ValidationGate) → admin approval → tRPC commit. Cost target ~$2 per
+vision on the 5-vision eval set. Sandbox for scoring-code execution
+remains deferred.
 
-### F2. Signal ingest (M39 ✅, M40 ✅)
-- arXiv (papers) — daily, free
-- USPTO PatentsView (patents) — daily, free
-- NewsAPI.org (news) — daily, free tier
-- Future: KIPO patents, government RSS, social listening
+### F2. Signal ingest (continuous)
+- Direct adapters (cheap, keyword-driven): arXiv papers · USPTO
+  PatentsView · NewsAPI · government RSS
+- Synthesis: Gemini Deep Research Agent for state-of-X paragraphs no
+  single API can produce
 - Each signal → SignalExtractor (haiku) → per-dim deltas + actor tags +
   confidence → ScoreUpdater (sonnet) → CapabilityScore time series →
   daily `recompute_feasibility` cron
 
-### F3. The Hero (M37 ✅ → polish)
+### F3. The Hero
 One screen per vision; 5-second comprehension. FeasibilityGauge +
 trajectory + ETA window + capability cards + actors band + economics
-curve + risk board + live signal feed. Sub-nav drills into 8 sub-pages
-(Overview / Capabilities / Actors / Signals / Risks / Economics /
-Playground / Sources).
+curve + risk board + live signal feed + **Live Pulse widget** (ingest
+ticker, last 24h). Sub-nav drills into 8 sub-pages (Overview /
+Capabilities / Actors / Signals / Risks / Economics / Playground /
+Sources). Every score number opens a "why" drawer with source signals.
 
-### F4. Playground (M37 ✅ → M42 ✅)
+### F4. Playground
 Simulator as a sub-tab. Driver sliders + driver→capability badges +
 WhatIfFeasibility callout above the sim chart showing how the index
 would shift under the current assumptions (client-side Liebig
 aggregator mirrors `simulation_service/feasibility/`).
 
-### F5. Provenance (ongoing, foundational)
+### F5. Provenance
 Every number on the Hero drills to source. `Signal.source_url` is
 mandatory. Capability rationale references sources. Pydantic enforces
-`source_ref` on every LLM-generated draft.
+`source_ref` on every LLM-generated draft. Every surface advertises
+its sync state via a pill (`Synced 2m ago · 3 sources · 7 signals`).
 
-### F6. Community 3.0 (M46 train)
+### F6. Community
 Per-vision proposal flow (`add_driver / add_equity / add_capability /
 add_risk / add_actor / add_signal_source / edit / other`) with vote +
-admin queue + per-kind applier. Plus tiered predictions (Easy /
-Medium / Hard auto-assigned by horizon × spread × volatility,
-auto-resolved against EquityQuote close) and reputation tiers + Follow
-graph + `/u/[id]` profiles. M46a/b/c ✅ shipped; M46d (evidence
-sources) + M46e (admin queue) + M46f (per-sector tab) pending.
+admin queue + per-kind applier. Tiered predictions (Easy / Medium /
+Hard auto-assigned by horizon × spread × volatility) with auto-
+resolution against EquityQuote close. Reputation tiers + Follow graph
++ `/u/[id]` profiles.
 
-### F7. Backtest harness (deferred, M31 reframed)
+### F7. Bot-authored proposals
+`@feasibility_bot` (`User.is_bot=true`, `bot_kind="research_agent"`)
+detects newly-mentioned actors / capabilities / risks / signal sources
+from the crawl stream, drafts a `CommunityProposal` with source-linked
+evidence, and submits it through the F6 pipeline. Bot is excluded
+from leaderboard / reputation / follow / voting; visual treatment in
+the proposal feed is a gradient border + ✨ chip + "How this was
+drafted" drawer.
+
+### F8. Admin Crawler Cockpit
+`/admin/crawler` — live jobs · per-source health (Stripe-Status-style
+pills) · bot proposal queue (Linear-Triage-style) · per-vision
+schedule editor (orchestrator weights, $/day cap, "Run now" per
+surface). Optional collaborative-plan approval for expensive Deep
+Research runs.
+
+### F9. Vision Visualization pack
+CapabilityRadar · FeasibilityTimeline · CostCurveCrossover ·
+ActorRelevanceBubble · RiskHeatmap. All click-to-source.
+Dark + light theme parity.
+
+### F10. Backtest harness (deferred)
 Vision feasibility backtest — "what did we score this capability 12mo
-ago vs. how did it actually evolve?" The original equity-price
-backtest is dropped with the pivot.
+ago vs. how did it actually evolve?"
 
-### F8. i18n + theme (shipped polish slice)
+### F11. i18n + theme
 Cookie-backed ko/en (ko default) and dark/light/system theme, both
 mirrored on `User.locale` / `User.theme` for cross-device sync.
 Translation registry at `apps/web/src/lib/i18n/dict.ts`; tone target
@@ -163,16 +195,19 @@ formal translation-ese in either.
 Cross-reference [CLAUDE.md "Tech Stack → Agent / LLM"](./CLAUDE.md#agent--llm)
 for model routing + auth. Conductor orchestrates the workflows below.
 
-| Workflow | Tier | When | Triggered by |
-|---|---|---|---|
-| VisionResearch | sonnet | M41 | new vision proposal |
-| VisionDecomposition | opus | M41 | post-Research |
-| CapabilityToDriver | sonnet | M41 | post-Decomposition |
-| CapabilityDependencies | opus | M41 | post-CapabilityToDriver |
-| CapabilityScoringCode | opus | M41 | post-Dependencies |
-| CodeReview | opus | M41 | post-CodeGen |
-| SignalExtractor | haiku | M39+ | each new signal (~100-1000/day) |
-| ScoreUpdater | sonnet | M40+ | new signal arrives for a capability |
+| Workflow | Tier | Triggered by |
+|---|---|---|
+| VisionResearch | sonnet | new vision proposal |
+| VisionDecomposition | opus | post-Research |
+| CapabilityToDriver | sonnet | post-Decomposition |
+| CapabilityDependencies | opus | post-CapabilityToDriver |
+| CapabilityScoringCode | opus | post-Dependencies |
+| CodeReview | opus | post-CodeGen |
+| SignalExtractor | haiku | each new signal (~100–1000/day) |
+| ScoreUpdater | sonnet | new signal arrives for a capability |
+| DeepResearch | deep-research-preview-04-2026 | per-surface fetcher (Phase 4) |
+| EntityDetector | sonnet | post-signal-batch; diffs vs known entities |
+| ProposalDrafter | sonnet | detected entity passes confidence + recurrence |
 
 All output goes through Pydantic schema validation. Tool-use trick on
 Claude side (force `tool_choice` for structured output). Cost meter
@@ -183,14 +218,23 @@ tracks per-workflow $$.
 ## 6. System architecture
 
 See [CLAUDE.md "Tech Stack"](./CLAUDE.md#tech-stack) for the
-stack + service list. Pivot adds no new infra — same Postgres + tRPC +
-Prisma + FastAPI services + dual-provider LLM client.
+stack + service list. The Python service set is Postgres + tRPC +
+Prisma on top, FastAPI services behind, dual-provider LLM client
+shared across.
 
-Signal ingest + score recompute crons run inside the existing
-`data-pipeline` service. Feasibility math lives in `simulation-service`
-(new `feasibility/` module). Vision Builder agent workflows run inside
-`agent-orchestration`. No Temporal Cloud, no Modal/E2B sandbox in
-pivot scope.
+Service map:
+- `data-pipeline` — direct-adapter signal sweeps (arXiv / USPTO /
+  NewsAPI) + score recompute crons. Hourly cadence.
+- `simulation-service` — `feasibility/` module: 4-dim aggregation +
+  Liebig binding + ETA inference.
+- `agent-orchestration` — Vision Builder Conductor + extractor /
+  updater workflows.
+- `crawler` (Phase 4) — Gemini Deep Research Agent + per-surface
+  fetchers (capability / actor / risk / economics) + orchestrator +
+  EntityDetector → ProposalDrafter (bot author). Redis Streams queue.
+  Always-on Docker service.
+
+Temporal Cloud + Modal/E2B sandbox remain parked.
 
 ---
 
@@ -230,13 +274,13 @@ Strategies (active):
 - Secrets via Doppler / AWS Secrets Manager — never repo
 - Vertex AI SA JSON at `infra/secrets/vertex-ai-sa.json` (gitignored)
 - All admin actions → audit log
-- Multi-tenant + RLS planned (M30, deferred until M47)
-- SOC2 prep at scale (post-M44)
+- Multi-tenant + RLS planned (parked)
+- SOC2 prep at scale (parked)
 
 ### 7.4 Reliability
 
 - Simulation results are deterministic (caching invariant)
-- 30s+ work runs through Temporal — wired post-M47
+- 30s+ work runs through Temporal — parked
 - Long-tail feasibility recompute via daily cron, not request path
 - DB multi-AZ + daily snapshot (Railway / Fly.io defaults)
 
@@ -258,7 +302,7 @@ enforcement via Pydantic `source_ref` requirements on every draft.
 4. **Mutability** — every assumption (driver slider) is toggle-able
 5. **Provenance always one click away** — Sources tab + per-number
    hover
-6. **Keyboard-first** — Linear/Notion shortcuts + cmd+K (post-M44)
+6. **Keyboard-first** — Linear/Notion shortcuts + cmd+K (parked)
 7. **Dark mode default** — data density needs it
 8. **Bilingual** — ko default + en parity; Twitter share needs en
 
@@ -276,23 +320,23 @@ Visual language:
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| LLM hallucinates capability tree (M41) | High | Force `source_url` per draft; admin approval gate; 5-vision eval set |
+| LLM hallucinates capability tree | High | Force `source_url` per draft; admin approval gate; 5-vision eval set |
 | Signal extractor noise → score drift | High | Per-dim confidence threshold; per-vision keyword tuning iteration |
 | "73/100" feels arbitrary | High | Every number → source drill-down; Sources tab first-class |
-| Framework over-fits SDC | Medium | M44 pressure-tests on Fusion; eval set: 5 visions |
-| Signal extractor false-positives on common names | Medium | Confidence > 0.8 threshold for `actor_id` tag |
-| Existing legacy users dislike archive | Medium | Flag stays toggleable; data preserved |
-| Founder bandwidth (1 person 9-11 weeks) | High | Each PR independently mergeable; M37 Hero is the first vital screenshot |
-| Vote brigading (M46) | Medium | Weight starts 1.0×; M47 reputation gates weights; rate-limit |
-| Logo URLs 404 (M45) | Low | Fallback to colored initial-letter avatar; don't host |
+| Framework over-fits one vision | Medium | 4-vision baseline seed; eval set across 5 |
+| Signal / EntityDetector false-positives on common names | Medium | Confidence > 0.8 threshold + LLM `is_org` + `domain_relevant` classification gate |
+| Bot floods proposal queue | Medium | Recurrence rule (≥2 distinct signals in 7d) + 7d dedup window; admin can bulk-reject |
+| Crawler $/day overrun | Medium | Per-vision cap in orchestrator; spend meter visible in cockpit; admin pre-approval for Deep Research Max |
+| Vote brigading | Medium | Weight starts 1.0×; reputation gates weights once tier system is live; rate-limit |
+| Logo URLs 404 | Low | Fallback to colored initial-letter avatar; don't host |
 
 ---
 
 ## 10. References
 
 - [CLAUDE.md](./CLAUDE.md) — operational context, tech stack, conventions
-- [docs/PIVOT.md](./docs/PIVOT.md) — strategic memo
-- [docs/REFACTOR.md](./docs/REFACTOR.md) — file-by-file refactor inventory
-- [docs/adr/](./docs/adr/) — Architectural Decision Records
 - [docs/tasks/current.md](./docs/tasks/current.md) — live milestone status
+- [docs/architecture/composition.md](./docs/architecture/composition.md) — Phase 4 data-pipeline + fetcher + bot + UX ground-truth
+- [docs/adr/](./docs/adr/) — Architectural Decision Records
+- [docs/archive/](./docs/archive/) — historical Phase 3 memos
 - [prompts/](./prompts) — agent system prompts (versioned)
