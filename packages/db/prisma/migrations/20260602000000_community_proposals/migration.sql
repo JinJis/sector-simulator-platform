@@ -1,7 +1,11 @@
 -- DropForeignKey
-ALTER TABLE "agent_workflows" DROP CONSTRAINT "agent_workflows_user_id_fkey";
+-- M46a fix: prior dev-DB state could have this FK either present
+-- (added in 20260524000000) or absent (older snapshots predate that
+-- migration). IF EXISTS keeps fresh-build idempotent.
+ALTER TABLE "agent_workflows" DROP CONSTRAINT IF EXISTS "agent_workflows_user_id_fkey";
 
 -- AlterTable
+-- (DROP DEFAULT is a no-op when the column has no default; safe.)
 ALTER TABLE "risks" ALTER COLUMN "affected_capability_keys" DROP DEFAULT;
 
 -- CreateTable
