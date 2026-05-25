@@ -8,11 +8,20 @@ The orchestrator (M49) extends this with status-based fetch queries
 from __future__ import annotations
 
 import json
+import secrets
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
 import asyncpg
+
+
+def _new_crawl_run_id() -> str:
+    """Generate a row id in the same `cr_<hex>` shape Prisma's cuid
+    helper would produce. We don't rely on Postgres `gen_random_bytes`
+    because pgcrypto isn't enabled by default on every install — and
+    Prisma's normal flow generates IDs client-side anyway."""
+    return f"cr_{secrets.token_hex(12)}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,14 +122,12 @@ class PostgresCrawlRunRepository:
             INSERT INTO crawl_runs (
                 id, vision_slug, fetcher_kind, status, plan
             )
-            VALUES (
-                CONCAT('cr_', encode(gen_random_bytes(12), 'hex')),
-                $1, $2, 'queued', $3::jsonb
-            )
+            VALUES ($1, $2, $3, 'queued', $4::jsonb)
             RETURNING id, vision_slug, fetcher_kind, status, plan,
                       result_summary, cost_usd, signals_written,
                       proposals_written, error, started_at, ended_at
             """,
+            _new_crawl_run_id(),
             vision_slug,
             fetcher_kind,
             json.dumps(plan),

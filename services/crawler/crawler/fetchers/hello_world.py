@@ -69,16 +69,23 @@ async def run_hello_world(
             tier="fast",
         )
     except Exception as exc:
+        # Record the failure on the run row and return — callers want
+        # a structured response, not an exception. Common shape here
+        # is a Gemini auth / quota error; we surface the type + first
+        # line of the message so admins can act on it.
+        err_text = f"{type(exc).__name__}: {str(exc).splitlines()[0] if str(exc) else 'unknown error'}"
         await repo.mark_complete(
             row.id,
             status="error",
-            result_summary=None,
+            result_summary={"error_kind": type(exc).__name__},
             cost_usd=None,
             signals_written=0,
             proposals_written=0,
-            error=str(exc),
+            error=err_text[:500],
         )
-        raise
+        fresh = await repo.get(row.id)
+        assert fresh is not None
+        return HelloWorldRunResult(run=fresh, output_text="", cached=False)
 
     summary = {
         "interaction_id": result.interaction_id,

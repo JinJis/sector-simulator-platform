@@ -14,11 +14,18 @@ source_url so multiple runs on the same day collapse to one row
 
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
 import asyncpg
+
+
+def _new_signal_id() -> str:
+    """Same cuid-shape helper as crawler/repo.py — avoids relying on
+    Postgres pgcrypto being enabled (not default on every install)."""
+    return f"sg_{secrets.token_hex(12)}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,8 +70,7 @@ class PostgresSignalWriter:
                 is_highlight
             )
             VALUES (
-                CONCAT('sg_', encode(gen_random_bytes(12), 'hex')),
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
             )
             ON CONFLICT (source_url, capability_id) DO UPDATE
             SET actor_id        = EXCLUDED.actor_id,
@@ -80,6 +86,7 @@ class PostgresSignalWriter:
                 is_highlight    = EXCLUDED.is_highlight
             RETURNING id
             """,
+            _new_signal_id(),
             signal.sector_slug,
             signal.capability_id,
             signal.actor_id,

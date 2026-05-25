@@ -131,13 +131,54 @@ async def run_capability_fetcher(
     )
 
     # 2. Deep Research synthesis. The DR client owns cache + cost
-    # metering; we just read the result.
-    dr = await deep_research.research(
-        prompt=prompt,
-        surface="capability",
-        vision_slug=request.vision_slug,
-        tier="fast",
-    )
+    # metering; we just read the result. If the call itself blows up
+    # (e.g. Gemini auth / quota), record the failure on the run and
+    # return — callers want a structured response, not an exception.
+    try:
+        dr = await deep_research.research(
+            prompt=prompt,
+            surface="capability",
+            vision_slug=request.vision_slug,
+            tier="fast",
+        )
+    except Exception as exc:  # noqa: BLE001
+        err_text = (
+            f"{type(exc).__name__}: "
+            f"{str(exc).splitlines()[0] if str(exc) else 'unknown error'}"
+        )
+        await runs_repo.mark_complete(
+            run.id,
+            status="error",
+            result_summary={
+                "error_kind": type(exc).__name__,
+                "capability_id": capability.id,
+                "capability_key": capability.key,
+            },
+            cost_usd=None,
+            signals_written=0,
+            proposals_written=0,
+            error=err_text[:500],
+        )
+        fresh = await runs_repo.get(run.id)
+        assert fresh is not None
+        return CapabilityFetchResult(
+            run=fresh,
+            capability=capability,
+            deep_research=DeepResearchResult(
+                interaction_id="",
+                tier="fast",
+                model="deep-research-preview-04-2026",
+                status="error",
+                output_text="",
+                error=err_text,
+                cached=False,
+                cost_usd=0.0,
+                elapsed_seconds=0.0,
+                raw_usage={},
+            ),
+            scoring=None,
+            signal_id=None,
+        )
     total_cost = dr.cost_usd
     signals_written = 0
     scoring: SignalExtractorRunResult | None = None

@@ -131,37 +131,58 @@ class CapabilityTriggerOut(BaseModel):
 
 def _build_deep_research_client() -> DeepResearchClient | None:
     """Construct a DeepResearchClient backed by the real google-genai
-    client when the env is wired (Vertex AI SA JSON + project + region).
-    Returns None otherwise — the HelloWorld endpoint then 503s instead
-    of crashing on startup, which keeps docker-compose green when the
-    SA JSON isn't mounted yet."""
+    client. Two auth paths, tried in order:
+
+      1. **Vertex AI (production)** — requires
+         `GOOGLE_GENAI_USE_VERTEXAI=true` +
+         `GOOGLE_APPLICATION_CREDENTIALS=/path/to/vertex-ai-sa.json`.
+      2. **Gemini API key (dev fallback)** — requires `GEMINI_API_KEY`
+         from https://aistudio.google.com/apikey. Cheaper to wire up;
+         not for prod but unblocks local crawler smoke without an
+         SA JSON mount.
+
+    Returns None when neither is wired — the fetcher endpoints then
+    503 with a remediation hint instead of crashing on startup, so
+    docker-compose stays green.
+    """
     try:
         from google import genai  # noqa: PLC0415  (optional dep)
     except ImportError:
         log.warning("crawler: google-genai not installed — Deep Research disabled")
         return None
 
+    # Path 1 — Vertex AI.
     use_vertex = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in {
         "1", "true", "yes", "on"
     }
     creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    if not (use_vertex and creds and os.path.exists(creds)):
-        log.warning(
-            "crawler: GOOGLE_GENAI_USE_VERTEXAI/GOOGLE_APPLICATION_CREDENTIALS "
-            "not wired — Deep Research disabled (HelloWorld will return 503)"
-        )
-        return None
+    if use_vertex and creds and os.path.exists(creds):
+        try:
+            client = genai.Client(
+                vertexai=True,
+                location=os.environ.get("GOOGLE_CLOUD_LOCATION", "global"),
+            )
+            log.info("crawler: Deep Research enabled via Vertex AI (sa=%s)", creds)
+            return DeepResearchClient(genai_client=client)
+        except Exception as exc:  # pragma: no cover — exercised in compose
+            log.error("crawler: Vertex AI client construction failed: %s", exc)
 
-    try:
-        client = genai.Client(
-            vertexai=True,
-            location=os.environ.get("GOOGLE_CLOUD_LOCATION", "global"),
-        )
-    except Exception as exc:  # pragma: no cover — exercised in compose, not unit tests
-        log.error("crawler: genai.Client() construction failed: %s", exc)
-        return None
+    # Path 2 — Gemini API key (AI Studio).
+    api_key = (os.environ.get("GEMINI_API_KEY") or "").strip()
+    if api_key:
+        try:
+            client = genai.Client(api_key=api_key)
+            log.info("crawler: Deep Research enabled via Gemini API key (AI Studio)")
+            return DeepResearchClient(genai_client=client)
+        except Exception as exc:  # pragma: no cover — exercised in compose
+            log.error("crawler: API key client construction failed: %s", exc)
 
-    return DeepResearchClient(genai_client=client)
+    log.warning(
+        "crawler: Deep Research disabled — neither Vertex AI "
+        "(GOOGLE_GENAI_USE_VERTEXAI + GOOGLE_APPLICATION_CREDENTIALS) "
+        "nor GEMINI_API_KEY is configured. Fetcher endpoints will 503."
+    )
+    return None
 
 
 @asynccontextmanager
@@ -259,8 +280,12 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status_code=503,
                 detail=(
-                    "crawler unavailable — DeepResearchClient not configured "
-                    "(GOOGLE_GENAI_USE_VERTEXAI + GOOGLE_APPLICATION_CREDENTIALS)"
+                    "Deep Research is not configured. Set ONE of: "
+                    "(A) GEMINI_API_KEY=<aistudio.google.com/apikey> "
+                    "in your .env (simplest for dev); "
+                    "(B) GOOGLE_GENAI_USE_VERTEXAI=true + "
+                    "GOOGLE_APPLICATION_CREDENTIALS=/secrets/vertex-ai-sa.json "
+                    "(production). Restart the crawler container after."
                 ),
             )
         return dr
