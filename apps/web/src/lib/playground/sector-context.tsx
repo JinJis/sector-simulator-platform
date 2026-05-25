@@ -24,7 +24,7 @@ import {
   type SimMetadata,
 } from "@/lib/sim-client";
 
-import { diffFromDefaults, isSameOverrides } from "../../scenario-state";
+import { diffFromDefaults, isSameOverrides } from "./scenario-state";
 
 interface SectorContextValue {
   meta: SimMetadata;

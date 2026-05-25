@@ -3,6 +3,11 @@
  * segment). Sorted longest-first at resolution time so specific
  * patterns win over generic ones.
  *
+ * Post-pivot cleanup: legacy `/sectors/*`, `/predict`, `/propose`,
+ * `/watchlist`, `/my-sectors`, `/community/{predict,leaderboard,
+ * suggestions,my-predictions}` tours were deleted alongside the routes.
+ * Only Vision Feasibility Monitor + Community 3.0 entries remain.
+ *
  * Each entry has a short label (chip text) + 3-5 walkthrough steps.
  */
 
@@ -18,427 +23,71 @@ export interface PageTourEntry {
 }
 
 export const PAGE_TOURS: Record<string, PageTourEntry> = {
-  // ----- Home -----
-  "/": {
-    label: "홈",
-    steps: [
-      {
-        title: "여기서 시작하세요",
-        body:
-          "이 플랫폼은 산업의 성장 가설을 직접 가정해보고, 그 가정에서 어떤 종목이 가장 큰 영향을 받는지를 실시간으로 보여줍니다.",
-      },
-      {
-        title: "섹터 카드를 골라 들어가세요",
-        body:
-          "현재 3개 섹터(메모리 반도체 · 우주 데이터센터 · SOFC 연료전지)가 등록되어 있습니다. 각 카드에 1단락 thesis와 90일 평균 변동이 적혀 있습니다.",
-        tip: "처음이라면 가장 관심 있는 한 섹터만 깊게 둘러보는 게 좋습니다.",
-      },
-      {
-        title: "최근 90일 가장 크게 움직인 종목",
-        body:
-          "지난 90일 동안 절댓값으로 가장 크게 움직인 종목 3개를 보여드립니다. 클릭하면 해당 종목의 상세 페이지로 이동합니다.",
-      },
-      {
-        title: "더 보기",
-        body:
-          "검색 · 상위 변동 종목 표 · 최근 시나리오 · 활동 기록은 \"더 보기\" 안에 들어 있습니다. 한 번 열어두면 다음 방문에도 그대로 열려 있습니다.",
-      },
-    ],
-  },
-
-  // ----- Sector overview -----
-  "/sectors/:slug": {
-    label: "섹터 개요",
-    steps: [
-      {
-        title: "성장 가설",
-        body:
-          "맨 위 큰 카드는 이 산업이 \"왜 성장한다고 보는가\"를 1-2 문장으로 요약한 투자 thesis입니다.",
-      },
-      {
-        title: "성장 요인 / 발목 잡는 요인",
-        body:
-          "왼쪽 3개는 산업을 끌어올리는 힘, 오른쪽 3개는 thesis를 깰 수 있는 요인입니다. 각 요인 옆 게이지의 +/- 숫자는 \"지금 시장 가정이 기본값보다 얼마나 위/아래\" 인지를 보여줍니다.",
-        tip: "게이지를 클릭하면 시뮬레이션 페이지로 점프해서 그 요인을 직접 움직여볼 수 있습니다.",
-      },
-      {
-        title: "한눈에 보기",
-        body:
-          "종목 수 · 섹터 평균 90일 변동 · 조정 가능한 드라이버 수 · 시뮬레이션 기간을 한 줄로.",
-      },
-      {
-        title: "다음 단계",
-        body:
-          "위쪽 두 CTA — \"어떤 종목이 수혜?\" 로 가면 종목 그리드, \"내 가정으로 시뮬레이션\" 으로 가면 슬라이더 화면.",
-      },
-    ],
-  },
-
-  // ----- Stocks (종목) -----
-  "/sectors/:slug/equities": {
-    label: "종목",
-    steps: [
-      {
-        title: "이 섹터의 모든 종목",
-        body:
-          "현재 시뮬레이션 가정에서 각 종목이 30일 뒤 어떻게 움직일 예상인지를 한 화면에서 봅니다.",
-      },
-      {
-        title: "★ 관심 등록",
-        body:
-          "맘에 드는 종목 옆 별표를 눌러 관심 종목으로 등록할 수 있습니다. 등록 종목은 헤더 우측 메뉴 → 관심 종목에서 한꺼번에 확인.",
-        tip: "로그인이 필요합니다. 익명 사용자는 클릭 시 로그인 페이지로 이동합니다.",
-      },
-      {
-        title: "행 펼치기 (▾)",
-        body:
-          "각 행 우측 ▾ 버튼을 누르면 분기 매출/마진/EBITDA/Capex 미니 차트 + 90일 가격 추이가 펼쳐집니다.",
-      },
-      {
-        title: "행 클릭 → 종목 상세",
-        body:
-          "ticker 를 클릭하면 종목 상세 페이지로 이동합니다. 거기서 \"왜 이 숫자인가요?\" plain-Korean 설명을 볼 수 있습니다.",
-      },
-    ],
-  },
-
-  // ----- Simulate -----
-  "/sectors/:slug/simulate": {
-    label: "시뮬레이션",
-    steps: [
-      {
-        title: "가장 영향력이 큰 5개 요인",
-        body:
-          "이 섹터에서 출력에 가장 큰 영향을 주는 요인 5개를 슬라이더로 직접 조정해보세요. 각 슬라이더 위 +x% / -x% 칩은 기본값에서 얼마나 떠 있는지를 보여줍니다.",
-      },
-      {
-        title: "실시간 종목 반응",
-        body:
-          "슬라이더를 움직이면 아래쪽 \"현재 가정에서 가장 큰 영향을 받는 종목\" 카드들이 즉시 갱신됩니다. 어떤 종목이 가장 민감한지 한눈에 보입니다.",
-        tip: "감을 잡고 싶으면 한 슬라이더를 끝까지 밀어보세요. 어떤 종목이 가장 많이 움직이는지 패턴이 보입니다.",
-      },
-      {
-        title: "기본값으로 되돌리기",
-        body:
-          "오른쪽 위 \"↺ 기본값으로\" 링크를 누르면 5개 슬라이더가 모두 기본값으로 복귀합니다.",
-      },
-      {
-        title: "고급 모드",
-        body:
-          "더 깊이 파보고 싶다면 아래쪽 \"고급 — 전체 드라이버 + 산출물 차트 보기\" 토글을 펼치세요. 14개 모든 드라이버 + 시계열 차트 + 민감도 표가 나옵니다.",
-      },
-    ],
-  },
-
-  // ----- Stock detail -----
-  "/sectors/:slug/equities/:ticker": {
-    label: "종목 상세",
-    steps: [
-      {
-        title: "헤더의 4가지 숫자",
-        body:
-          "현재 가격 / 30일 예상 가격 / 예상 변동 % / 섹터 노출 비율. \"30일 예상\" 은 현재 시뮬레이션 가정에서 계산된 단순 추정치입니다.",
-      },
-      {
-        title: "★ / ⇆ 비교",
-        body:
-          "우측의 별표로 관심 등록, ⇆ 버튼으로 다른 종목과 나란히 비교할 수 있습니다.",
-      },
-      {
-        title: "왜 이 숫자인가요?",
-        body:
-          "이 카드가 핵심입니다. 현재 가정에서 이 종목이 수혜/피해를 받는 이유를 가장 큰 영향 요인 순서대로 plain-Korean 문장으로 설명합니다.",
-        tip: "더 깊이 파고 싶으면 우측 상단 \"숫자로 보기\" 토글로 원본 분해 표를 볼 수 있습니다.",
-      },
-      {
-        title: "Financials",
-        body:
-          "8분기 매출 / 총이익률 / EBITDA / Capex 미니 차트로 펀더멘털 컨텍스트를 확인하세요.",
-      },
-      {
-        title: "공시 출처",
-        body:
-          "맨 아래 Filings 섹션에서 DART (KR) 또는 SEC EDGAR (US) 원문 공시 페이지로 바로 이동할 수 있습니다.",
-      },
-    ],
-  },
-
-  // ----- Compare stocks -----
-  "/sectors/:slug/compare-stocks": {
-    label: "종목 비교",
-    steps: [
-      {
-        title: "두 종목 나란히",
-        body:
-          "같은 섹터 내 두 종목을 좌우로 놓고 현재 가격 / 30일 예상 / 90일 변동 / 섹터 노출 + 영향 요인 top 3 + 최신 분기 실적을 한눈에 비교합니다.",
-      },
-      {
-        title: "한눈에 비교 표",
-        body:
-          "아래쪽 표가 각 지표마다 어느 쪽이 우위인지를 ← A / B → 화살표로 알려줍니다. 매출/EBITDA 는 클수록, Capex는 적을수록 우위로 표시.",
-      },
-      {
-        title: "다른 종목으로 변경",
-        body:
-          "각 카드의 \"변경\" 링크로 그 자리에 다른 종목을 다시 고를 수 있습니다. URL을 공유하면 같은 비교 화면을 그대로 열 수 있습니다.",
-      },
-    ],
-  },
-
-  // ----- Community hub -----
+  // ----- Community 3.0 hub -----
   "/community": {
     label: "커뮤니티",
     steps: [
       {
-        title: "함께 예측하고, 함께 개선하는 공간",
+        title: "두 개의 flywheel",
         body:
-          "개인 공간(시뮬레이터 / 관심 종목)과 따로 분리되어 있는 커뮤니티 공간입니다. 다른 사용자의 예측 / 시나리오 / 섹터 개선 제안을 확인하고, 직접 참여할 수 있어요.",
+          "Proposals = 섹터 데이터를 함께 개선. Predictions = 가격 밴드 베팅 + 평판. 둘이 한 reputation pool로 묶입니다.",
       },
       {
-        title: "🎯 예측 등록 → 포인트 획득",
+        title: "🆕 Proposal — 무엇이든 제안",
         body:
-          "종목 하나를 골라 1일 / 1주 / 1달 뒤 가격 변동률을 예측하면, 만기일에 자동으로 채점됩니다. 정확도가 높을수록 점수가 누적되고 리더보드에 올라갑니다.",
-        tip: "감 잡기에는 1일 horizon이 가장 빠릅니다 — 다음 날 채점됩니다.",
+          "driver / equity / capability / risk / actor / signal source — 섹터를 구성하는 어떤 요소든 자유롭게 제안하고 다른 유저가 upvote 합니다. 충분히 모이면 admin이 한 번에 DB에 적용.",
       },
       {
-        title: "💡 섹터 개선 제안",
+        title: "🎯 Prediction — 자동 난이도",
         body:
-          "어떤 드라이버나 종목이 빠져있다고 느낀다면, 추가/제거 제안을 등록하고 다른 사람의 제안에 투표하세요. 인기 제안은 편집팀이 검토 후 실제 모델에 반영합니다.",
+          "1일 / 1주 / 1달 가격 밴드를 베팅. 변동성 + horizon + 밴드 폭으로 Easy(10p) / Medium(25p) / Hard(50p) 자동 산정. 마감 시 EquityQuote 종가로 자동 채점.",
       },
       {
-        title: "🏆 리더보드와 streak",
+        title: "리더보드",
         body:
-          "누적 포인트 순위가 매일 갱신됩니다. 50점 이상 연속 적중 시 streak (🔥) 보너스가 표시됩니다. 시즌별 보상은 향후 슬라이스에서 추가 예정.",
-      },
-    ],
-  },
-
-  "/community/predict": {
-    label: "예측 등록",
-    steps: [
-      {
-        title: "4단계로 차근차근",
-        body:
-          "1) 섹터+종목 — 2) 기간 (1주 권장) — 3) 슬라이더로 변동률 — 4) 근거를 \"내가 만든 시나리오\"와 함께 등록.",
-      },
-      {
-        title: "기간은 1주 권장",
-        body:
-          "섹터 단위 가설(수요 / 가격 변화 / capex 등)은 1일 안에 주가에 반영되기 어렵습니다. 기본값은 1주로 두었고, 1일은 단기 모멘텀 베팅 / 빠른 채점이 필요할 때 골라주세요.",
-        tip: "한 종목에 1d + 1w + 1m 을 동시 등록해서 어떤 horizon이 잘 맞는지 비교할 수 있어요.",
-      },
-      {
-        title: "🛠 시나리오로 근거 만들기",
-        body:
-          "Step 4 에서 \"내가 만든 시나리오\"를 연결할 수 있습니다. 예: 메모리섹터에서 \"HBM 가격 +20%\" 가정으로 저장한 시나리오를 골라두면, AI가 그 가정과 함께 근거를 분석해줍니다.",
-      },
-      {
-        title: "🤖 AI 자동 분석",
-        body:
-          "근거 텍스트와 시나리오를 같이 \"AI로 분석하기\" 누르면 Claude가 핵심 가설 / 우호 요인 / 리스크 요인 / 확신도로 분해해 줍니다. 마음에 안 들면 \"편집\" 버튼으로 직접 고칠 수 있어요 — 편집된 분석엔 ✏️ 배지가 붙습니다.",
-        tip: "시나리오를 연결하지 않아도 자유 텍스트만으로 분석할 수 있지만, 시나리오를 연결하면 LLM이 드라이버 가정까지 함께 평가해 훨씬 풍부해집니다.",
-      },
-      {
-        title: "채점 방식",
-        body:
-          "target date에 실제 종가가 결정되면 자동으로 score = max(0, 100 - |예측 - 실제| × 5). ±20pp 오차면 0점, 완벽한 예측이면 100점. 누적 점수는 리더보드에 반영됩니다.",
+          "resolved prediction의 누적 reward 합산. 추후 (M46c) reputation tier가 열리면 admin queue 가중치 + 직접 적용 권한이 점진적으로 unlock.",
       },
     ],
   },
 
-  "/community/leaderboard": {
-    label: "리더보드",
+  "/community/proposals": {
+    label: "제안 모음",
     steps: [
       {
-        title: "어떤 점수인가요?",
+        title: "Hot vs New",
         body:
-          "각 예측의 점수(0-100) 가 누적된 total_points 순. 적중률은 hit-rate = (50점 이상 채점된 수) / (전체 채점된 수).",
+          "Hot = vote_score 내림차순. New = placed_at 내림차순. 섹터 필터 + 카드 클릭하면 detail로.",
       },
       {
-        title: "🔥 Streak",
+        title: "Status pills",
         body:
-          "50점 이상 연속 채점된 횟수를 streak으로 표시합니다. 현재/최고 두 가지를 추적.",
+          "open (투표 중) · review (admin 검토 중) · applied (DB 반영됨) · rejected (반영 안 함) · stale (90일 무응답).",
+      },
+      {
+        title: "Vote button",
+        body:
+          "▲ 한 번 더 누르면 취소. 익명은 sign-in으로 자동 안내. M46c부터 vote weight가 voter rep에 비례하도록 업그레이드 예정.",
       },
     ],
   },
 
-  "/community/suggestions": {
-    label: "개선 제안",
+  "/community/predictions": {
+    label: "예측",
     steps: [
       {
-        title: "왜 제안이 필요한가요?",
+        title: "Live / Resolved / Leaderboard",
         body:
-          "현재 섹터 모델은 편집팀이 손으로 만든 가설입니다. 여러분이 보는 시장에 더 가까운 모델이 되려면, 빠진 종목 / 잘못된 드라이버 / 누락된 관계를 알려주셔야 합니다.",
+          "Live: 마감 전 베팅 — 카운트다운 표시. Resolved: 결과 + 받은 reward. Leaderboard: resolved 합산 top 20.",
       },
       {
-        title: "투표 기준",
+        title: "Tier 배지",
         body:
-          "▲ 추천 / ▼ 비추천. 인기 제안 (점수 큰 순) 이 상단에 노출되고, 편집팀이 검토 후 \"승인됨\" 상태로 바뀌면 다음 모델 업데이트에 반영됩니다.",
+          "🟢 Easy 10p · 🟡 Medium 25p · 🔴 Hard 50p. 각 prediction 카드에 tier 배지 + max reward 함께 표시.",
       },
       {
-        title: "어떤 종류를 제안할 수 있나요?",
+        title: "베팅 폼",
         body:
-          "종목 추가/제거, 드라이버 추가/제거, 노드 이름 변경, 엣지(인과 관계) 수정, 그리고 자유 제안. 구체적일수록 채택률이 높아집니다.",
-      },
-    ],
-  },
-
-  "/community/my-predictions": {
-    label: "내 예측 기록",
-    steps: [
-      {
-        title: "내 예측 모두 한 곳에",
-        body:
-          "내가 등록한 예측의 채점 상태 / 점수 / 실제 값을 시간 순으로 확인할 수 있습니다.",
-      },
-      {
-        title: "성과 개선하기",
-        body:
-          "맞춘 예측과 틀린 예측을 비교해 보세요. 어떤 horizon (1d/1w/1m) 에서 더 잘 맞추는지, 어떤 종목/섹터에서 강한지를 파악하면 적중률을 올릴 수 있습니다.",
-      },
-    ],
-  },
-
-  // ----- Propose flow (agent) -----
-  "/propose": {
-    label: "에이전트로 만들기",
-    steps: [
-      {
-        title: "자연어로 산업을 설명하세요",
-        body:
-          "1-3 문장으로 충분합니다. 산업이 무엇인지, 어떤 변수가 중요한지, 어떤 종목이 영향을 받을지를 자유롭게 적어주세요. 위쪽 예시 카드 3개를 클릭하면 그대로 채워집니다.",
-      },
-      {
-        title: "에이전트가 두 단계로 일합니다",
-        body:
-          "1단계: 핵심 드라이버(시뮬레이션에서 조정할 변수) 와 출력(매출/마진 등) 을 정리. 2단계: 변수들 사이의 인과 관계 + 수식을 짜서 실제로 시뮬 가능한 형태로 정리.",
-        tip: "보통 1-3 분 소요. 다른 페이지로 이동해도 워크플로는 계속 실행되며 '내가 만든 시뮬레이터' 에서 다시 볼 수 있습니다.",
-      },
-      {
-        title: "결과 확인 후 활성화",
-        body:
-          "드라이버 목록 · 출력 · 인과 관계 · 에이전트가 깐 가정을 모두 보여드립니다. '내 시뮬레이터로 만들기 →' 누르면 실제 섹터로 등록 + 자동 활성화 + 그 섹터의 개요 페이지로 이동.",
-      },
-      {
-        title: "Premium 안내",
-        body:
-          "베타 기간 동안은 모든 가입자 무료. 정식 출시 후에는 ★ Premium 사용자에게만 풀립니다. Anthropic Opus 4.7 호출이 1회당 $0.20-0.60 정도 들어요.",
-      },
-    ],
-  },
-
-  // ----- My sectors -----
-  "/my-sectors": {
-    label: "내가 만든 시뮬레이터",
-    steps: [
-      {
-        title: "내가 직접 만든 섹터 모음",
-        body:
-          "에이전트로 직접 만든 섹터들만 여기에 모입니다. 다른 사용자가 만든 섹터나 기본 제공 섹터는 보이지 않습니다.",
-      },
-      {
-        title: "상태 배지",
-        body:
-          "활성(live) = 모든 페이지에서 시뮬 가능. 초안(draft) = 본인만 볼 수 있는 상태. 보관(archived) = 숨김. /propose 에서 새로 만들면 자동으로 활성 상태로 등록됩니다.",
-      },
-      {
-        title: "삭제",
-        body:
-          "삭제는 영구적입니다 — 섹터 + 그래프 + 시나리오가 모두 제거되며 되돌릴 수 없습니다.",
-      },
-    ],
-  },
-
-  // ----- Watchlist -----
-  "/watchlist": {
-    label: "관심 종목",
-    steps: [
-      {
-        title: "내가 등록한 종목들",
-        body:
-          "각 섹터 페이지에서 ★ 관심 등록을 누른 종목이 여기에 모입니다.",
-      },
-      {
-        title: "90일 변동",
-        body:
-          "실제로 지난 90일 동안 가격이 어떻게 움직였는지를 보여줍니다. 30일 \"예상\" 은 종목 상세 페이지에서 시뮬레이션 가정을 조정해 확인하세요.",
-      },
-      {
-        title: "제거",
-        body:
-          "더 이상 관심 없는 종목은 행 우측 \"제거\" 로 빠르게 정리할 수 있습니다.",
-      },
-    ],
-  },
-
-  // ----- Advanced surfaces — quick orientation only -----
-  "/sectors/:slug/manual": {
-    label: "전체 슬라이더",
-    steps: [
-      {
-        title: "14개 드라이버 모두",
-        body:
-          "시뮬레이션 페이지의 5개로 부족할 때 사용하는 고급 모드. 왼쪽에 그룹별로 정렬된 슬라이더, 오른쪽에 시계열 차트 + 민감도 상세.",
-      },
-      {
-        title: "Preset / Reset",
-        body:
-          "위쪽 패널에서 \"AI 슈퍼 사이클\" 같은 preset을 한 번에 적용하거나, 모든 드라이버를 기본값으로 되돌릴 수 있습니다.",
-      },
-      {
-        title: "시나리오 저장",
-        body:
-          "맘에 드는 가정을 \"Save as\" 로 저장하면 URL로 공유 가능. 다른 시나리오와 A/B 비교도 가능합니다.",
-      },
-    ],
-  },
-  "/sectors/:slug/graph": {
-    label: "인과 그래프",
-    steps: [
-      {
-        title: "모델의 뼈대",
-        body:
-          "드라이버 → 중간 계산 → 산출 → 종목 영향까지의 인과 그래프. 어떤 종목이 어떤 드라이버에 직접 연결되어 있는지를 시각적으로 확인.",
-      },
-      {
-        title: "Edge 시각 부호",
-        body:
-          "색=target 노드 kind / 굵기=|weight| / 점선 패턴=origin / 화살촉=sign(filled=양, hollow=음). 자세한 범례는 그래프 위 \"Edge:\" 줄에 인라인.",
-      },
-      {
-        title: "Edge 편집",
-        body:
-          "Edge를 클릭하면 우측 패널에서 weight를 조정할 수 있고, 결과가 즉시 시뮬레이션에 반영됩니다. 두 노드를 드래그-연결해서 새 edge를 만들 수도 있습니다.",
-      },
-    ],
-  },
-  "/sectors/:slug/sources": {
-    label: "데이터 출처",
-    steps: [
-      {
-        title: "모든 숫자의 근거",
-        body:
-          "각 드라이버 값의 출처 URL · 시점 · 신뢰도까지 추적할 수 있습니다.",
-      },
-      {
-        title: "kind 배지",
-        body:
-          "filing / analyst / dataset / vendor_doc / gov_report 등으로 근거의 강도를 표시. 분석가 노트만 있는 드라이버는 추가 조사가 필요할 수 있습니다.",
-      },
-    ],
-  },
-  "/sectors/:slug/live": {
-    label: "실시간 데이터",
-    steps: [
-      {
-        title: "3초마다 자동 갱신",
-        body:
-          "데이터 파이프라인이 자동으로 들고 오는 드라이버 값의 흐름을 볼 수 있습니다. 30 tick sparkline 으로 단기 모멘텀 감지.",
-      },
-      {
-        title: "Data ingest 패널",
-        body:
-          "하단 패널에서 어떤 source kind (filing / analyst / dataset 등) 가 실시간으로 들어오고 있는지 확인.",
+          "stock + horizon + 밴드 폭(spread%) + 방향(offset%). 슬라이드 움직일 때마다 tier 미리보기가 200ms debounce로 실시간 갱신.",
       },
     ],
   },
@@ -515,7 +164,7 @@ export const PAGE_TOURS: Record<string, PageTourEntry> = {
       {
         title: "카드 클릭 → 4-차원 + dependency graph",
         body:
-          "각 카드를 클릭하면 4-차원 점수 추이(time series), 어떤 capability에 의존/의존받는지(DAG), 해당 capability에 매핑된 signal feed로 drill-down. (M38에서 본 페이지 lands)",
+          "각 카드를 클릭하면 4-차원 점수 추이(time series), 어떤 capability에 의존/의존받는지(DAG), 해당 capability에 매핑된 signal feed로 drill-down.",
       },
     ],
   },
@@ -528,11 +177,6 @@ export const PAGE_TOURS: Record<string, PageTourEntry> = {
         body:
           "비전에 연결된 원천 데이터(논문 · 특허 · 뉴스 · 공시 · 정부 보고서 · 벤더 문서 · 데이터셋 · 소셜) 시간순. 각 signal은 extractor agent가 4-차원 delta로 채점.",
       },
-      {
-        title: "Filtering + cursor pagination",
-        body:
-          "capability / source_kind / sentiment 필터와 cursor 기반 페이지네이션은 M39 ingest 파이프라인이 들어오면 활성화됩니다.",
-      },
     ],
   },
 
@@ -542,7 +186,7 @@ export const PAGE_TOURS: Record<string, PageTourEntry> = {
       {
         title: "Risk 전체 보드",
         body:
-          "Overview의 5개를 넘어 전체 risk 목록. 심각도 · 가능성 · 시간 지평 + 대응 방안. severity × likelihood 매트릭스는 M38에서 추가됩니다.",
+          "Overview의 5개를 넘어 전체 risk 목록. 심각도 · 가능성 · 시간 지평 + 대응 방안. severity × likelihood 매트릭스는 추후 슬라이스에서.",
       },
     ],
   },
@@ -553,7 +197,7 @@ export const PAGE_TOURS: Record<string, PageTourEntry> = {
       {
         title: "비용 곡선 + 민감도",
         body:
-          "TCO 비교 · break-even sensitivity · unit economics. M40 Feasibility scoring engine이 들어오면 활성화. 지금은 stub.",
+          "TCO 비교 · break-even sensitivity · unit economics.",
       },
     ],
   },
@@ -567,19 +211,14 @@ export const PAGE_TOURS: Record<string, PageTourEntry> = {
           "비전을 구성하는 driver를 직접 조작해보세요. 차트가 실시간으로 반응합니다. 시뮬레이션은 부수 기능 — 비전을 이해하는 도구.",
       },
       {
+        title: "What-if Feasibility (M42)",
+        body:
+          "슬라이더를 움직일 때 'Feasibility Index가 어떻게 변할지' 즉시 표시되는 callout이 위에 떠 있습니다. driver → capability tech 점수 → 비전 composite으로 propagate.",
+      },
+      {
         title: "Scenario 저장 + 비교",
         body:
           "마음에 드는 driver 조합을 저장하고 (`scenario`), 다른 사람과 공유(`share`) 하거나 두 scenario를 A/B 비교(`compare`) 할 수 있습니다.",
-      },
-      {
-        title: "Live KPI strip",
-        body:
-          "상단 strip은 실시간 데이터 파이프라인이 들고 오는 driver 값. 3초마다 갱신, 30 tick sparkline.",
-      },
-      {
-        title: "What-if Feasibility (M42)",
-        body:
-          "M42부터: 슬라이더를 움직일 때 'Feasibility Index가 어떻게 변할지' 즉시 표시되는 callout이 추가됩니다.",
       },
     ],
   },
@@ -590,12 +229,7 @@ export const PAGE_TOURS: Record<string, PageTourEntry> = {
       {
         title: "모든 숫자의 원천",
         body:
-          "현재는 recent signals의 source URL 목록. M39 signal 파이프라인이 들어오면 capability rationale + score history 전체에 걸친 aggregated source index가 완성됩니다.",
-      },
-      {
-        title: "kind 배지",
-        body:
-          "paper · patent · news · filing · gov_report · vendor_doc · dataset · social — 근거의 강도를 한눈에.",
+          "capability rationale + score history 전체에 걸친 aggregated source index. paper · patent · news · filing · gov_report · vendor_doc · dataset · social.",
       },
     ],
   },

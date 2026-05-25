@@ -106,20 +106,11 @@ export function UserMenu({ user }: Props) {
             </div>
             <div className="truncate text-[11px] text-neutral-500">{user.email}</div>
           </div>
-          <MenuLink href="/my-sectors" onClick={() => setOpen(false)}>
-            🛠 내가 만든 시뮬레이터
+          <MenuLink href="/community/proposals" onClick={() => setOpen(false)}>
+            ＋ 제안 모음
           </MenuLink>
-          <MenuLink href="/propose" onClick={() => setOpen(false)}>
-            🤖 새 시뮬레이터 만들기
-          </MenuLink>
-          <MenuLink href="/watchlist" onClick={() => setOpen(false)}>
-            ★ 관심 종목
-          </MenuLink>
-          <MenuLink
-            href="/community/my-predictions"
-            onClick={() => setOpen(false)}
-          >
-            🎯 내 예측 기록
+          <MenuLink href="/community/predictions" onClick={() => setOpen(false)}>
+            🎯 예측
           </MenuLink>
           <MenuLink href="/settings" onClick={() => setOpen(false)}>
             ⚙ 설정

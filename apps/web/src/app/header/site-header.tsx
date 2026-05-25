@@ -12,9 +12,10 @@ import { fetchMe } from "@/lib/sim-client";
 import { UserMenu } from "./user-menu";
 
 const PRIMARY_NAV: { label: string; href: string }[] = [
-  { label: "홈", href: "/" },
-  { label: "섹터", href: "/sectors" },
-  { label: "커뮤니티", href: "/community" },
+  { label: "Visions", href: "/visions" },
+  { label: "Predictions", href: "/community/predictions" },
+  { label: "Proposals", href: "/community/proposals" },
+  { label: "Community", href: "/community" },
 ];
 
 export async function SiteHeader() {
@@ -33,10 +34,10 @@ export async function SiteHeader() {
           href="/"
           className="text-sm font-semibold tracking-tight text-neutral-50 hover:text-cyan-300"
         >
-          Sector Simulator
+          Vision Feasibility Monitor
         </Link>
         <span className="hidden text-[10px] uppercase tracking-wider text-neutral-600 sm:inline">
-          Phase 2
+          Phase 3
         </span>
         <nav className="hidden gap-3 text-xs text-neutral-400 md:flex">
           {PRIMARY_NAV.map((item) => (

@@ -11,14 +11,15 @@ import type {
 } from "@/lib/sim-client";
 import type { VisionOverview } from "@/lib/vision-client";
 
+import {
+  SectorProvider,
+  useSector,
+} from "@/lib/playground/sector-context";
+
 import { LiveStrip } from "../../../live-strip";
 import { ManualPanel } from "../../../manual-panel";
 import { ReportPanel } from "../../../report-panel";
 import { ScenarioBar } from "../../../scenario-bar";
-import {
-  SectorProvider,
-  useSector,
-} from "../../../sectors/[slug]/sector-context";
 
 import {
   WhatIfFeasibility,
