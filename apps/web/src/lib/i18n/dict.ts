@@ -645,13 +645,20 @@ export const DICT: Record<string, Entry> = {
   "vision.binding.tbd": { ko: "곧 공개 (M38 시드)", en: "TBD (M38 seed)" },
 
   // ── Vision sub-nav + breadcrumb ────────────────────────────────────
+  // 8 sub-tabs collapsed to 4 (overview / players-progress / pulse /
+  // playground). Risks + economics inline on overview; capabilities +
+  // actors merge into players-progress; signals + sources merge into
+  // pulse. Legacy labels stay so the old sub-pages still render headers
+  // for deep-linked URLs until the merged pages fully absorb them.
   "subnav.overview": { ko: "한눈에 보기", en: "Overview" },
+  "subnav.players-progress": { ko: "Players · Progress", en: "Players & Progress" },
+  "subnav.pulse": { ko: "Pulse", en: "Pulse" },
+  "subnav.playground": { ko: "Playground", en: "Playground" },
   "subnav.capabilities": { ko: "Capability", en: "Capabilities" },
   "subnav.actors": { ko: "주요 플레이어", en: "Actors" },
   "subnav.signals": { ko: "신호", en: "Signals" },
   "subnav.risks": { ko: "리스크", en: "Risks" },
   "subnav.economics": { ko: "경제성", en: "Economics" },
-  "subnav.playground": { ko: "Playground", en: "Playground" },
   "subnav.sources": { ko: "출처", en: "Sources" },
 
   // ── Vision hero overview ───────────────────────────────────────────

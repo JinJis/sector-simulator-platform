@@ -19,15 +19,17 @@ export default async function VisionLayout({ children, params }: Props) {
 
   const { vision } = fixture.overview;
 
+  // M-IA: 4-tab structure (was 8). Risks + economics fold into
+  // Overview inline; capabilities + actors merge into
+  // /players-progress; signals + sources merge into /pulse.
   const subnav: SubNavItem[] = [
     { label: t("subnav.overview"), href: `/visions/${slug}` },
-    { label: t("subnav.capabilities"), href: `/visions/${slug}/capabilities` },
-    { label: t("subnav.actors"), href: `/visions/${slug}/actors` },
-    { label: t("subnav.signals"), href: `/visions/${slug}/signals` },
-    { label: t("subnav.risks"), href: `/visions/${slug}/risks` },
-    { label: t("subnav.economics"), href: `/visions/${slug}/economics` },
+    {
+      label: t("subnav.players-progress"),
+      href: `/visions/${slug}/players-progress`,
+    },
+    { label: t("subnav.pulse"), href: `/visions/${slug}/pulse` },
     { label: t("subnav.playground"), href: `/visions/${slug}/playground` },
-    { label: t("subnav.sources"), href: `/visions/${slug}/sources` },
   ];
 
   return (
