@@ -69,13 +69,13 @@ export default async function SectorDetail({
       </p>
 
       <div className="mb-6 flex flex-wrap gap-2">
-        <StubAction title="Phase 2 later slice — kicks data-pipeline-service for this sector">
+        <StubAction title="kicks data-pipeline-service for this sector">
           ↻ Run ingest
         </StubAction>
-        <StubAction title="Phase 2 later slice — agent re-derives this sector's edges">
+        <StubAction title="agent re-derives this sector's edges">
           🤖 Re-run agent
         </StubAction>
-        <StubAction title="Phase 2 later slice — diff agent proposal vs current and approve">
+        <StubAction title="diff agent proposal vs current and approve">
           ✓ Review proposal
         </StubAction>
       </div>

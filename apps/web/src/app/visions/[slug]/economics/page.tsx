@@ -23,8 +23,7 @@ export default async function EconomicsIndexPage({ params }: Props) {
         Economics
       </h2>
       <p className="mt-2 text-sm text-neutral-400">
-        Cost curves + unit economics + break-even sensitivity land in{" "}
-        <strong>M40</strong> with the Feasibility scoring engine.
+        Cost curves + unit economics + break-even sensitivity — coming soon.
       </p>
     </section>
   );

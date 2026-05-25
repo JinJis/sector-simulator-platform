@@ -107,7 +107,7 @@ export function SettingsForm({ user }: Props) {
             label="이메일"
             value={user.email}
             disabled
-            hint="이메일 변경은 별도 절차 — Phase 4에서 지원 예정"
+            hint="이메일 변경은 별도 절차 — 추후 지원 예정"
           />
           <Field
             label="이름"
@@ -217,7 +217,7 @@ export function SettingsForm({ user }: Props) {
           위험 구역
         </h2>
         <p className="text-[11px] text-neutral-500">
-          계정 삭제는 현재 수동 절차입니다 — 관리자에게 문의해 주세요. 자가 삭제는 Phase 4에서 활성화됩니다.
+          계정 삭제는 현재 수동 절차입니다 — 관리자에게 문의해 주세요. 자가 삭제는 추후 활성화됩니다.
         </p>
       </section>
     </div>

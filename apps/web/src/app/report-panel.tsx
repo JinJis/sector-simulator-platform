@@ -188,8 +188,7 @@ export function ReportPanel({
           )}
         </div>
         <footer className="border-t border-neutral-800 bg-neutral-900/40 px-4 py-2 text-[10px] text-neutral-600">
-          Phase 2 stub — deterministic template. LLM-authored prose lands in
-          a later slice.
+          Deterministic report template — LLM-authored prose lands later.
         </footer>
       </aside>
 

@@ -129,7 +129,7 @@ export default async function AdminHome() {
         >
           🤖 Agent runs
         </Link>
-        <StubAction title="Phase 2 later slice — kicks data-pipeline-service">
+        <StubAction title="kicks data-pipeline-service">
           ↻ Run ingest (all)
         </StubAction>
       </div>

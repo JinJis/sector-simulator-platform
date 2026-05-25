@@ -34,9 +34,6 @@ export async function SiteHeader() {
         >
           Vision Feasibility Monitor
         </Link>
-        <span className="hidden text-[10px] uppercase tracking-wider text-neutral-600 sm:inline">
-          Phase 3
-        </span>
         <nav className="hidden gap-3 text-xs text-neutral-400 md:flex">
           {PRIMARY_NAV.map((item) => (
             <Link

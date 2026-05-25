@@ -86,9 +86,8 @@ export default async function ActorsIndexPage({ params }: Props) {
     return (
       <section className="rounded-xl border border-dashed border-neutral-800 bg-neutral-900/30 p-8 text-center">
         <p className="text-sm text-neutral-400">
-          Actor curation lands alongside capability seed in{" "}
-          <strong>M45b</strong>. Vision Builder agent (M41) also produces
-          actor drafts.
+          No actors curated for this vision yet — the Vision Builder
+          agent produces actor drafts when a new vision is created.
         </p>
       </section>
     );
@@ -120,7 +119,7 @@ export default async function ActorsIndexPage({ params }: Props) {
         <p className="mt-1 text-xs text-neutral-500">
           Companies + labs + standards bodies developing or influencing this
           vision's capabilities. Sorted by relevance within each category.
-          Real-time data pipeline (M39+M45b) tags signals to these actors
+          The signal pipeline tags news / patents / papers to these actors
           when extractor confidence ≥ 0.8.
         </p>
       </div>

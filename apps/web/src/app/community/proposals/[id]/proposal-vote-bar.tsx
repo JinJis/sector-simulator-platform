@@ -62,7 +62,7 @@ export function ProposalVoteBar({
       </button>
       <p className="text-[11px] text-neutral-500">
         High-vote proposals get auto-promoted into the admin review
-        queue. Reply discussion lands in M46c.
+        queue.
       </p>
       {error && (
         <p className="ml-auto text-[11px] text-red-400">{error}</p>

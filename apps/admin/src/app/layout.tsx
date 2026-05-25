@@ -21,9 +21,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             >
               Admin Console
             </Link>
-            <span className="text-[11px] uppercase tracking-wider text-neutral-600">
-              Phase 2 skeleton
-            </span>
             <nav className="ml-auto flex gap-3 text-xs text-neutral-400">
               <Link href="/" className="hover:text-neutral-100">
                 Dashboard

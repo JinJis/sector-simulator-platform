@@ -44,7 +44,7 @@ export default async function CommunityHomePage() {
     <main className="mx-auto max-w-5xl px-6 py-10">
       <header className="rounded-xl border border-violet-900/40 bg-gradient-to-br from-violet-950/30 via-neutral-950 to-cyan-950/20 p-6">
         <span className="rounded-full border border-violet-700/60 bg-violet-950/50 px-2.5 py-0.5 text-[10px] uppercase tracking-wider text-violet-300">
-          👥 커뮤니티 3.0
+          👥 커뮤니티
         </span>
         <h1 className="mt-3 text-2xl font-semibold text-neutral-50">
           제안하고, 예측하고, 평판을 쌓으세요
@@ -55,7 +55,7 @@ export default async function CommunityHomePage() {
           upvote를 받습니다. 또 1일 / 1주 / 1달 가격 밴드를 예측해서
           난이도(Easy 10p / Medium 25p / Hard 50p)에 맞는 포인트를
           획득하세요. 평판이 쌓이면 admin queue 가중치 + 직접 적용
-          권한이 점진적으로 열립니다 (M46c).
+          권한이 점진적으로 열립니다.
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
           <Link
