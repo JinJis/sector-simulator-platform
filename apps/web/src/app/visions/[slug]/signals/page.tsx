@@ -10,6 +10,7 @@
 import { SignalRow, type SignalKind } from "@platform/ui";
 import { notFound } from "next/navigation";
 
+import { getT } from "@/lib/i18n/server";
 import { fetchSignals, type SignalListResult } from "@/lib/vision-client";
 import { trpc } from "@/lib/sim-client";
 
@@ -27,14 +28,14 @@ interface Props {
   searchParams: Promise<SearchParams>;
 }
 
-const KIND_OPTIONS: { value: string; label: string }[] = [
-  { value: "", label: "All sources" },
-  { value: "paper", label: "📄 Papers" },
-  { value: "patent", label: "📜 Patents" },
-  { value: "news", label: "📰 News" },
-  { value: "filing", label: "📑 Filings" },
-  { value: "gov_report", label: "🏛 Govt reports" },
-  { value: "vendor_doc", label: "🔧 Vendor docs" },
+const KIND_KEYS: { value: string; key: string }[] = [
+  { value: "", key: "signals.filter.allSources" },
+  { value: "paper", key: "signals.filter.papers" },
+  { value: "patent", key: "signals.filter.patents" },
+  { value: "news", key: "signals.filter.news" },
+  { value: "filing", key: "signals.filter.filings" },
+  { value: "gov_report", key: "signals.filter.govReports" },
+  { value: "vendor_doc", key: "signals.filter.vendorDocs" },
 ];
 
 function pickDeltaComposite(
@@ -57,6 +58,7 @@ export default async function SignalsIndexPage({ params, searchParams }: Props) 
   const kind = q.kind || undefined;
   const highlightOnly = q.highlight === "1";
   const cursor = q.cursor || undefined;
+  const t = await getT();
 
   // Load capabilities for the filter dropdown + DB signal list.
   let capabilityKeys: string[] = [];
@@ -126,12 +128,11 @@ export default async function SignalsIndexPage({ params, searchParams }: Props) 
     <div className="space-y-4">
       <div>
         <h2 className="text-sm font-medium uppercase tracking-wider text-neutral-400">
-          Signal feed
+          {t("signals.feed.title")}
         </h2>
         <p className="mt-1 text-xs text-neutral-500">
-          arXiv + USPTO + NewsAPI signals scored by the extractor agent.
-          Filter by capability, source kind, or highlights only.
-          {source === "fixture" && " (data-source: fixture — sector-service unreachable)"}
+          {t("signals.feed.subtitle")}
+          {source === "fixture" && t("signals.fixtureNote")}
         </p>
       </div>
 
@@ -142,13 +143,13 @@ export default async function SignalsIndexPage({ params, searchParams }: Props) 
         className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-2 text-xs"
       >
         <label className="flex items-center gap-1.5 text-neutral-500">
-          Capability:
+          {t("signals.filter.capability")}:
           <select
             name="cap"
             defaultValue={cap ?? ""}
             className="rounded border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-200"
           >
-            <option value="">All capabilities</option>
+            <option value="">{t("signals.filter.allCapabilities")}</option>
             {capabilityKeys.map((k) => (
               <option key={k} value={k}>
                 {k}
@@ -157,15 +158,15 @@ export default async function SignalsIndexPage({ params, searchParams }: Props) 
           </select>
         </label>
         <label className="flex items-center gap-1.5 text-neutral-500">
-          Source:
+          {t("signals.filter.source")}:
           <select
             name="kind"
             defaultValue={kind ?? ""}
             className="rounded border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-200"
           >
-            {KIND_OPTIONS.map((opt) => (
+            {KIND_KEYS.map((opt) => (
               <option key={opt.value} value={opt.value}>
-                {opt.label}
+                {t(opt.key)}
               </option>
             ))}
           </select>
@@ -178,29 +179,27 @@ export default async function SignalsIndexPage({ params, searchParams }: Props) 
             defaultChecked={highlightOnly}
             className="accent-cyan-500"
           />
-          Highlights only
+          {t("signals.filter.highlightsOnly")}
         </label>
         <button
           type="submit"
           className="ml-auto rounded bg-cyan-600 px-3 py-1 text-xs font-medium text-cyan-50 hover:bg-cyan-500"
         >
-          Apply
+          {t("signals.filter.apply")}
         </button>
         {(cap || kind || highlightOnly) && (
           <a
             href={baseHref}
             className="text-[11px] text-neutral-500 hover:text-cyan-400"
           >
-            clear
+            {t("signals.filter.clear")}
           </a>
         )}
       </form>
 
       {listResult.items.length === 0 ? (
         <section className="rounded-xl border border-dashed border-neutral-800 bg-neutral-900/30 p-8 text-center">
-          <p className="text-sm text-neutral-400">
-            No signals match the current filters. Try clearing.
-          </p>
+          <p className="text-sm text-neutral-400">{t("signals.empty")}</p>
         </section>
       ) : (
         <>
@@ -236,7 +235,7 @@ export default async function SignalsIndexPage({ params, searchParams }: Props) 
                   href={filterHref({})}
                   className="hover:text-cyan-400"
                 >
-                  ← Start
+                  {t("signals.start")}
                 </a>
               ) : (
                 <span />
@@ -246,7 +245,7 @@ export default async function SignalsIndexPage({ params, searchParams }: Props) 
                   href={filterHref({ cursor: listResult.next_cursor })}
                   className="hover:text-cyan-400"
                 >
-                  Older →
+                  {t("signals.older")}
                 </a>
               )}
             </div>
@@ -255,8 +254,9 @@ export default async function SignalsIndexPage({ params, searchParams }: Props) 
       )}
 
       <p className="text-right text-[10px] text-neutral-600">
-        showing {listResult.items.length} signal{listResult.items.length === 1 ? "" : "s"}
-        {source === "db" && " · live DB"}
+        {t("signals.showingPrefix")} {listResult.items.length}
+        {t("signals.showingSuffix")}
+        {source === "db" && t("signals.liveDb")}
       </p>
     </div>
   );

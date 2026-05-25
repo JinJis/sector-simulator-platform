@@ -2,6 +2,8 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { useT } from "@/lib/i18n/provider";
+
 import { ALL_DOMAIN_THEMES, type DomainTheme } from "./domain-theme";
 
 interface Props {
@@ -19,6 +21,7 @@ interface Props {
 export function DomainFilter({ activeDomain, countsByDomain, totalCount }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const t = useT();
 
   function pick(domainKey: string | null) {
     const params = new URLSearchParams(searchParams.toString());
@@ -32,7 +35,7 @@ export function DomainFilter({ activeDomain, countsByDomain, totalCount }: Props
     <div className="flex flex-wrap items-center gap-1.5">
       <FilterChip
         active={activeDomain === null}
-        label="All"
+        label={t("filter.all")}
         emoji="✨"
         count={totalCount}
         onClick={() => pick(null)}

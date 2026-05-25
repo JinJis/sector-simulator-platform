@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 
+import { useT } from "@/lib/i18n/provider";
 import {
   projectWhatIfVision,
   type CapabilityWithComposite,
@@ -44,6 +45,7 @@ export function WhatIfFeasibility({
   defaults,
   currentComposite,
 }: Props) {
+  const t = useT();
   const result = useMemo(() => {
     const driverToCapability: Record<string, string> = {};
     for (const c of capabilities) {
@@ -104,26 +106,24 @@ export function WhatIfFeasibility({
       <div className="flex items-baseline justify-between gap-3">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-            What-if vision feasibility
+            {t("whatif.title")}
           </p>
           <p className="mt-1 text-[11px] text-neutral-500">
-            Projection assumes each driver shifts its primary capability's{" "}
-            <span className="font-mono text-neutral-400">technical</span> dim
-            proportionally. UX hint, not a sim output.
+            {t("whatif.hint")}
           </p>
         </div>
         {!dirty && (
           <span className="rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-neutral-500">
-            sliders at default
+            {t("whatif.atDefault")}
           </span>
         )}
       </div>
 
       <div className="mt-3 flex items-baseline gap-4">
-        <CompositeChip label="Current" value={cur} muted />
+        <CompositeChip label={t("whatif.current")} value={cur} muted />
         <span className="text-neutral-700">→</span>
         <CompositeChip
-          label="Projected"
+          label={t("whatif.projected")}
           value={proj}
           accent={dirty ? (delta > 0 ? "up" : "down") : null}
         />
@@ -160,7 +160,7 @@ export function WhatIfFeasibility({
                 {x.shift > 0 ? "+" : ""}
                 {x.shift.toFixed(1)}
               </span>
-              <span className="text-neutral-600"> tech</span>
+              <span className="text-neutral-600">{t("whatif.techSuffix")}</span>
             </li>
           ))}
         </ul>

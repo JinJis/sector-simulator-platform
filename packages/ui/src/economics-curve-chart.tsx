@@ -64,7 +64,7 @@ export function EconomicsCurveChart({
           x2={width - 2}
           y1={height / 2}
           y2={height / 2}
-          stroke="rgb(64 64 64)"
+          stroke="var(--chart-axis)"
           strokeWidth={1}
           strokeDasharray="3 3"
         />
@@ -147,7 +147,7 @@ export function EconomicsCurveChart({
               x2={width - padR}
               y1={ty}
               y2={ty}
-              stroke="rgb(38 38 38)"
+              stroke="var(--chart-grid)"
               strokeWidth={1}
               strokeDasharray="2 4"
             />
@@ -157,7 +157,7 @@ export function EconomicsCurveChart({
               textAnchor="end"
               fontFamily="ui-monospace, SFMono-Regular, monospace"
               fontSize="9"
-              fill="rgb(115 115 115)"
+              fill="var(--chart-label)"
             >
               {tv >= 100 ? tv.toFixed(0) : tv.toFixed(2)}
               {yUnit}
@@ -171,7 +171,7 @@ export function EconomicsCurveChart({
         y={height - 6}
         fontFamily="ui-monospace, SFMono-Regular, monospace"
         fontSize="9"
-        fill="rgb(115 115 115)"
+        fill="var(--chart-label)"
       >
         {xMin}
       </text>
@@ -181,7 +181,7 @@ export function EconomicsCurveChart({
         textAnchor="end"
         fontFamily="ui-monospace, SFMono-Regular, monospace"
         fontSize="9"
-        fill="rgb(115 115 115)"
+        fill="var(--chart-label)"
       >
         {xMax}
       </text>
@@ -240,7 +240,7 @@ export function EconomicsCurveChart({
           y={7}
           fontFamily="ui-sans-serif, system-ui"
           fontSize="10"
-          fill="rgb(212 212 212)"
+          fill="var(--chart-strong-label)"
         >
           {primaryLabel}
         </text>
@@ -260,7 +260,7 @@ export function EconomicsCurveChart({
               y={7}
               fontFamily="ui-sans-serif, system-ui"
               fontSize="10"
-              fill="rgb(163 163 163)"
+              fill="var(--chart-axis)"
             >
               {baselineLabel}
             </text>

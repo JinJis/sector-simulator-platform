@@ -81,21 +81,21 @@ export function EtaWindow({
           x2={width - padX}
           y1={y}
           y2={y}
-          stroke="rgb(64 64 64)"
+          stroke="var(--chart-axis)"
           strokeWidth={1.5}
           strokeLinecap="round"
         />
         {/* Start bracket */}
         <path
           d={`M ${padX} ${y - 8} L ${padX - 4} ${y - 8} L ${padX - 4} ${y + 8} L ${padX} ${y + 8}`}
-          stroke="rgb(115 115 115)"
+          stroke="var(--chart-label)"
           strokeWidth={1.5}
           fill="none"
         />
         {/* End bracket */}
         <path
           d={`M ${width - padX} ${y - 8} L ${width - padX + 4} ${y - 8} L ${width - padX + 4} ${y + 8} L ${width - padX} ${y + 8}`}
-          stroke="rgb(115 115 115)"
+          stroke="var(--chart-label)"
           strokeWidth={1.5}
           fill="none"
         />
@@ -112,7 +112,7 @@ export function EtaWindow({
           />
         )}
         {/* Median dot */}
-        <circle cx={xMedian} cy={y} r={5} fill="rgb(110 231 183)" stroke="rgb(10 10 10)" strokeWidth={1.5} />
+        <circle cx={xMedian} cy={y} r={5} fill="rgb(110 231 183)" stroke="var(--chart-thumb-stroke)" strokeWidth={1.5} />
       </svg>
       <div className="flex justify-between px-1 font-mono text-[10px] tabular-nums text-neutral-500">
         <span>{startYear}</span>

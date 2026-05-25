@@ -14,6 +14,8 @@
 
 import Link from "next/link";
 
+import { getT } from "@/lib/i18n/server";
+
 import { themeForVision } from "./domain-theme";
 
 export interface VisionTileData {
@@ -32,13 +34,14 @@ export interface VisionTileData {
   anchorYear?: number;
 }
 
-export function VisionTile({
+export async function VisionTile({
   data,
   featured = false,
 }: {
   data: VisionTileData;
   featured?: boolean;
 }) {
+  const t = await getT();
   const theme = themeForVision(data.domain_label ?? null, data.slug);
   const anchorYear = data.anchorYear ?? new Date().getFullYear();
   const etaYear =
@@ -69,7 +72,7 @@ export function VisionTile({
               : "border-rose-700/60 bg-rose-950/60 text-rose-300"
           }`}
         >
-          {trending === "trending" ? "🔥 Trending" : "⚠ Slowing"}
+          {trending === "trending" ? t("tile.trending") : t("tile.slowing")}
         </span>
       )}
 
@@ -105,7 +108,7 @@ export function VisionTile({
       <div className="mt-5">
         <div className="flex items-baseline justify-between">
           <span className="text-[10px] uppercase tracking-wider text-neutral-500">
-            Feasibility
+            {t("tile.feasibilityShort")}
           </span>
           <span className="flex items-baseline gap-1.5 text-[11px] text-neutral-500">
             {data.delta_90d != null && (
@@ -123,7 +126,7 @@ export function VisionTile({
               </span>
             )}
             <span className="text-neutral-700">·</span>
-            <span>90d</span>
+            <span>{t("tile.last90d")}</span>
           </span>
         </div>
         <div className="mt-1 flex items-baseline gap-3">
@@ -146,18 +149,18 @@ export function VisionTile({
       {/* Activity row */}
       <div className="mt-5 grid grid-cols-3 gap-3 text-[11px]">
         <Stat
-          label="Capabilities"
+          label={t("tile.capabilities")}
           value={data.capability_count.toString()}
           accent={theme.accent}
         />
         <Stat
-          label="30d signals"
+          label={t("tile.signals30d")}
           value={data.signal_count_30d.toString()}
           accent={theme.accent}
           highlight={data.signal_count_30d >= 10}
         />
         <Stat
-          label="ETA"
+          label={t("tile.eta")}
           value={etaYear ? etaYear.toString() : "—"}
           accent={theme.accent}
         />
@@ -166,7 +169,7 @@ export function VisionTile({
       {/* Binding capability footer */}
       {data.binding_capability_key && (
         <p className="mt-4 truncate border-t border-neutral-800/60 pt-3 text-[11px] text-neutral-500">
-          <span className="text-amber-400">⚠</span> Binding:{" "}
+          <span className="text-amber-400">⚠</span> {t("tile.binding")}:{" "}
           <span className="font-mono text-neutral-300">
             {data.binding_capability_key}
           </span>

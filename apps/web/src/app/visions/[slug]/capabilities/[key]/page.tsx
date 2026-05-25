@@ -19,6 +19,7 @@ import {
 } from "@platform/ui";
 import { notFound } from "next/navigation";
 
+import { getT } from "@/lib/i18n/server";
 import {
   fetchCapability,
   fetchCapabilityScoreHistory,
@@ -38,6 +39,7 @@ const SCORE_BAND = (v: number | null): string => {
 
 export default async function CapabilityDetailPage({ params }: Props) {
   const { slug, key } = await params;
+  const t = await getT();
 
   let cap: Awaited<ReturnType<typeof fetchCapability>>;
   let scoreHistory: Awaited<ReturnType<typeof fetchCapabilityScoreHistory>>;
@@ -56,7 +58,7 @@ export default async function CapabilityDetailPage({ params }: Props) {
     return (
       <section className="rounded-xl border border-amber-500/50 bg-amber-950/20 p-6 text-sm">
         <p className="font-medium text-amber-300">
-          Couldn't load capability <code>{key}</code>.
+          {t("capability.loadFail")} <code>{key}</code>.
         </p>
         <p className="mt-2 text-amber-200/80">{msg}</p>
         <p className="mt-3 text-xs text-amber-200/60">
@@ -86,21 +88,21 @@ export default async function CapabilityDetailPage({ params }: Props) {
         <p className="mt-2 text-sm text-neutral-400">{cap.capability.description}</p>
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-neutral-500">
           <span>
-            Weight:{" "}
+            {t("capability.weight")}:{" "}
             <strong className="text-neutral-300 tabular-nums">
               {cap.capability.weight.toFixed(2)}
             </strong>
           </span>
           {cap.capability.primary_driver_name && (
             <span>
-              Primary driver:{" "}
+              {t("capability.primaryDriver")}:{" "}
               <code className="text-neutral-300">
                 {cap.capability.primary_driver_name}
               </code>
             </span>
           )}
           <span>
-            Display order:{" "}
+            {t("capability.displayOrder")}:{" "}
             <strong className="text-neutral-300 tabular-nums">
               {cap.capability.display_order}
             </strong>
@@ -112,11 +114,11 @@ export default async function CapabilityDetailPage({ params }: Props) {
       <section className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-6">
         <div className="flex items-baseline justify-between">
           <h3 className="text-sm font-medium uppercase tracking-wider text-neutral-400">
-            Current readiness
+            {t("capability.currentReadiness")}
           </h3>
           {cur?.as_of && (
             <span className="text-[11px] text-neutral-500 tabular-nums">
-              as of {new Date(cur.as_of).toISOString().slice(0, 10)}
+              {t("capability.asOf")} {new Date(cur.as_of).toISOString().slice(0, 10)}
             </span>
           )}
         </div>
@@ -125,7 +127,7 @@ export default async function CapabilityDetailPage({ params }: Props) {
             <div className="flex items-center justify-center">
               <div className="text-center">
                 <div className="text-[10px] uppercase tracking-widest text-neutral-500">
-                  Composite
+                  {t("capability.composite")}
                 </div>
                 <div
                   className={`mt-2 font-mono text-6xl font-semibold leading-none tabular-nums ${SCORE_BAND(
@@ -151,7 +153,7 @@ export default async function CapabilityDetailPage({ params }: Props) {
               />
               {cur.rationale && (
                 <p className="mt-4 border-t border-neutral-800 pt-3 text-xs leading-relaxed text-neutral-400">
-                  <span className="text-neutral-500">Rationale: </span>
+                  <span className="text-neutral-500">{t("capability.rationale")}: </span>
                   {cur.rationale}
                 </p>
               )}
@@ -159,7 +161,7 @@ export default async function CapabilityDetailPage({ params }: Props) {
           </div>
         ) : (
           <p className="mt-3 text-sm text-neutral-500">
-            Score not yet computed. M40 scoring engine populates current readiness.
+            {t("capability.scoreEmpty")}
           </p>
         )}
       </section>
@@ -168,7 +170,7 @@ export default async function CapabilityDetailPage({ params }: Props) {
       {trajectoryPoints.length > 0 && (
         <section className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-6">
           <h3 className="text-sm font-medium uppercase tracking-wider text-neutral-400">
-            Trajectory ({trajectoryPoints.length} snapshots)
+            {t("capability.trajectoryTitle")} ({trajectoryPoints.length} {t("capability.trajectorySnapshots")})
           </h3>
           <div className="mt-3">
             <TrajectorySparkline
@@ -184,7 +186,7 @@ export default async function CapabilityDetailPage({ params }: Props) {
       {/* Why this matters */}
       <section className="rounded-xl border border-cyan-900/40 bg-cyan-950/10 p-6">
         <p className="text-[10px] font-medium uppercase tracking-widest text-cyan-300">
-          Why this matters for the vision
+          {t("capability.whyMatters")}
         </p>
         <p className="mt-2 text-sm leading-relaxed text-neutral-200">
           {cap.capability.rationale}
@@ -195,15 +197,15 @@ export default async function CapabilityDetailPage({ params }: Props) {
       {(cap.dependencies.length > 0 || cap.dependents.length > 0) && (
         <section className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-6">
           <h3 className="text-sm font-medium uppercase tracking-wider text-neutral-400">
-            Dependencies
+            {t("capability.dependenciesTitle")}
           </h3>
           <div className="mt-3 grid gap-6 md:grid-cols-2">
             <div>
               <p className="text-[11px] uppercase tracking-wider text-neutral-500">
-                Depends on (this needs)
+                {t("capability.dependsOn")}
               </p>
               {cap.dependencies.length === 0 ? (
-                <p className="mt-2 text-sm text-neutral-500">No upstream dependencies.</p>
+                <p className="mt-2 text-sm text-neutral-500">{t("capability.noUpstream")}</p>
               ) : (
                 <ul className="mt-2 space-y-1">
                   {cap.dependencies.map((d) => (
@@ -225,10 +227,10 @@ export default async function CapabilityDetailPage({ params }: Props) {
             </div>
             <div>
               <p className="text-[11px] uppercase tracking-wider text-neutral-500">
-                Depended on by (these need this)
+                {t("capability.dependedOnBy")}
               </p>
               {cap.dependents.length === 0 ? (
-                <p className="mt-2 text-sm text-neutral-500">No downstream dependents.</p>
+                <p className="mt-2 text-sm text-neutral-500">{t("capability.noDownstream")}</p>
               ) : (
                 <ul className="mt-2 space-y-1">
                   {cap.dependents.map((d) => (
@@ -255,12 +257,10 @@ export default async function CapabilityDetailPage({ params }: Props) {
       {/* Active actors */}
       <section className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-6">
         <h3 className="text-sm font-medium uppercase tracking-wider text-neutral-400">
-          Active actors
+          {t("capability.activeActors")}
         </h3>
         {capActors.length === 0 ? (
-          <p className="mt-2 text-sm text-neutral-500">
-            No actors wired yet — M45b populates these.
-          </p>
+          <p className="mt-2 text-sm text-neutral-500">{t("capability.actorsEmpty")}</p>
         ) : (
           <ul className="mt-3 grid gap-2 sm:grid-cols-2">
             {capActors.map((ca) => (
@@ -287,7 +287,7 @@ export default async function CapabilityDetailPage({ params }: Props) {
       </section>
 
       <p className="text-right text-[10px] text-neutral-600">
-        Signal feed filtered to this capability lands with M39.
+        {t("capability.signalFeedFooter")}
       </p>
     </div>
   );

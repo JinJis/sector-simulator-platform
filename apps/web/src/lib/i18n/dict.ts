@@ -643,6 +643,164 @@ export const DICT: Record<string, Entry> = {
     en: "AI-driven power demand and rising carbon prices help the economics, but stack lifetime and manufacturing cost are still the swing factors.",
   },
   "vision.binding.tbd": { ko: "곧 공개 (M38 시드)", en: "TBD (M38 seed)" },
+
+  // ── Vision sub-nav + breadcrumb ────────────────────────────────────
+  "subnav.overview": { ko: "한눈에 보기", en: "Overview" },
+  "subnav.capabilities": { ko: "Capability", en: "Capabilities" },
+  "subnav.actors": { ko: "주요 플레이어", en: "Actors" },
+  "subnav.signals": { ko: "신호", en: "Signals" },
+  "subnav.risks": { ko: "리스크", en: "Risks" },
+  "subnav.economics": { ko: "경제성", en: "Economics" },
+  "subnav.playground": { ko: "Playground", en: "Playground" },
+  "subnav.sources": { ko: "출처", en: "Sources" },
+
+  // ── Vision hero overview ───────────────────────────────────────────
+  "hero.feasibilityEmpty": { ko: "아직 점수가 계산되지 않았어요.", en: "Feasibility not yet computed." },
+  "hero.trajectory": { ko: "최근 추이", en: "Trajectory" },
+  "hero.sixMonthsAgo": { ko: "6개월 전", en: "6mo ago" },
+  "hero.today": { ko: "오늘", en: "today" },
+  "hero.etaWindow": { ko: "예상 시점", en: "ETA window" },
+  "hero.confidence": { ko: "신뢰도", en: "Confidence" },
+  "hero.confidence.high": { ko: "높음", en: "high" },
+  "hero.confidence.medium": { ko: "보통", en: "medium" },
+  "hero.confidence.low": { ko: "낮음", en: "low" },
+  "hero.countCapabilities": { ko: "개 Capability", en: "capabilities" },
+  "hero.count30dSignals": { ko: "개 신호 (30일)", en: "signals · 30d" },
+  "hero.countRisks": { ko: "개 리스크", en: "risks" },
+  "hero.section.capabilities": { ko: "Capability", en: "Capabilities" },
+  "hero.section.actors": { ko: "주요 플레이어", en: "Actors" },
+  "hero.section.economics": { ko: "경제성", en: "Economics" },
+  "hero.section.riskBoard": { ko: "리스크 보드", en: "Risk board" },
+  "hero.section.liveSignals": { ko: "라이브 신호", en: "Live signals" },
+  "hero.viewAll": { ko: "전체 보기 →", en: "View all →" },
+  "hero.fullBoard": { ko: "전체 보드 →", en: "Full board →" },
+  "hero.fullCurves": { ko: "전체 곡선 →", en: "Full curves →" },
+  "hero.activeActors": { ko: "활동 중", en: "Active" },
+  "hero.emptyTree": {
+    ko: "이 비전은 등록만 되어 있고, capability 트리는 아직 분해되지 않았어요. 직접 큐레이션은 M38, 에이전트 자동 생성은 M41에 들어옵니다.",
+    en: "This vision is registered but its capability tree hasn't been decomposed yet. Hand-curation lands in M38, agent generation in M41.",
+  },
+  "hero.dataSource": { ko: "데이터 출처", en: "Data source" },
+  "hero.dataSource.db": { ko: "라이브 DB", en: "live DB" },
+  "hero.dataSource.fixture": {
+    ko: "미리보기 (M37 fixture · sector-service 미연결)",
+    en: "M37 fixture (sector-service unreachable)",
+  },
+
+  // Tile labels missing from above
+  "tile.feasibilityShort": { ko: "Feasibility", en: "Feasibility" },
+  "tile.last90d": { ko: "90일", en: "90d" },
+
+  // Capability detail
+  "capability.rationale": { ko: "근거", en: "Rationale" },
+  "capability.noUpstream": { ko: "상위 의존성이 없어요.", en: "No upstream dependencies." },
+  "capability.noDownstream": { ko: "하위 의존성이 없어요.", en: "No downstream dependents." },
+  "capability.loadFail": {
+    ko: "capability를 불러오지 못했어요",
+    en: "Couldn't load capability",
+  },
+  "capability.weight": { ko: "가중치", en: "Weight" },
+  "capability.primaryDriver": { ko: "주요 드라이버", en: "Primary driver" },
+  "capability.displayOrder": { ko: "표시 순서", en: "Display order" },
+  "capability.currentReadiness": { ko: "현재 readiness", en: "Current readiness" },
+  "capability.asOf": { ko: "기준일", en: "as of" },
+  "capability.composite": { ko: "종합 점수", en: "Composite" },
+  "capability.scoreEmpty": {
+    ko: "아직 점수가 계산되지 않았어요. M40 점수 엔진이 채워줍니다.",
+    en: "Score not yet computed. M40 scoring engine populates current readiness.",
+  },
+  "capability.trajectoryTitle": { ko: "추이", en: "Trajectory" },
+  "capability.trajectorySnapshots": { ko: "스냅샷", en: "snapshots" },
+  "capability.whyMatters": {
+    ko: "이 비전에서 왜 중요한가",
+    en: "Why this matters for the vision",
+  },
+  "capability.dependenciesTitle": { ko: "의존성", en: "Dependencies" },
+  "capability.dependsOn": { ko: "필요로 하는 것 (이게 있어야 함)", en: "Depends on (this needs)" },
+  "capability.dependedOnBy": {
+    ko: "이걸 필요로 하는 것",
+    en: "Depended on by (these need this)",
+  },
+  "capability.activeActors": { ko: "활동 중인 플레이어", en: "Active actors" },
+  "capability.actorsEmpty": {
+    ko: "아직 actor가 연결되지 않았어요 — M45b에서 채워집니다.",
+    en: "No actors wired yet — M45b populates these.",
+  },
+  "capability.signalFeedFooter": {
+    ko: "이 capability에 필터링된 신호 피드는 M39와 함께 옵니다.",
+    en: "Signal feed filtered to this capability lands with M39.",
+  },
+
+  // Risks sub-page
+  "risks.title": { ko: "리스크 보드", en: "Risk board" },
+  "risks.empty": {
+    ko: "리스크 큐레이션은 capability 분해(M38)와 함께 들어옵니다.",
+    en: "Risk curation lands with capability decomposition in M38.",
+  },
+  "risks.activeCount": { ko: "개 활성", en: "active." },
+  "risks.matrixComing": {
+    ko: "심각도 × 가능성 매트릭스와 대응 방안 drill-down은 M38에 들어옵니다.",
+    en: "Severity × likelihood matrix + mitigation drill-down land in M38.",
+  },
+
+  // Economics sub-page
+  "economics.title": { ko: "경제성", en: "Economics" },
+  "economics.coming": {
+    ko: "비용 곡선 · 단위 경제성 · 손익분기 민감도가 곧 들어옵니다.",
+    en: "Cost curves + unit economics + break-even sensitivity — coming soon.",
+  },
+
+  // Sources sub-page
+  "sources.title": { ko: "출처", en: "Sources" },
+  "sources.subtitle": {
+    ko: "이 비전 페이지의 모든 숫자는 출처가 있어요. 논문 · 특허 · 뉴스 · 공시 · 정부 보고서 · 벤더 문서 · 데이터셋을 모두 모은 통합 색인은 M39 신호 수집과 함께 들어와요. 지금은 최근 신호의 출처만 보여드려요.",
+    en: "Every number on this Vision page is source-grounded. The full aggregated index (papers, patents, news, filings, gov reports, vendor docs, datasets) lands with the M39 signal ingest. For now, here are the sources behind the recent signals.",
+  },
+  "sources.empty": { ko: "출처 통합은 M39에 들어옵니다.", en: "Source aggregation lands in M39." },
+
+  // Signals filter
+  "signals.filter.allCapabilities": { ko: "모든 capability", en: "All capabilities" },
+  "signals.filter.allSources": { ko: "모든 출처", en: "All sources" },
+  "signals.filter.papers": { ko: "📄 논문", en: "📄 Papers" },
+  "signals.filter.patents": { ko: "📜 특허", en: "📜 Patents" },
+  "signals.filter.news": { ko: "📰 뉴스", en: "📰 News" },
+  "signals.filter.filings": { ko: "📑 공시", en: "📑 Filings" },
+  "signals.filter.govReports": { ko: "🏛 정부 보고서", en: "🏛 Govt reports" },
+  "signals.filter.vendorDocs": { ko: "🔧 벤더 문서", en: "🔧 Vendor docs" },
+  "signals.filter.capability": { ko: "Capability", en: "Capability" },
+  "signals.filter.source": { ko: "출처", en: "Source" },
+  "signals.filter.highlightsOnly": { ko: "하이라이트만", en: "Highlights only" },
+  "signals.filter.apply": { ko: "적용", en: "Apply" },
+  "signals.filter.clear": { ko: "초기화", en: "clear" },
+  "signals.feed.title": { ko: "신호 피드", en: "Signal feed" },
+  "signals.feed.subtitle": {
+    ko: "추출기 에이전트가 arXiv · USPTO · NewsAPI 신호를 채점해요. capability · 출처 · 하이라이트로 필터링할 수 있어요.",
+    en: "arXiv + USPTO + NewsAPI signals scored by the extractor agent. Filter by capability, source, or highlights only.",
+  },
+  "signals.fixtureNote": {
+    ko: " (미리보기 — sector-service 미연결)",
+    en: " (preview data — sector-service unreachable)",
+  },
+  "signals.empty": {
+    ko: "이 필터에 맞는 신호가 없어요. 필터를 초기화해 보세요.",
+    en: "No signals match. Try clearing the filters.",
+  },
+  "signals.start": { ko: "← 처음으로", en: "← Start" },
+  "signals.older": { ko: "이전 →", en: "Older →" },
+  "signals.showingPrefix": { ko: "신호", en: "showing" },
+  "signals.showingSuffix": { ko: "개 표시", en: "" },
+  "signals.liveDb": { ko: " · 라이브 DB", en: " · live DB" },
+
+  // What-if Feasibility callout
+  "whatif.current": { ko: "현재", en: "Current" },
+  "whatif.projected": { ko: "예상", en: "Projected" },
+  "whatif.title": { ko: "What-if 실현 가능성", en: "What-if vision feasibility" },
+  "whatif.hint": {
+    ko: "드라이버를 움직일 때, 연결된 capability의 technical 점수가 같은 비율로 움직인다고 가정한 예상치예요. 시뮬레이션 결과가 아닌 UX 힌트입니다.",
+    en: "Assumes each driver shifts its capability's technical score proportionally. UX hint, not a sim output.",
+  },
+  "whatif.atDefault": { ko: "기본값 그대로", en: "sliders at default" },
+  "whatif.techSuffix": { ko: " tech", en: " tech" },
   "prediction.review.rationale": { ko: "근거 (선택)", en: "Rationale (optional)" },
   "prediction.review.rationaleHint": {
     ko: "왜 이 베팅이 합리적인지 한두 줄 — 실적 발표, 가격 setup, 뉴스 등.",

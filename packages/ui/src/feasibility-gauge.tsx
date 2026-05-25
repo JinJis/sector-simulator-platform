@@ -111,7 +111,7 @@ export function FeasibilityGauge({
         <path
           d={arcPath(-120, 120)}
           fill="none"
-          stroke="rgb(38 38 38)"
+          stroke="var(--chart-grid)"
           strokeWidth={stroke}
           strokeLinecap="round"
         />

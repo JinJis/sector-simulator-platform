@@ -62,7 +62,7 @@ export function TrajectorySparkline({
           x2={width - 2}
           y1={height / 2}
           y2={height / 2}
-          stroke="rgb(64 64 64)"
+          stroke="var(--chart-axis)"
           strokeWidth={1}
           strokeDasharray="3 3"
         />
@@ -138,7 +138,7 @@ export function TrajectorySparkline({
         x2={width - padX}
         y1={toY(50)}
         y2={toY(50)}
-        stroke="rgb(38 38 38)"
+        stroke="var(--chart-grid)"
         strokeWidth={1}
         strokeDasharray="2 4"
       />
@@ -153,7 +153,7 @@ export function TrajectorySparkline({
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <circle cx={lastX} cy={lastY} r={2.5} fill={color} stroke="rgb(10 10 10)" strokeWidth={1} />
+      <circle cx={lastX} cy={lastY} r={2.5} fill={color} stroke="var(--chart-thumb-stroke)" strokeWidth={1} />
     </svg>
   );
 }

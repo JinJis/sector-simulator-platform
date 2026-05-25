@@ -20,9 +20,22 @@
 
 :root {
   color-scheme: dark;
+  /* Chart tokens — consumed by packages/ui SVG components via
+   * stroke="var(--chart-grid)" etc. so they repaint correctly under
+   * html.light. Hardcoded rgb()s would stay dark on a white card. */
+  --chart-grid: rgb(38 38 38);
+  --chart-axis: rgb(64 64 64);
+  --chart-label: rgb(115 115 115);
+  --chart-strong-label: rgb(212 212 212);
+  --chart-thumb-stroke: rgb(10 10 10);
 }
 html.light {
   color-scheme: light;
+  --chart-grid: rgb(229 229 229);
+  --chart-axis: rgb(163 163 163);
+  --chart-label: rgb(115 115 115);
+  --chart-strong-label: rgb(64 64 64);
+  --chart-thumb-stroke: rgb(255 255 255);
 }
 
 body {

@@ -29,6 +29,7 @@ import {
 import { TrajectorySparkline } from "@platform/ui";
 import { notFound } from "next/navigation";
 
+import { getT } from "@/lib/i18n/server";
 import {
   fetchFeasibilityHistory,
   fetchVisionOverview,
@@ -114,6 +115,7 @@ export default async function VisionOverviewPage({ params }: Props) {
   const { slug } = await params;
   const data = await loadVisionData(slug);
   if (!data) notFound();
+  const t = await getT();
   const { overview, history, source } = data;
   const { vision, capabilities, risks, recent_signals, actors } = overview;
   const feas = vision.feasibility;
@@ -141,14 +143,14 @@ export default async function VisionOverviewPage({ params }: Props) {
             />
           ) : (
             <div className="flex h-[220px] w-[220px] items-center justify-center text-sm text-neutral-500">
-              Feasibility not yet computed
+              {t("hero.feasibilityEmpty")}
             </div>
           )}
 
           <div className="flex max-w-md flex-1 flex-col items-stretch justify-center gap-4">
             <div>
               <div className="text-[10px] uppercase tracking-widest text-neutral-500">
-                Trajectory
+                {t("hero.trajectory")}
               </div>
               <TrajectorySparkline
                 points={trajectory}
@@ -157,15 +159,15 @@ export default async function VisionOverviewPage({ params }: Props) {
                 ariaLabel={`${vision.name} feasibility trajectory`}
               />
               <div className="mt-1 flex justify-between font-mono text-[10px] tabular-nums text-neutral-500">
-                <span>6mo ago</span>
-                <span>today</span>
+                <span>{t("hero.sixMonthsAgo")}</span>
+                <span>{t("hero.today")}</span>
               </div>
             </div>
 
             {feas?.eta_median_years != null && (
               <div>
                 <div className="text-[10px] uppercase tracking-widest text-neutral-500">
-                  ETA window
+                  {t("hero.etaWindow")}
                 </div>
                 <EtaWindow
                   median={feas.eta_median_years}
@@ -179,14 +181,14 @@ export default async function VisionOverviewPage({ params }: Props) {
 
             <div className="flex flex-wrap items-center gap-4 border-t border-neutral-800 pt-3 text-[11px] text-neutral-500">
               <span>
-                Confidence:{" "}
+                {t("hero.confidence")}:{" "}
                 <span className="text-neutral-300">
                   {feas?.composite_p10 != null && feas?.composite_p90 != null
                     ? feas.composite_p90 - feas.composite_p10 < 10
-                      ? "high"
+                      ? t("hero.confidence.high")
                       : feas.composite_p90 - feas.composite_p10 < 20
-                      ? "medium"
-                      : "low"
+                      ? t("hero.confidence.medium")
+                      : t("hero.confidence.low")
                     : "—"}
                 </span>
               </span>
@@ -194,19 +196,19 @@ export default async function VisionOverviewPage({ params }: Props) {
                 <span className="font-mono text-neutral-300 tabular-nums">
                   {vision.capability_count}
                 </span>{" "}
-                capabilities
+                {t("hero.countCapabilities")}
               </span>
               <span>
                 <span className="font-mono text-neutral-300 tabular-nums">
                   {vision.signal_count_30d}
                 </span>{" "}
-                signals 30d
+                {t("hero.count30dSignals")}
               </span>
               <span>
                 <span className="font-mono text-neutral-300 tabular-nums">
                   {vision.risk_count}
                 </span>{" "}
-                risks
+                {t("hero.countRisks")}
               </span>
             </div>
           </div>
@@ -218,13 +220,13 @@ export default async function VisionOverviewPage({ params }: Props) {
         <section>
           <div className="mb-3 flex items-baseline justify-between">
             <h2 className="text-sm font-medium uppercase tracking-wider text-neutral-400">
-              Capabilities
+              {t("hero.section.capabilities")}
             </h2>
             <a
               href={`/visions/${slug}/capabilities`}
               className="text-xs text-neutral-500 hover:text-cyan-400"
             >
-              view all →
+              {t("hero.viewAll")}
             </a>
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -260,7 +262,7 @@ export default async function VisionOverviewPage({ params }: Props) {
                 >
                   {c.active_actors.length > 0 && (
                     <div className="border-t border-neutral-800 pt-2 text-[11px] text-neutral-500">
-                      <span className="mr-1.5">Active:</span>
+                      <span className="mr-1.5">{t("hero.activeActors")}:</span>
                       <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
                         {c.active_actors.map((aa, idx) => (
                           <span key={aa.actor_key} className="inline-flex items-center gap-1">
@@ -293,13 +295,13 @@ export default async function VisionOverviewPage({ params }: Props) {
         <section>
           <div className="mb-3 flex items-baseline justify-between">
             <h2 className="text-sm font-medium uppercase tracking-wider text-neutral-400">
-              Actors
+              {t("hero.section.actors")}
             </h2>
             <a
               href={`/visions/${slug}/actors`}
               className="text-xs text-neutral-500 hover:text-cyan-400"
             >
-              view all →
+              {t("hero.viewAll")}
             </a>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -329,13 +331,13 @@ export default async function VisionOverviewPage({ params }: Props) {
         <section className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-6">
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="text-sm font-medium uppercase tracking-wider text-neutral-400">
-              Economics
+              {t("hero.section.economics")}
             </h2>
             <a
               href={`/visions/${slug}/economics`}
               className="text-xs text-neutral-500 hover:text-cyan-400"
             >
-              full curves →
+              {t("hero.fullCurves")}
             </a>
           </div>
           <EconomicsCurveChart
@@ -357,13 +359,13 @@ export default async function VisionOverviewPage({ params }: Props) {
         <section>
           <div className="mb-3 flex items-baseline justify-between">
             <h2 className="text-sm font-medium uppercase tracking-wider text-neutral-400">
-              Risk board
+              {t("hero.section.riskBoard")}
             </h2>
             <a
               href={`/visions/${slug}/risks`}
               className="text-xs text-neutral-500 hover:text-cyan-400"
             >
-              full board →
+              {t("hero.fullBoard")}
             </a>
           </div>
           <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-4 py-2" role="list">
@@ -387,13 +389,13 @@ export default async function VisionOverviewPage({ params }: Props) {
         <section>
           <div className="mb-3 flex items-baseline justify-between">
             <h2 className="text-sm font-medium uppercase tracking-wider text-neutral-400">
-              Live signals
+              {t("hero.section.liveSignals")}
             </h2>
             <a
               href={`/visions/${slug}/signals`}
               className="text-xs text-neutral-500 hover:text-cyan-400"
             >
-              view all →
+              {t("hero.viewAll")}
             </a>
           </div>
           <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-4 py-2" role="list">
@@ -435,18 +437,13 @@ export default async function VisionOverviewPage({ params }: Props) {
       {/* ----- Empty-state callout when fixture is sparse ----- */}
       {capabilities.length === 0 && (
         <section className="rounded-xl border border-dashed border-neutral-800 bg-neutral-900/30 p-8 text-center">
-          <p className="text-sm text-neutral-400">
-            This vision is registered but its capability tree hasn't been
-            decomposed yet. Hand-curation lands in <strong>M38</strong>; agent
-            generation in <strong>M41</strong>.
-          </p>
+          <p className="text-sm text-neutral-400">{t("hero.emptyTree")}</p>
         </section>
       )}
 
-      {/* Data source diagnostic — small footer for dev so we know when */}
-      {/* we're reading DB vs fixture. Drop in M44 polish. */}
       <p className="text-right text-[10px] text-neutral-600">
-        data source: {source === "db" ? "live DB" : "M37 fixture (sector-service unreachable)"}
+        {t("hero.dataSource")}:{" "}
+        {source === "db" ? t("hero.dataSource.db") : t("hero.dataSource.fixture")}
       </p>
     </div>
   );

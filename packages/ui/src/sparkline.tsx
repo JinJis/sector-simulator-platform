@@ -89,7 +89,7 @@ export function Sparkline({
           x2={width - 2}
           y1={height / 2}
           y2={height / 2}
-          stroke="rgb(64 64 64)"
+          stroke="var(--chart-axis)"
           strokeWidth={1}
           strokeDasharray="3 3"
         />
@@ -227,7 +227,7 @@ export function Sparkline({
           cy={(projectionEnd as readonly [number, number])[1]}
           r={2}
           fill={projectionColor}
-          stroke="rgb(10 10 10)"
+          stroke="var(--chart-thumb-stroke)"
           strokeWidth={0.75}
         />
       )}

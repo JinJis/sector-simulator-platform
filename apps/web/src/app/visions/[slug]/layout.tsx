@@ -2,6 +2,8 @@ import { Breadcrumbs, SubNav, type SubNavItem } from "@platform/ui";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { getT } from "@/lib/i18n/server";
+
 import { getVisionFixture } from "../_fixtures";
 
 interface Props {
@@ -13,28 +15,28 @@ export default async function VisionLayout({ children, params }: Props) {
   const { slug } = await params;
   const fixture = getVisionFixture(slug);
   if (!fixture) notFound();
+  const t = await getT();
 
   const { vision } = fixture.overview;
 
   const subnav: SubNavItem[] = [
-    { label: "Overview", href: `/visions/${slug}` },
-    { label: "Capabilities", href: `/visions/${slug}/capabilities` },
-    // M45a: Actor tab — the WHO layer (companies + labs + govt per capability).
-    { label: "Actors", href: `/visions/${slug}/actors` },
-    { label: "Signals", href: `/visions/${slug}/signals` },
-    { label: "Risks", href: `/visions/${slug}/risks` },
-    { label: "Economics", href: `/visions/${slug}/economics` },
-    { label: "Playground", href: `/visions/${slug}/playground` },
-    { label: "Sources", href: `/visions/${slug}/sources` },
+    { label: t("subnav.overview"), href: `/visions/${slug}` },
+    { label: t("subnav.capabilities"), href: `/visions/${slug}/capabilities` },
+    { label: t("subnav.actors"), href: `/visions/${slug}/actors` },
+    { label: t("subnav.signals"), href: `/visions/${slug}/signals` },
+    { label: t("subnav.risks"), href: `/visions/${slug}/risks` },
+    { label: t("subnav.economics"), href: `/visions/${slug}/economics` },
+    { label: t("subnav.playground"), href: `/visions/${slug}/playground` },
+    { label: t("subnav.sources"), href: `/visions/${slug}/sources` },
   ];
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <div className="mx-auto max-w-7xl px-6 pt-6">
+      <div className="mx-auto max-w-6xl px-6 pt-6">
         <Breadcrumbs
           className="mb-3"
           items={[
-            { label: "Visions", href: "/visions" },
+            { label: t("visions.title"), href: "/visions" },
             { label: vision.name },
           ]}
         />
@@ -50,7 +52,7 @@ export default async function VisionLayout({ children, params }: Props) {
         </header>
         <SubNav items={subnav} className="mb-6" />
       </div>
-      <div className="mx-auto max-w-7xl px-6 pb-16">{children}</div>
+      <div className="mx-auto max-w-6xl px-6 pb-16">{children}</div>
     </div>
   );
 }
