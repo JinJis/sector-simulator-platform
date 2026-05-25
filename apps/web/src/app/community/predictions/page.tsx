@@ -176,7 +176,14 @@ async function LeaderboardPanel() {
               <td className="px-3 py-2 font-mono text-neutral-500">
                 {i + 1}
               </td>
-              <td className="px-3 py-2 text-neutral-200">{r.user_label}</td>
+              <td className="px-3 py-2 text-neutral-200">
+                <Link
+                  href={`/u/${encodeURIComponent(r.user_id)}`}
+                  className="hover:text-cyan-300"
+                >
+                  {r.user_label}
+                </Link>
+              </td>
               <td className="px-3 py-2 text-right font-mono text-cyan-300">
                 {r.total_points.toLocaleString()}p
               </td>

@@ -78,7 +78,13 @@ export function ProposalCard({ proposal, kindLabel }: Props) {
             {proposal.sector_slug}
           </Link>
           <span className="text-neutral-600">·</span>
-          <span className="text-neutral-500">by {proposal.author.label}</span>
+          <Link
+            href={`/u/${encodeURIComponent(proposal.author.id)}`}
+            onClick={(e) => e.stopPropagation()}
+            className="text-neutral-500 hover:text-cyan-300"
+          >
+            by {proposal.author.label}
+          </Link>
           <span className="text-neutral-700">·</span>
           <span className="text-neutral-600">{relativeTime(proposal.created_at)}</span>
         </div>

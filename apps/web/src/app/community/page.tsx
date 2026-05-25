@@ -167,7 +167,14 @@ export default async function CommunityHomePage() {
                     className="border-b border-neutral-900 last:border-0"
                   >
                     <td className="py-1.5 font-mono text-neutral-500">{i + 1}</td>
-                    <td className="py-1.5 text-neutral-200">{r.user_label}</td>
+                    <td className="py-1.5 text-neutral-200">
+                      <Link
+                        href={`/u/${encodeURIComponent(r.user_id)}`}
+                        className="hover:text-cyan-300"
+                      >
+                        {r.user_label}
+                      </Link>
+                    </td>
                     <td className="py-1.5 text-right font-mono text-cyan-300">
                       {r.total_points.toLocaleString()}p
                     </td>

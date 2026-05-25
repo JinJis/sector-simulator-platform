@@ -11,6 +11,8 @@ import { billingRouter } from "./billing.js";
 import { capabilityRouter } from "./capability.js";
 import { communityRouter } from "./community.js";
 import { communityProposalRouter } from "./community-proposal.js";
+import { followRouter } from "./follow.js";
+import { reputationRouter } from "./reputation.js";
 import { equityRouter } from "./equity.js";
 import { feasibilityRouter } from "./feasibility.js";
 import { graphRouter } from "./graph.js";
@@ -47,6 +49,9 @@ export const appRouter = router({
   prediction: predictionRouter,
   // M46b — PredictionV2 (auto-tiered band predictions, see chat plan §4).
   prediction2: prediction2Router,
+  // M46c — Reputation + Follow.
+  reputation: reputationRouter,
+  follow: followRouter,
   suggestion: suggestionRouter,
   community: communityRouter,
   // M46a — Community 3.0 proposals (driver/equity/capability/risk/actor/

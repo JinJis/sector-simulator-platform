@@ -216,8 +216,13 @@ LIMIT 1
 """
 
 # Atomic resolution:
-#   1. UPDATE predictions_v2 — gated by status='open' so re-runs no-op
-#   2. INSERT audit_logs row when the UPDATE actually flipped
+#   1. UPDATE predictions_v2  — gated by status='open' so re-runs no-op
+#   2. INSERT audit_logs row  — only when the UPDATE actually flipped
+#   3. INSERT point_events row — ledger entry, gated on flipped
+#   4. UPSERT user_reputation — increment total_points by reward_points
+#      and recompute tier (CASE chain matches the TS tierFromPoints).
+# Steps 3+4 only fire when reward_points > 0 — a miss (0p) shouldn't
+# emit a no-op event nor recompute the tier.
 _WRITE_RESOLUTION_SQL = """
 WITH flipped AS (
     UPDATE predictions_v2
@@ -247,6 +252,47 @@ audited AS (
         now()
     WHERE EXISTS (SELECT 1 FROM flipped)
     RETURNING id
+),
+point_event_row AS (
+    INSERT INTO point_events
+        (id, user_id, kind, amount, refers_to_kind, refers_to_id, created_at)
+    SELECT
+        substr(md5(random()::text || clock_timestamp()::text), 1, 25),
+        $5,
+        'prediction_resolved',
+        $4,
+        'prediction',
+        $1,
+        now()
+    WHERE EXISTS (SELECT 1 FROM flipped) AND $4 > 0
+    RETURNING id
+),
+rep_upsert AS (
+    INSERT INTO user_reputation AS ur
+        (user_id, total_points, tier, updated_at)
+    SELECT
+        $5,
+        $4,
+        CASE
+            WHEN $4 >= 10000 THEN 'maintainer'
+            WHEN $4 >= 3000  THEN 'senior'
+            WHEN $4 >= 500   THEN 'analyst'
+            WHEN $4 >= 100   THEN 'member'
+            ELSE                  'newcomer'
+        END,
+        now()
+    WHERE EXISTS (SELECT 1 FROM flipped) AND $4 > 0
+    ON CONFLICT (user_id) DO UPDATE
+       SET total_points = ur.total_points + EXCLUDED.total_points,
+           tier         = CASE
+               WHEN ur.total_points + EXCLUDED.total_points >= 10000 THEN 'maintainer'
+               WHEN ur.total_points + EXCLUDED.total_points >=  3000 THEN 'senior'
+               WHEN ur.total_points + EXCLUDED.total_points >=   500 THEN 'analyst'
+               WHEN ur.total_points + EXCLUDED.total_points >=   100 THEN 'member'
+               ELSE                                                       'newcomer'
+           END,
+           updated_at   = now()
+    RETURNING user_id
 )
 SELECT EXISTS (SELECT 1 FROM flipped) AS wrote;
 """

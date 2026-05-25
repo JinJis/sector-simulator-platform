@@ -387,6 +387,11 @@ model User {
   community_proposal_replies ProposalReply[]
   // M46b — PredictionV2
   predictions_v2            PredictionV2[]      @relation("UserPredictionsV2")
+  // M46c — Reputation + Follow
+  reputation                UserReputation?
+  point_events              PointEvent[]
+  follows_out               UserFollow[]    @relation("FollowsOut")
+  follows_in                UserFollow[]    @relation("FollowsIn")
 
   @@map("users")
 }
@@ -1366,4 +1371,95 @@ model PredictionV2 {
   // Leaderboard helper (status='resolved' GROUP BY user_id SUM reward_points)
   @@index([status, reward_points(sort: Desc)])
   @@map("predictions_v2")
+}
+
+// =====================================================================
+// M46c — Community 3.0: Reputation + Follow
+//
+// `UserReputation` is the denormalized leaderboard surface. Source of
+// truth is the `PointEvent` log (every point in/out is recorded as an
+// immutable event). UserReputation.total_points should equal
+// `SUM(point_events.amount) WHERE user_id = X` — every write site
+// updates both atomically.
+//
+// Tier is derived from total_points by tierFromPoints() in
+// services/sector-service/src/lib/reputation.ts (single source of
+// truth). Persisted on UserReputation so leaderboard queries don't
+// need to recompute.
+//
+// `UserFollow` is one-way (Twitter-style). Mutual follow = two rows.
+// =====================================================================
+
+model UserReputation {
+  user_id      String   @id @map("user_id")
+  user         User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  // Sum of all PointEvent.amount rows for this user. Can dip
+  // (proposal vote un-toggled subtracts; we don't floor here so the
+  // log is honest. The tier function clamps to "newcomer" on
+  // negative values).
+  total_points Int      @default(0) @map("total_points")
+  // newcomer | member | analyst | senior | maintainer
+  tier         String   @default("newcomer")
+
+  updated_at   DateTime @updatedAt @map("updated_at")
+
+  // Leaderboard primary index
+  @@index([total_points(sort: Desc)])
+  @@map("user_reputation")
+}
+
+model PointEvent {
+  // Immutable ledger row. Each grant or revocation of reputation
+  // points writes one row. Source of truth — `UserReputation.total_
+  // points` is a denormalized sum of these.
+
+  id      String @id @default(cuid())
+  user_id String @map("user_id")
+  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  // kind taxonomy:
+  //   prediction_resolved   — reward_points awarded at resolution
+  //   proposal_vote_received — author got an upvote (positive amount;
+  //                            negative when the voter toggles off)
+  //   proposal_applied      — admin shipped the author's proposal
+  //   reply_upvote          — reply landed an upvote (M47 only;
+  //                            unused in M46c)
+  //   manual_grant          — admin discretionary grant / clawback
+  kind   String
+
+  // Signed integer — can be negative for revocations (e.g. vote
+  // toggle-off). Sum stays non-negative under normal operation.
+  amount Int
+
+  // Optional pointer to the source event. For prediction_resolved
+  // this is the PredictionV2.id; for proposal_vote_received it's
+  // the proposal_id. Free-form text — joins are admin-only so
+  // keeping it relaxed avoids FK churn when tables drift.
+  refers_to_kind String? @map("refers_to_kind")
+  refers_to_id   String? @map("refers_to_id")
+
+  created_at DateTime @default(now()) @map("created_at")
+
+  @@index([user_id, created_at(sort: Desc)])
+  @@index([kind, created_at(sort: Desc)])
+  @@map("point_events")
+}
+
+model UserFollow {
+  // One-way follow relationship. (follower_id, followed_id) is the
+  // composite PK so re-following is a no-op rather than duplicate.
+
+  follower_id String   @map("follower_id")
+  followed_id String   @map("followed_id")
+  follower    User     @relation("FollowsOut", fields: [follower_id], references: [id], onDelete: Cascade)
+  followed    User     @relation("FollowsIn",  fields: [followed_id], references: [id], onDelete: Cascade)
+
+  created_at  DateTime @default(now()) @map("created_at")
+
+  @@id([follower_id, followed_id])
+  // Profile shows "followers of X" + "X follows N people"
+  @@index([followed_id, created_at(sort: Desc)])
+  @@index([follower_id, created_at(sort: Desc)])
+  @@map("user_follows")
 }

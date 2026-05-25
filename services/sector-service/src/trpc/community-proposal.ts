@@ -21,6 +21,12 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import {
+  readReputation,
+  recordPointDelta,
+  voteWeightFromPoints,
+} from "../lib/reputation.js";
+
 import { publicProcedure, router } from "./init.js";
 
 // ============ Schemas ===================================================
@@ -373,8 +379,11 @@ export const communityProposalRouter = router({
    * update `vote_score` in the same transaction so feed sorting stays
    * correct.
    *
-   * M46c will replace the `weight: 1` literal with the voter's
-   * reputation-derived weight.
+   * M46c — vote weight = `voteWeightFromPoints(voter.total_points)`.
+   * On insert we ALSO credit the proposal author with `weight` rep
+   * points via `proposal_vote_received`; on delete we revoke them.
+   * Self-votes (voter == author) don't grant rep — kept to discourage
+   * sock-puppet farming.
    */
   vote: publicProcedure
     .input(z.object({ proposal_id: z.string().min(1) }))
@@ -401,7 +410,20 @@ export const communityProposalRouter = router({
             },
           },
         });
+        // Either branch needs the proposal's author so we can credit/
+        // revoke rep. Fetch once.
+        const proposal = await tx.communityProposal.findUnique({
+          where: { id: input.proposal_id },
+          select: { id: true, author_id: true },
+        });
+        if (!proposal) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `proposal ${input.proposal_id}`,
+          });
+        }
         if (existing) {
+          // ---- Toggle OFF ----
           await tx.proposalVote.delete({
             where: {
               proposal_id_user_id: {
@@ -415,22 +437,21 @@ export const communityProposalRouter = router({
             data: { vote_score: { decrement: existing.weight } },
             select: { vote_score: true },
           });
-          return { voted: false, vote_score: updated.vote_score };
-        } else {
-          // Confirm the proposal exists before write — avoid a phantom
-          // ProposalVote row pointing at a deleted proposal (Cascade
-          // would clean it up, but the error message here is nicer).
-          const exists = await tx.communityProposal.findUnique({
-            where: { id: input.proposal_id },
-            select: { id: true },
-          });
-          if (!exists) {
-            throw new TRPCError({
-              code: "NOT_FOUND",
-              message: `proposal ${input.proposal_id}`,
+          // Revoke the rep we previously granted (no-op on self-vote).
+          if (proposal.author_id !== userId) {
+            await recordPointDelta(tx, {
+              user_id: proposal.author_id,
+              kind: "proposal_vote_received",
+              amount: -existing.weight,
+              refers_to_kind: "proposal",
+              refers_to_id: proposal.id,
             });
           }
-          const weight = 1; // M46c upgrades to reputation-weighted
+          return { voted: false, vote_score: updated.vote_score };
+        } else {
+          // ---- Toggle ON ----
+          const voterRep = await readReputation(tx, userId);
+          const weight = voteWeightFromPoints(voterRep.total_points);
           await tx.proposalVote.create({
             data: {
               proposal_id: input.proposal_id,
@@ -443,6 +464,15 @@ export const communityProposalRouter = router({
             data: { vote_score: { increment: weight } },
             select: { vote_score: true },
           });
+          if (proposal.author_id !== userId) {
+            await recordPointDelta(tx, {
+              user_id: proposal.author_id,
+              kind: "proposal_vote_received",
+              amount: weight,
+              refers_to_kind: "proposal",
+              refers_to_id: proposal.id,
+            });
+          }
           return { voted: true, vote_score: updated.vote_score };
         }
       });
