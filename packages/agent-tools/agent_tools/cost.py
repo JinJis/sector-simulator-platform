@@ -64,6 +64,27 @@ def model_price(model_id: str) -> ModelPrice:
     return _PRICES.get(model_id, _PRICES["gemini-3.5-flash-lite"])
 
 
+# M48b — Gemini Deep Research is billed per-task, not per-token, and the
+# Interactions API doesn't currently surface a usage_metadata field we
+# can multiply into a token rate. So we estimate cost from a flat
+# per-tier USD-per-run figure here; replace with metered usage once the
+# SDK exposes it (or once we move to a paid agent contract with a
+# documented rate). These are starting-point placeholders — bump them
+# from the admin cockpit when actual invoices land.
+_DEEP_RESEARCH_PRICES_USD: dict[str, float] = {
+    "deep-research-preview-04-2026": 0.10,
+    "deep-research-max-preview-04-2026": 0.50,
+}
+
+
+def deep_research_price_usd(model_id: str) -> float:
+    """Flat USD cost per Deep Research run. Falls back to the
+    fast-tier price for unknown model IDs."""
+    return _DEEP_RESEARCH_PRICES_USD.get(
+        model_id, _DEEP_RESEARCH_PRICES_USD["deep-research-preview-04-2026"]
+    )
+
+
 @dataclass(frozen=True)
 class PricedUsage:
     """Token counts + computed USD cost for a single call.

@@ -21,6 +21,10 @@ const Env = z.object({
   // docker network; falls back to a "not configured" health card
   // when unset.
   DATA_PIPELINE_URL: z.string().url().optional(),
+  // M48 — Phase 4 crawler service (default :8004). The `crawler.*`
+  // tRPC routes proxy here for list / get / trigger; when unset they
+  // return a "not configured" error.
+  CRAWLER_URL: z.string().url().optional(),
   // M26 billing — unset means Premium upgrade is non-functional (UI
   // surfaces the stub message). Set all three to enable Stripe.
   STRIPE_SECRET_KEY: z.string().optional(),

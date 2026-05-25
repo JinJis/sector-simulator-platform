@@ -155,6 +155,34 @@ services:
     networks:
       - internal
 
+  # M48c — real-time crawler service. Runs per-surface fetchers + the
+  # Gemini Deep Research Agent; writes CrawlRun rows for the admin
+  # cockpit and (in M49+) Signal/CommunityProposal rows. Always-on
+  # alongside data-pipeline. Port 8004.
+  crawler:
+    image: tssp/crawler:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: infra/docker/crawler.Dockerfile
+    # Vertex env comes from .env (same reasoning as agent-orchestration).
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/vertex-ai-sa.json
+      # M49+ will arm the orchestrator cron via this flag. M48c is
+      # trigger-only; scheduler stays off by default.
+      CRAWLER_SCHEDULE: ${CRAWLER_SCHEDULE:-off}
+    volumes:
+      - ./infra/secrets:/secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+    networks:
+      - internal
+
   sector-service:
     image: tssp/sector-service:${IMAGE_TAG:-latest}
     build:
@@ -170,6 +198,7 @@ services:
       SIMULATION_SERVICE_URL: http://simulation-service:8000
       AGENT_ORCHESTRATION_URL: http://agent-orchestration:8002
       DATA_PIPELINE_URL: http://data-pipeline:8003
+      CRAWLER_URL: http://crawler:8004
       DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
       # Container-internal SA mount path.
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/vertex-ai-sa.json
@@ -181,6 +210,8 @@ services:
       agent-orchestration:
         condition: service_started
       data-pipeline:
+        condition: service_started
+      crawler:
         condition: service_started
       postgres:
         condition: service_healthy

@@ -1463,3 +1463,56 @@ model UserFollow {
   @@index([follower_id, created_at(sort: Desc)])
   @@map("user_follows")
 }
+
+/// M48a — one row per crawler fetch. The admin cockpit reads this
+/// table to render the live-jobs pane + 24h health pane. Writes come
+/// exclusively from `services/crawler/`.
+///
+/// `vision_slug` mirrors the slug-as-string pattern already used by
+/// `CommunityProposal.sector_slug` — no FK to Sector, so cross-vision
+/// or orphaned smoke runs don't break the table. `cost_usd` is null
+/// for runs that never reached the LLM (e.g. cache hits, dry-run
+/// plans). `result_summary` shape is fetcher-specific JSON, validated
+/// by the fetcher's own Pydantic schema before write.
+model CrawlRun {
+  id           String @id @default(cuid())
+
+  vision_slug  String @map("vision_slug")
+
+  // "capability" | "actor" | "signal" | "risk" | "economics" |
+  // "deep_research" | "hello_world" (M48c smoke). Free-form string so
+  // a new fetcher kind doesn't require a schema migration.
+  fetcher_kind String @map("fetcher_kind")
+
+  // "queued" | "running" | "ok" | "error" | "cancelled"
+  status       String @default("queued")
+
+  // FetchPlan as JSON — the prompt or query the fetcher will issue.
+  // Kept verbatim so a re-run from the cockpit is reproducible.
+  plan         Json
+
+  // WriteSummary as JSON — fetcher-specific result shape. Null until
+  // status transitions to ok/error.
+  result_summary Json? @map("result_summary")
+
+  // Metered LLM spend for this run. Null when no LLM call was made
+  // (cache hit, dry-run, or pre-LLM failure).
+  cost_usd          Decimal? @map("cost_usd") @db.Decimal(10, 4)
+  signals_written   Int      @default(0) @map("signals_written")
+  proposals_written Int      @default(0) @map("proposals_written")
+
+  // Short, single-line. Full stack traces go to logs, not the table.
+  error      String?
+
+  started_at DateTime  @default(now()) @map("started_at")
+  ended_at   DateTime? @map("ended_at")
+
+  // Cockpit "recent runs for this vision" (default sort).
+  @@index([vision_slug, started_at(sort: Desc)])
+  // Cockpit "all runs of kind X" filter + "Capability fetcher health" query.
+  @@index([fetcher_kind, started_at(sort: Desc)])
+  // Live-jobs pane — `WHERE status IN ('queued','running')`.
+  @@index([status, started_at(sort: Desc)])
+
+  @@map("crawl_runs")
+}

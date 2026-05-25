@@ -5,6 +5,7 @@ members = [
   "services/simulation-service",
   "services/agent-orchestration",
   "services/data-pipeline",
+  "services/crawler",
 ]
 
 [tool.uv.sources]

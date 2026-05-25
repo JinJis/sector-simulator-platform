@@ -312,6 +312,61 @@ export async function fetchMonitoringHealth(): Promise<MonitoringHealth> {
   return rethrow(() => trpc.monitoring.health.query(), "fetchMonitoringHealth");
 }
 
+// ---------- M48 — Phase 4 crawler ----------
+
+export type CrawlRun = RouterOutput["crawler"]["runs"]["list"][number];
+export type CrawlerHealth = RouterOutput["crawler"]["health"];
+export type HelloWorldResult = RouterOutput["crawler"]["runs"]["hello"];
+
+export async function fetchCrawlerHealth(): Promise<CrawlerHealth> {
+  return rethrow(() => trpc.crawler.health.query(), "fetchCrawlerHealth");
+}
+
+export async function listCrawlRuns(
+  input: {
+    vision?: string;
+    fetcher?: string;
+    status?: CrawlRun["status"];
+    limit?: number;
+  } = {},
+): Promise<CrawlRun[]> {
+  return rethrow(
+    () =>
+      trpc.crawler.runs.list.query({
+        ...(input.vision ? { vision: input.vision } : {}),
+        ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+        // Re-narrow with a runtime check so optional union pruning works
+        // for the proxy schema.
+        ...(typeof input.status === "string" &&
+        ["queued", "running", "ok", "error", "cancelled", "timeout"].includes(
+          input.status,
+        )
+          ? {
+              status: input.status as
+                | "queued"
+                | "running"
+                | "ok"
+                | "error"
+                | "cancelled"
+                | "timeout",
+            }
+          : {}),
+        limit: input.limit ?? 20,
+      }),
+    "listCrawlRuns",
+  );
+}
+
+export async function runHelloWorldFetcher(input: {
+  vision_slug: string;
+  prompt?: string;
+}): Promise<HelloWorldResult> {
+  return rethrow(
+    () => trpc.crawler.runs.hello.mutate(input),
+    `runHelloWorldFetcher(${input.vision_slug})`,
+  );
+}
+
 // ---------- Sector lifecycle (M21) ----------
 
 export type SectorRow = RouterOutput["sector"]["list"][number];
