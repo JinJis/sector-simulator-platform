@@ -17,10 +17,28 @@ const TRPC_URL = typeof window === "undefined" ? SERVER_BASE : BROWSER_BASE;
 export const SECTOR_SERVICE_URL =
   process.env.SECTOR_SERVICE_URL ?? "http://localhost:8001";
 
+// On the server we inject the shared admin-internal token so
+// userAdmin.* procedures pass sector-service's auth gate without
+// needing a real session user. The token is intentionally NOT
+// injected on browser-side calls (the same client runs in both
+// contexts) — browser fetches go through Next's `/api/sim` rewrite
+// where adding the header would require leaking the secret to the
+// client bundle. All current admin pages that hit userAdmin.* are
+// RSCs / server actions, so the server path is enough.
+const adminInternalToken = (): string | undefined => {
+  if (typeof window !== "undefined") return undefined;
+  const v = process.env.ADMIN_INTERNAL_TOKEN;
+  return v && v.length > 0 ? v : undefined;
+};
+
 export const trpc = createTRPCClient<AppRouter>({
   links: [
     httpBatchLink({
       url: TRPC_URL,
+      headers: () => {
+        const token = adminInternalToken();
+        return token ? { "x-admin-internal-token": token } : {};
+      },
       fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
     }),
   ],

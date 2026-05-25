@@ -11,7 +11,11 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { env } from "../lib/env.js";
 import { publicProcedure, router } from "./init.js";
+
+const INTERNAL_USER_LABEL = "admin-app";
+const INTERNAL_TOKEN_HEADER = "x-admin-internal-token";
 
 const UserSummaryOut = z.object({
   id: z.string(),
@@ -38,14 +42,40 @@ const ListInput = z
   })
   .default({});
 
+/** Admin endpoints accept two auth modes:
+ *
+ *  1. Real session user — any logged-in user (the platform has no
+ *     role system beyond `User.tier` yet, so we don't gate by role).
+ *  2. Internal-token bypass — apps/admin sends a shared secret via
+ *     the `x-admin-internal-token` header on RSC / server-action
+ *     fetches. Sector-service treats a matching header as
+ *     authenticated and synthesizes a CurrentUser-shaped placeholder
+ *     for the audit log. Browser-side fetches never carry this
+ *     token (the admin Next.js client only injects it server-side),
+ *     so the secret stays out of devtools / source maps.
+ */
 function requireUser(ctx: import("./context.js").Context) {
-  if (!ctx.user) {
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message: "admin endpoints require authentication",
-    });
+  if (ctx.user) return ctx.user;
+
+  const expected = env().ADMIN_INTERNAL_TOKEN;
+  if (expected) {
+    const headers = ctx.req?.headers ?? {};
+    const headerVal = headers[INTERNAL_TOKEN_HEADER];
+    const provided = Array.isArray(headerVal) ? headerVal[0] : headerVal;
+    if (typeof provided === "string" && provided === expected) {
+      return {
+        id: "admin-internal",
+        email: "admin@internal",
+        name: INTERNAL_USER_LABEL,
+        label: INTERNAL_USER_LABEL,
+      };
+    }
   }
-  return ctx.user;
+
+  throw new TRPCError({
+    code: "UNAUTHORIZED",
+    message: "admin endpoints require authentication",
+  });
 }
 
 export const userAdminRouter = router({

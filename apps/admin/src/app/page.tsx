@@ -16,31 +16,41 @@ import { DraftSectorRow } from "./draft-sector-row";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminHome() {
-  let sims: SimMetadata[];
-  let scenarios: Scenario[];
-  let dbSectors: SectorRow[];
-  let users: AdminUserListResult;
+type Settled<T> = { ok: true; value: T } | { ok: false; error: string };
+
+async function settle<T>(p: Promise<T>): Promise<Settled<T>> {
   try {
-    [sims, scenarios, dbSectors, users] = await Promise.all([
-      fetchSims(),
-      fetchScenarios(),
-      listSectors(),
-      listAdminUsers({ limit: 5 }),
-    ]);
+    return { ok: true, value: await p };
   } catch (err) {
-    return (
-      <main className="mx-auto max-w-6xl px-6 py-10">
-        <h1 className="text-xl font-semibold">Sectors</h1>
-        <p className="mt-4 text-sm text-red-400">
-          sector-service에 연결할 수 없습니다 ({SECTOR_SERVICE_URL}).
-        </p>
-        <p className="mt-1 text-xs text-neutral-500">
-          {err instanceof Error ? err.message : String(err)}
-        </p>
-      </main>
-    );
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+export default async function AdminHome() {
+  // M48 follow-up: each upstream call settles independently so one
+  // hiccup (sim-service down, agent-orch unreachable, …) doesn't
+  // blank the whole dashboard. The page renders all sections it CAN
+  // render and surfaces an inline notice for the ones it can't.
+  const [simsR, scenariosR, dbSectorsR, usersR] = await Promise.all([
+    settle(fetchSims()),
+    settle(fetchScenarios()),
+    settle(listSectors()),
+    settle(listAdminUsers({ limit: 5 })),
+  ]);
+
+  const sims: SimMetadata[] = simsR.ok ? simsR.value : [];
+  const scenarios: Scenario[] = scenariosR.ok ? scenariosR.value : [];
+  const dbSectors: SectorRow[] = dbSectorsR.ok ? dbSectorsR.value : [];
+  const users: AdminUserListResult = usersR.ok
+    ? usersR.value
+    : { rows: [], total: 0 };
+
+  const failures = [
+    simsR.ok ? null : { source: "fetchSims (simulation-service)", error: simsR.error },
+    scenariosR.ok ? null : { source: "fetchScenarios (sector-service)", error: scenariosR.error },
+    dbSectorsR.ok ? null : { source: "listSectors (sector-service)", error: dbSectorsR.error },
+    usersR.ok ? null : { source: "listAdminUsers (sector-service)", error: usersR.error },
+  ].filter((x): x is { source: string; error: string } => x != null);
 
   const scenarioCount = new Map<string, number>();
   for (const s of scenarios) {
@@ -68,6 +78,26 @@ export default async function AdminHome() {
           </p>
         </div>
       </div>
+
+      {failures.length > 0 && (
+        <div className="mb-6 rounded-lg border border-amber-800/60 bg-amber-950/30 px-4 py-3">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-amber-200">
+            Partial data — {failures.length} upstream{" "}
+            {failures.length === 1 ? "source" : "sources"} unreachable
+          </div>
+          <ul className="mt-1 space-y-0.5 text-[11px] text-amber-100/80">
+            {failures.map((f) => (
+              <li key={f.source}>
+                <span className="text-amber-300">{f.source}</span>:{" "}
+                <span className="text-amber-200/70">{f.error}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-1 text-[10px] text-amber-200/50">
+            sector-service: {SECTOR_SERVICE_URL}
+          </div>
+        </div>
+      )}
 
       <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricTile

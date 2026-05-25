@@ -25,6 +25,18 @@ const Env = z.object({
   // tRPC routes proxy here for list / get / trigger; when unset they
   // return a "not configured" error.
   CRAWLER_URL: z.string().url().optional(),
+  // M48 admin-login follow-up — shared secret between this service
+  // and apps/admin. The admin app sends it as `x-admin-internal-token`
+  // on tRPC calls to admin-only procedures (userAdmin.*); sector-
+  // service treats a matching header as auth bypass + synthesizes a
+  // `ctx.user` for the call. Browser-side callers never see this
+  // token — admin Next.js only injects it on RSC / server-action
+  // requests. Unset → admin endpoints still require a real session
+  // (pre-M48 behavior).
+  ADMIN_INTERNAL_TOKEN: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
   // M26 billing — unset means Premium upgrade is non-functional (UI
   // surfaces the stub message). Set all three to enable Stripe.
   STRIPE_SECRET_KEY: z.string().optional(),
