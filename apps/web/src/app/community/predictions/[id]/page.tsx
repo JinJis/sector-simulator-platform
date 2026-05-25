@@ -37,7 +37,7 @@ export default async function PredictionDetailPage({ params }: Props) {
     p.actual_price <= p.expected_price_max;
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-10">
+    <main className="mx-auto max-w-[100rem] px-6 py-10">
       <nav className="mb-3 flex gap-2 text-[11px] text-neutral-500">
         <Link href="/community/predictions" className="hover:text-neutral-300">
           ← Predictions

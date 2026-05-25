@@ -1,41 +1,39 @@
 /**
  * Global site header. Server component — fetches the current user via
- * `auth.me` once per request so the user menu hydrates with the right
- * identity on first paint (no flash of "Sign in" while the client
- * fetches it).
+ * `auth.me` + the locale cookie so the strings + the user menu both
+ * paint correctly on first byte.
  */
 
 import Link from "next/link";
 
+import { getT } from "@/lib/i18n/server";
 import { fetchMe } from "@/lib/sim-client";
 
 import { UserMenu } from "./user-menu";
 
-const PRIMARY_NAV: { label: string; href: string }[] = [
-  { label: "Visions", href: "/visions" },
-  { label: "Community", href: "/community" },
-];
-
 export async function SiteHeader() {
-  const user = await fetchMe();
+  const [user, t] = await Promise.all([fetchMe(), getT()]);
+  const nav: { label: string; href: string }[] = [
+    { label: t("nav.visions"), href: "/visions" },
+    { label: t("nav.community"), href: "/community" },
+  ];
   return (
     <header className="sticky top-0 z-20 border-b border-neutral-800 bg-neutral-950/85 backdrop-blur">
-      {/* Skip-to-content link — invisible until focused. */}
       <a
         href="#main"
         className="sr-only fixed left-2 top-2 z-50 rounded bg-cyan-700 px-3 py-2 text-xs font-semibold text-cyan-50 focus:not-sr-only focus:outline-none focus:ring-2 focus:ring-cyan-400"
       >
-        본문으로 건너뛰기
+        {t("header.skipToContent")}
       </a>
-      <div className="mx-auto flex h-12 max-w-7xl items-center gap-4 px-6">
+      <div className="mx-auto flex h-12 max-w-[100rem] items-center gap-4 px-8">
         <Link
           href="/"
           className="text-sm font-semibold tracking-tight text-neutral-50 hover:text-cyan-300"
         >
-          Vision Feasibility Monitor
+          {t("header.brand")}
         </Link>
         <nav className="hidden gap-3 text-xs text-neutral-400 md:flex">
-          {PRIMARY_NAV.map((item) => (
+          {nav.map((item) => (
             <Link
               key={item.href}
               href={item.href}

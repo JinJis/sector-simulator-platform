@@ -80,7 +80,7 @@ export default async function ProfilePage({ params, searchParams }: Props) {
   const isSelf = !!me && me.id === id;
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-10">
+    <main className="mx-auto max-w-[88rem] px-6 py-10">
       <ProfileHeader
         rep={rep}
         counts={counts}

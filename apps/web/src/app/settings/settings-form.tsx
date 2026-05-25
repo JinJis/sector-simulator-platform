@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { useLocale } from "@/lib/i18n/provider";
 import {
   changePassword,
   fetchAgentBudget,
@@ -16,6 +17,7 @@ import {
   type BillingSubscription,
   type CurrentUser,
 } from "@/lib/sim-client";
+import { useTheme } from "@/lib/theme-provider";
 
 interface Props {
   user: CurrentUser;
@@ -28,21 +30,28 @@ const ONBOARD_KEY = "sss_onboard_v2";
 
 export function SettingsForm({ user }: Props) {
   const router = useRouter();
+  const { locale, setLocale: setLocaleClient, t } = useLocale();
+  const { theme, setTheme: setThemeClient } = useTheme();
 
   // Profile
   const [name, setName] = useState(user.name ?? "");
-  const [locale, setLocale] = useState<"ko" | "en">(
-    (user.locale as "ko" | "en") ?? "ko",
-  );
-  const [theme, setTheme] = useState<"dark" | "light" | "system">(
-    (user.theme as "dark" | "light" | "system") ?? "dark",
-  );
   const [profileStatus, setProfileStatus] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
 
+  // Apply theme / locale changes IMMEDIATELY (provider writes cookie +
+  // DOM class), then sync to the DB on Save so the choice survives
+  // cross-device. Live-apply makes the toggle feel responsive instead
+  // of waiting for a Save round-trip.
+  function pickLocale(next: "ko" | "en") {
+    setLocaleClient(next);
+  }
+  function pickTheme(next: "dark" | "light" | "system") {
+    setThemeClient(next);
+  }
+
   async function onSaveProfile(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setProfileStatus("저장 중…");
+    setProfileStatus(t("settings.save"));
     setProfileError(null);
     try {
       await updateMe({
@@ -50,11 +59,11 @@ export function SettingsForm({ user }: Props) {
         locale,
         theme,
       });
-      setProfileStatus("✓ 저장됨");
+      setProfileStatus(`✓ ${t("settings.savedOk")}`);
       router.refresh();
     } catch (err) {
       setProfileStatus(null);
-      setProfileError(err instanceof Error ? err.message : "저장 실패");
+      setProfileError(err instanceof Error ? err.message : "Save failed");
     }
   }
 
@@ -100,48 +109,48 @@ export function SettingsForm({ user }: Props) {
     <div className="flex flex-col gap-8">
       <section className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-5">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-neutral-300">
-          프로필
+          {t("settings.profile")}
         </h2>
         <form onSubmit={onSaveProfile} className="flex flex-col gap-3">
           <Field
-            label="이메일"
+            label={t("settings.email")}
             value={user.email}
             disabled
-            hint="이메일 변경은 별도 절차 — 추후 지원 예정"
+            hint={t("settings.emailHint")}
           />
           <Field
-            label="이름"
+            label={t("settings.name")}
             value={name}
             onChange={setName}
             placeholder={user.email.split("@")[0]}
           />
           <SelectField
-            label="언어 / Locale"
+            label={t("settings.locale")}
             value={locale}
-            onChange={(v) => setLocale(v as "ko" | "en")}
+            onChange={(v) => pickLocale(v as "ko" | "en")}
             options={[
               { value: "ko", label: "한국어" },
               { value: "en", label: "English" },
             ]}
-            hint="UI 다국어는 후속 슬라이스에서 적용됩니다."
+            hint={t("settings.localeHint")}
           />
           <SelectField
-            label="테마"
+            label={t("settings.theme")}
             value={theme}
-            onChange={(v) => setTheme(v as "dark" | "light" | "system")}
+            onChange={(v) => pickTheme(v as "dark" | "light" | "system")}
             options={[
-              { value: "dark", label: "Dark" },
-              { value: "light", label: "Light" },
-              { value: "system", label: "System" },
+              { value: "dark", label: t("settings.themeDark") },
+              { value: "light", label: t("settings.themeLight") },
+              { value: "system", label: t("settings.themeSystem") },
             ]}
-            hint="현재는 Dark만 렌더링됩니다 — 선호도만 저장."
+            hint={t("settings.themeHint")}
           />
           <div className="mt-2 flex items-center gap-3">
             <button
               type="submit"
               className="rounded bg-cyan-600 px-3 py-1.5 text-xs font-medium text-cyan-50 hover:bg-cyan-500"
             >
-              저장
+              {t("settings.save")}
             </button>
             {profileStatus && (
               <span className="text-[11px] text-emerald-400">{profileStatus}</span>

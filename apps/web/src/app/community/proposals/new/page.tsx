@@ -34,7 +34,7 @@ export default async function NewProposalPage({ searchParams }: Props) {
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-10">
+    <main className="mx-auto max-w-[100rem] px-6 py-10">
       <nav className="mb-3 flex gap-2 text-[11px] text-neutral-500">
         <Link href="/community/proposals" className="hover:text-neutral-300">
           ← Proposals

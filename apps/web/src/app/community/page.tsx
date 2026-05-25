@@ -14,6 +14,7 @@
 
 import Link from "next/link";
 
+import { getT } from "@/lib/i18n/server";
 import {
   listProposals,
   type ProposalSummary,
@@ -28,7 +29,8 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function CommunityHomePage() {
-  const [proposals, livePredictions, leaderboard] = await Promise.all([
+  const [t, proposals, livePredictions, leaderboard] = await Promise.all([
+    getT(),
     listProposals({ sort: "hot", limit: 5 }).catch(() => ({
       rows: [] as ProposalSummary[],
       next_cursor: null,
@@ -41,45 +43,40 @@ export default async function CommunityHomePage() {
   ]);
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-10">
+    <main className="mx-auto max-w-[100rem] px-6 py-10">
       <header className="rounded-xl border border-violet-900/40 bg-gradient-to-br from-violet-950/30 via-neutral-950 to-cyan-950/20 p-6">
         <span className="rounded-full border border-violet-700/60 bg-violet-950/50 px-2.5 py-0.5 text-[10px] uppercase tracking-wider text-violet-300">
-          👥 커뮤니티
+          {t("community.badge")}
         </span>
         <h1 className="mt-3 text-2xl font-semibold text-neutral-50">
-          제안하고, 예측하고, 평판을 쌓으세요
+          {t("community.title")}
         </h1>
         <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-neutral-300">
-          드라이버 · 종목 · capability · 리스크 · actor · 시그널 소스까지,
-          섹터를 구성하는 어떤 요소든 근거와 함께 제안하고 다른 유저의
-          upvote를 받습니다. 또 1일 / 1주 / 1달 가격 밴드를 예측해서
-          난이도(Easy 10p / Medium 25p / Hard 50p)에 맞는 포인트를
-          획득하세요. 평판이 쌓이면 admin queue 가중치 + 직접 적용
-          권한이 점진적으로 열립니다.
+          {t("community.subtitle")}
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
           <Link
             href="/community/proposals/new"
             className="rounded border border-cyan-700 bg-cyan-900/40 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-800/60"
           >
-            ＋ Propose a change
+            {t("community.proposeCta")}
           </Link>
           <Link
             href="/community/predictions/new"
             className="rounded border border-amber-700 bg-amber-900/40 px-4 py-2 text-sm font-medium text-amber-100 hover:bg-amber-800/60"
           >
-            🎯 Place a prediction
+            {t("community.predictCta")}
           </Link>
         </div>
       </header>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <Card
-          title="🔥 Hot proposals"
-          link={{ href: "/community/proposals?sort=hot", label: "See all →" }}
+          title={t("community.cards.hotProposals")}
+          link={{ href: "/community/proposals?sort=hot", label: t("community.cards.seeAll") }}
         >
           {proposals.rows.length === 0 ? (
-            <Empty hint="No open proposals yet. Be the first to suggest a driver / equity / capability change." />
+            <Empty hint={t("community.empty.proposals")} />
           ) : (
             <ul className="space-y-2">
               {proposals.rows.map((p) => (
@@ -103,11 +100,11 @@ export default async function CommunityHomePage() {
         </Card>
 
         <Card
-          title="🔴 Live predictions"
-          link={{ href: "/community/predictions?tab=live", label: "See all →" }}
+          title={t("community.cards.livePredictions")}
+          link={{ href: "/community/predictions?tab=live", label: t("community.cards.seeAll") }}
         >
           {livePredictions.rows.length === 0 ? (
-            <Empty hint="No open predictions yet. Pick a stock and place a band — Easy / Medium / Hard auto-assigned." />
+            <Empty hint={t("community.empty.predictions")} />
           ) : (
             <ul className="space-y-2">
               {livePredictions.rows.map((p) => (
@@ -142,14 +139,14 @@ export default async function CommunityHomePage() {
 
       <section className="mt-8">
         <Card
-          title="🏆 Leaderboard"
+          title={t("community.cards.leaderboard")}
           link={{
             href: "/community/predictions?tab=leaderboard",
-            label: "Full leaderboard →",
+            label: t("community.cards.fullLeaderboard"),
           }}
         >
           {leaderboard.length === 0 ? (
-            <Empty hint="No resolved predictions yet — leaderboard fills in after the first horizon closes." />
+            <Empty hint={t("community.empty.leaderboard")} />
           ) : (
             <table className="w-full text-[13px]">
               <thead>

@@ -45,7 +45,7 @@ export default async function ProposalDetailPage({ params }: Props) {
   const kindLabel = TARGET_KIND_LABELS[proposal.target_kind] ?? proposal.target_kind;
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-10">
+    <main className="mx-auto max-w-[100rem] px-6 py-10">
       <nav className="mb-4 flex gap-2 text-[11px] text-neutral-500">
         <Link href="/community/proposals" className="hover:text-neutral-300">
           ← Proposals

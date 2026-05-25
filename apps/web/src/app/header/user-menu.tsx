@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { useT } from "@/lib/i18n/provider";
 import { signOut, type CurrentUser } from "@/lib/sim-client";
 
 interface Props {
@@ -12,6 +13,7 @@ interface Props {
 
 export function UserMenu({ user }: Props) {
   const router = useRouter();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [signingOut, setSigningOut] = useState(false);
@@ -39,13 +41,13 @@ export function UserMenu({ user }: Props) {
           href="/login"
           className="text-xs text-neutral-300 hover:text-neutral-100"
         >
-          로그인
+          {t("menu.signIn")}
         </Link>
         <Link
           href="/signup"
           className="rounded border border-cyan-700 bg-cyan-950/40 px-2.5 py-1 text-xs font-medium text-cyan-200 hover:bg-cyan-900/60"
         >
-          가입하기
+          {t("menu.signUp")}
         </Link>
       </div>
     );
@@ -107,13 +109,13 @@ export function UserMenu({ user }: Props) {
             <div className="truncate text-[11px] text-neutral-500">{user.email}</div>
           </div>
           <MenuLink href="/community/proposals" onClick={() => setOpen(false)}>
-            ＋ 제안 모음
+            {t("menu.proposals")}
           </MenuLink>
           <MenuLink href="/community/predictions" onClick={() => setOpen(false)}>
-            🎯 예측
+            {t("menu.predictions")}
           </MenuLink>
           <MenuLink href="/settings" onClick={() => setOpen(false)}>
-            ⚙ 설정
+            {t("menu.settings")}
           </MenuLink>
           <button
             type="button"
@@ -121,7 +123,7 @@ export function UserMenu({ user }: Props) {
             disabled={signingOut}
             className="block w-full px-3 py-2 text-left text-xs text-neutral-300 transition hover:bg-neutral-900 hover:text-rose-300 disabled:opacity-50"
           >
-            {signingOut ? "로그아웃 중…" : "↪ 로그아웃"}
+            {signingOut ? "…" : `↪ ${t("menu.signOut")}`}
           </button>
         </div>
       )}

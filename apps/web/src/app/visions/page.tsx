@@ -10,6 +10,8 @@
 
 import { Breadcrumbs } from "@platform/ui";
 
+import { getT } from "@/lib/i18n/server";
+
 import { listVisionFixtures } from "./_fixtures";
 
 import { DomainFilter } from "./_components/domain-filter";
@@ -25,6 +27,7 @@ interface Props {
 }
 
 export default async function VisionsIndexPage({ searchParams }: Props) {
+  const t = await getT();
   const { domain: activeDomainRaw } = await searchParams;
   const activeDomain = activeDomainRaw && activeDomainRaw !== "all" ? activeDomainRaw : null;
   const anchorYear = new Date().getFullYear();
@@ -73,23 +76,20 @@ export default async function VisionsIndexPage({ searchParams }: Props) {
   const rest = featured ? filtered.filter((t) => t.tile.slug !== featured.tile.slug) : filtered;
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl px-6 pb-16 pt-6">
-      <Breadcrumbs className="mb-3" items={[{ label: "Visions" }]} />
+    <main className="mx-auto min-h-screen max-w-[100rem] px-6 pb-16 pt-6">
+      <Breadcrumbs className="mb-3" items={[{ label: t("visions.title") }]} />
 
       <header className="mb-7 flex flex-col gap-2">
         <div className="flex items-baseline gap-2">
           <h1 className="text-3xl font-bold tracking-tight text-neutral-50">
-            Visions
+            {t("visions.title")}
           </h1>
           <span className="rounded-full border border-emerald-700/40 bg-emerald-950/40 px-2 py-0.5 text-[10px] uppercase tracking-wider text-emerald-300">
-            ● Live
+            {t("visions.live")}
           </span>
         </div>
         <p className="max-w-3xl text-[13px] leading-relaxed text-neutral-400">
-          Bold technology questions, scored 0–100 by source-grounded signals
-          (papers · patents · news · filings). Each vision decomposes into
-          capabilities — when the data moves, the feasibility score moves with
-          it.
+          {t("visions.subtitle")}
         </p>
       </header>
 
@@ -103,14 +103,14 @@ export default async function VisionsIndexPage({ searchParams }: Props) {
 
       {filtered.length === 0 && (
         <p className="rounded-2xl border border-dashed border-neutral-800 bg-neutral-950/40 p-10 text-center text-[13px] text-neutral-500">
-          No visions in this domain yet — try a different filter.
+          {t("visions.empty")}
         </p>
       )}
 
       {featured && (
         <section className="mb-8">
           <p className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wider text-neutral-500">
-            <span className="text-amber-400">★</span> Featured · most active
+            {t("visions.featured")}
           </p>
           <div className="grid gap-5">
             <VisionTile data={featured.tile} featured />
@@ -122,7 +122,7 @@ export default async function VisionsIndexPage({ searchParams }: Props) {
         <section>
           {featured && (
             <p className="mb-3 text-[11px] uppercase tracking-wider text-neutral-500">
-              All visions
+              {t("visions.allVisions")}
             </p>
           )}
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -134,8 +134,7 @@ export default async function VisionsIndexPage({ searchParams }: Props) {
       )}
 
       <p className="mt-10 text-[11px] text-neutral-600">
-        Fixture-backed preview. Signal ingest cron updates capability scores
-        from arXiv + USPTO + news daily.
+        {t("visions.footer")}
       </p>
     </main>
   );

@@ -8,6 +8,10 @@ const config: Config = {
     // shared components actually use.
     "../../packages/ui/src/**/*.{ts,tsx}",
   ],
+  // Class-based dark mode: <html class="dark"> toggles every `dark:*`
+  // variant. The ThemeProvider client writes this class on mount based
+  // on the user's `User.theme` (dark | light | system).
+  darkMode: "class",
   theme: {
     extend: {},
   },

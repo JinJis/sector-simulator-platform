@@ -14,7 +14,7 @@ export default async function SettingsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-8">
+    <main className="mx-auto max-w-[100rem] px-6 py-8">
       <Breadcrumbs className="mb-3" items={[{ label: "Settings" }]} />
       <header className="mb-6">
         <h1 className="text-2xl font-semibold text-neutral-50">설정</h1>

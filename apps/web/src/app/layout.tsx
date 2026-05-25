@@ -1,38 +1,67 @@
 import "./globals.css";
 
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { Suspense, type ReactNode } from "react";
+
+import { LocaleProvider } from "@/lib/i18n/provider";
+import {
+  LOCALE_COOKIE,
+  THEME_COOKIE,
+  bootThemeScript,
+  parseLocale,
+  parseTheme,
+} from "@/lib/preferences";
+import { ThemeProvider } from "@/lib/theme-provider";
 
 import { OnboardingModal } from "./header/onboarding-modal";
 import { PageTour } from "./header/page-tour";
 import { SiteHeader } from "./header/site-header";
 
 export const metadata: Metadata = {
-  title: "Sector Simulator",
+  title: "Vision Feasibility Monitor",
   description:
-    "Turn industries into simulatable causal graphs and validate the future with live market data.",
+    "Track the feasibility of bold technology visions through capability scores driven by live signals (arXiv, patents, news, filings).",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const cookieStore = await cookies();
+  const theme = parseTheme(cookieStore.get(THEME_COOKIE)?.value);
+  const locale = parseLocale(cookieStore.get(LOCALE_COOKIE)?.value);
   return (
-    <html lang="ko">
+    <html lang={locale} suppressHydrationWarning>
+      <head>
+        {/* Apply theme class BEFORE hydration to avoid FOUC. */}
+        <script
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{
+            __html: bootThemeScript({ theme, locale }),
+          }}
+        />
+      </head>
       <body>
-        {/* The header reads `auth.me` per request; fall back to a thin
-            shell while it streams so the page paints fast. */}
-        <Suspense fallback={<header className="h-12 border-b border-neutral-800" />}>
-          <SiteHeader />
-        </Suspense>
-        <div id="main">{children}</div>
-        {/* OnboardingModal is client-side; it self-detects first-visit. */}
-        <Suspense fallback={null}>
-          <OnboardingModal />
-        </Suspense>
-        {/* PageTour adds a floating "📍 이 페이지 둘러보기" button on
-            every primary page that has tour content. Self-renders nothing
-            on routes without content (login / signup / admin). */}
-        <Suspense fallback={null}>
-          <PageTour />
-        </Suspense>
+        <ThemeProvider initialTheme={theme}>
+          <LocaleProvider initialLocale={locale}>
+            {/* The header reads `auth.me` per request; fall back to a thin
+                shell while it streams so the page paints fast. */}
+            <Suspense
+              fallback={<header className="h-12 border-b border-neutral-800" />}
+            >
+              <SiteHeader />
+            </Suspense>
+            <div id="main">{children}</div>
+            <Suspense fallback={null}>
+              <OnboardingModal />
+            </Suspense>
+            <Suspense fallback={null}>
+              <PageTour />
+            </Suspense>
+          </LocaleProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
