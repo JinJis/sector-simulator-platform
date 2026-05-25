@@ -29,6 +29,7 @@ from simulation_service.generic_dag import (
     GenericDagSpec,
     make_generic_dag_class,
 )
+from simulation_service.sims.fusion_power import FusionPowerSim
 from simulation_service.sims.memory_semi import MemorySemiSim
 from simulation_service.sims.placeholder import PlaceholderSim
 from simulation_service.sims.sofc import SOFCSim
@@ -39,6 +40,7 @@ log = logging.getLogger("simulation_service.registry")
 # Order here = order in /sims listing = order in the UI sector picker.
 _REGISTRY: dict[str, type[SimulationBase]] = {
     SpaceDataCenterSim.slug: SpaceDataCenterSim,
+    FusionPowerSim.slug: FusionPowerSim,
     MemorySemiSim.slug: MemorySemiSim,
     SOFCSim.slug: SOFCSim,
     PlaceholderSim.slug: PlaceholderSim,

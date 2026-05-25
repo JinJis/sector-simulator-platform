@@ -50,6 +50,14 @@ const SEED_SECTORS: SeedSector[] = [
       "replacement, degradation, fuel cost, carbon price.",
     source_module: "simulation_service.sims.sofc",
   },
+  {
+    slug: "fusion-power",
+    name: "Fusion Power (DT tokamak)",
+    description:
+      "DT 토카막 핵융합 발전소의 40년 LCOE — capex, 자기장 강도, TBR, " +
+      "first-wall 수명, 가동률을 조절해 grid baseline 대비 break-even 시점을 확인.",
+    source_module: "simulation_service.sims.fusion_power",
+  },
 ];
 
 async function main(): Promise<void> {

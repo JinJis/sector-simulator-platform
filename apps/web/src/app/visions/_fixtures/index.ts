@@ -8,6 +8,10 @@
 import type { VisionOverview } from "@/lib/vision-client";
 
 import {
+  fusionPowerFixture,
+  fusionPowerTrajectory,
+} from "./fusion-power";
+import {
   memorySemiFixture,
   memorySemiTrajectory,
 } from "./memory-semi";
@@ -35,6 +39,10 @@ const REGISTRY: Record<string, VisionFixture> = {
   "space-data-center": {
     overview: spaceDataCenterFixture,
     trajectory: spaceDataCenterTrajectory,
+  },
+  "fusion-power": {
+    overview: fusionPowerFixture,
+    trajectory: fusionPowerTrajectory,
   },
   "memory-semi": {
     overview: memorySemiFixture,

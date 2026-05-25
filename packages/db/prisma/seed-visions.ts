@@ -96,7 +96,7 @@ interface VisionSeed {
   risks: RiskInput[];
 }
 
-const VISION_SLUGS = ["space-data-center", "memory-semi", "sofc"];
+const VISION_SLUGS = ["space-data-center", "fusion-power", "memory-semi", "sofc"];
 
 function loadSeed(slug: string): VisionSeed {
   const path = join(HERE, "seed-data/visions", `${slug}.json`);

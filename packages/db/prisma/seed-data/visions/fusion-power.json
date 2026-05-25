@@ -1,0 +1,293 @@
+{
+  "slug": "fusion-power",
+  "vision_question": "When will DT fusion deliver grid-parity LCOE at commercial scale?",
+  "feasibility": {
+    "composite": 42,
+    "composite_p10": 34,
+    "composite_p90": 51,
+    "binding_capability_key": "tritium_breeding",
+    "eta_median_years": 12,
+    "eta_p10_years": 8,
+    "eta_p90_years": 22,
+    "delta_90d": 4,
+    "as_of_days_ago": 0,
+    "rationale": "HTS magnets and the 2024 US regulatory clarification have lifted three capabilities into the 70s. Tritium breeding remains the binding constraint — no test blanket has demonstrated TBR > 1 at scale yet. Plant economics is the second drag: FOAK $/kW estimates remain in the $10-25k band."
+  },
+  "capabilities": [
+    {
+      "key": "tritium_breeding",
+      "name": "Tritium breeding ratio > 1",
+      "short_name": "Tritium breeding",
+      "description": "Self-sufficient tritium production from lithium blankets at TBR ≥ 1.05 across the plant fuel cycle.",
+      "rationale": "DT plants consume ~150 g/MW-thermal-year. External CANDU tritium supply (~25 kg total commercial inventory) is far below first-plant needs. Without breeding, no fusion economy is viable.",
+      "display_order": 10,
+      "weight": 0.18,
+      "primary_driver_name": "tritium_breeding_ratio",
+      "score": {
+        "technical": 42,
+        "economic": 45,
+        "regulatory": 65,
+        "supply": 30,
+        "composite": 42,
+        "composite_p10": 34,
+        "composite_p90": 50,
+        "rationale": "No test blanket has demonstrated TBR > 1 at scale. ITER TBM modules slated 2035+; ARC FLiBe concept paper-only.",
+        "as_of_days_ago": 5
+      }
+    },
+    {
+      "key": "plasma_confinement",
+      "name": "Steady-state plasma confinement",
+      "short_name": "Plasma confinement",
+      "description": "Sustained Q > 5 net energy gain at commercial duty cycle (>50%) without disruptions.",
+      "rationale": "Without sustained burn, fusion is a science experiment, not a power plant. NIF demonstrated Q > 1 at single-shot in 2022; tokamaks have not.",
+      "display_order": 20,
+      "weight": 0.15,
+      "primary_driver_name": "duty_cycle_pct",
+      "score": {
+        "technical": 52,
+        "economic": 35,
+        "regulatory": 70,
+        "supply": 55,
+        "composite": 48,
+        "composite_p10": 40,
+        "composite_p90": 56,
+        "rationale": "SPARC commissioning 2026E targets Q > 10 in pulses. Disruption mitigation still open.",
+        "as_of_days_ago": 12
+      }
+    },
+    {
+      "key": "first_wall_materials",
+      "name": "First-wall + structural materials",
+      "short_name": "First-wall materials",
+      "description": "Plasma-facing materials surviving > 5 FPY of 14 MeV neutron flux without unacceptable swelling/embrittlement.",
+      "rationale": "Wall replacement frequency drives capex amortization. ITER conventional wall: ~2 FPY. Commercial plants need 5+ FPY for credible economics.",
+      "display_order": 30,
+      "weight": 0.12,
+      "primary_driver_name": "first_wall_lifetime_fpy",
+      "score": {
+        "technical": 45,
+        "economic": 50,
+        "regulatory": 70,
+        "supply": 55,
+        "composite": 52,
+        "composite_p10": 44,
+        "composite_p90": 60,
+        "rationale": "RAFM steels at TRL 5; ODS / SiC composites at TRL 3-4. Liquid-wall concepts (FLiBe, lithium) gaining attention.",
+        "as_of_days_ago": 18
+      }
+    },
+    {
+      "key": "hts_magnets",
+      "name": "High-field HTS magnets",
+      "short_name": "HTS magnets",
+      "description": "REBCO-based superconducting magnets at 12-20T field, > 1 km tape per magnet, at industrial cost.",
+      "rationale": "High field shrinks plant size as 1/B⁴. CFS SPARC's 20T HTS magnet test (2021) was the breakthrough that revived private fusion.",
+      "display_order": 40,
+      "weight": 0.12,
+      "primary_driver_name": "magnet_field_strength_t",
+      "score": {
+        "technical": 72,
+        "economic": 65,
+        "regulatory": 85,
+        "supply": 60,
+        "composite": 71,
+        "composite_p10": 65,
+        "composite_p90": 76,
+        "rationale": "CFS magnet validated at full field 2021. REBCO tape supply doubling but still concentrated (Faraday, AMSC, Fujikura).",
+        "as_of_days_ago": 8
+      }
+    },
+    {
+      "key": "plant_economics",
+      "name": "Plant economics — LCOE crossover",
+      "short_name": "Plant economics",
+      "description": "FOAK and NOAK plants converging on LCOE competitive with grid + carbon ($80-120/MWh).",
+      "rationale": "Even if physics works, fusion is irrelevant unless LCOE crosses grid + carbon. FOAK estimates $15-25k/kW_e cap; learning rate uncertain.",
+      "display_order": 50,
+      "weight": 0.12,
+      "primary_driver_name": "plant_capex_usd_per_kw_e",
+      "score": {
+        "technical": 38,
+        "economic": 32,
+        "regulatory": 60,
+        "supply": 50,
+        "composite": 40,
+        "composite_p10": 32,
+        "composite_p90": 48,
+        "rationale": "Lindley et al. 2023: FOAK $10-25k/kW. CFS pilot business case targets $100/MWh by NOAK; not yet validated.",
+        "as_of_days_ago": 21
+      }
+    },
+    {
+      "key": "regulatory_pathway",
+      "name": "Regulatory pathway clarity",
+      "short_name": "Regulatory pathway",
+      "description": "NRC + IAEA clear, predictable licensing pathway distinct from fission Part 50/52.",
+      "rationale": "Pre-2024 fusion was regulatory limbo. NRC's 2024 ruling treats fusion as Part 30 byproduct material — order-of-magnitude faster licensing than fission.",
+      "display_order": 60,
+      "weight": 0.10,
+      "primary_driver_name": null,
+      "score": {
+        "technical": 80,
+        "economic": 75,
+        "regulatory": 78,
+        "supply": 80,
+        "composite": 78,
+        "composite_p10": 72,
+        "composite_p90": 84,
+        "rationale": "NRC Part 30 framework (April 2024) is a tailwind. UK STEP, KR K-DEMO pathways also clearer than before.",
+        "as_of_days_ago": 35
+      }
+    },
+    {
+      "key": "supply_chain_rebco",
+      "name": "REBCO tape + Be / Li supply",
+      "short_name": "REBCO + Be / Li",
+      "description": "Industrial supply of REBCO tape (HTS), beryllium (multiplier), and lithium-6 (breeder) at fusion-scale demand.",
+      "rationale": "First plant needs ~1000 km of REBCO + hundreds of tons of Be / Li-6. Today's REBCO production: ~500 km/yr globally.",
+      "display_order": 70,
+      "weight": 0.08,
+      "primary_driver_name": null,
+      "score": {
+        "technical": 65,
+        "economic": 55,
+        "regulatory": 80,
+        "supply": 45,
+        "composite": 58,
+        "composite_p10": 50,
+        "composite_p90": 66,
+        "rationale": "Faraday + AMSC capacity expansions announced; Be supply still concentrated in US + Kazakhstan.",
+        "as_of_days_ago": 14
+      }
+    },
+    {
+      "key": "workforce_skills",
+      "name": "Fusion engineering workforce",
+      "short_name": "Workforce",
+      "description": "Plasma physicists, neutronics engineers, fusion-trained operators at the scale of 10-20 commercial plants.",
+      "rationale": "Today the global fusion workforce is ~5000; commercial-scale deployment needs 10x that. Pipeline is academia + national labs.",
+      "display_order": 80,
+      "weight": 0.07,
+      "primary_driver_name": null,
+      "score": {
+        "technical": 70,
+        "economic": 60,
+        "regulatory": 80,
+        "supply": 50,
+        "composite": 62,
+        "composite_p10": 55,
+        "composite_p90": 70,
+        "rationale": "Private fusion companies hiring aggressively; university programs expanding (MIT, Oxford, KAIST).",
+        "as_of_days_ago": 28
+      }
+    },
+    {
+      "key": "grid_integration",
+      "name": "Grid integration + dispatchability",
+      "short_name": "Grid integration",
+      "description": "Fusion plants delivering baseload + dispatchable power; HV interconnection + grid services.",
+      "rationale": "Mature technology — fusion plants look like any large thermal generator from the grid's perspective. Engineering, not invention.",
+      "display_order": 90,
+      "weight": 0.06,
+      "primary_driver_name": null,
+      "score": {
+        "technical": 88,
+        "economic": 80,
+        "regulatory": 85,
+        "supply": 90,
+        "composite": 85,
+        "composite_p10": 80,
+        "composite_p90": 90,
+        "rationale": "No fusion-specific blockers; standard utility-scale interconnection processes.",
+        "as_of_days_ago": 60
+      }
+    }
+  ],
+  "dependencies": [
+    { "source": "hts_magnets", "target": "plasma_confinement", "rationale": "Higher field enables smaller plant footprint + better confinement." },
+    { "source": "first_wall_materials", "target": "plasma_confinement", "rationale": "Wall integrity is a precondition for sustained burn." },
+    { "source": "tritium_breeding", "target": "plant_economics", "rationale": "External tritium purchase at $30k/g destroys FOAK economics." },
+    { "source": "first_wall_materials", "target": "plant_economics", "rationale": "Wall replacement frequency drives amortized opex." },
+    { "source": "plasma_confinement", "target": "plant_economics", "rationale": "Low duty cycle inflates LCOE proportionally." },
+    { "source": "supply_chain_rebco", "target": "hts_magnets", "rationale": "REBCO tape supply gates magnet manufacturing throughput." },
+    { "source": "supply_chain_rebco", "target": "tritium_breeding", "rationale": "Li-6 + Be supply gates blanket manufacturing." },
+    { "source": "regulatory_pathway", "target": "plant_economics", "rationale": "Licensing duration enters cost of capital." },
+    { "source": "workforce_skills", "target": "plant_economics", "rationale": "Skilled operations labor is a cost lever at scale." },
+    { "source": "plant_economics", "target": "grid_integration", "rationale": "Without economics, grid integration is moot." }
+  ],
+  "risks": [
+    {
+      "key": "tritium_shortage",
+      "category": "supply",
+      "name": "Global tritium inventory shortfall",
+      "description": "Commercial tritium inventory (~25 kg, CANDU byproduct) is far below FOAK plant needs. If breeding fails, plants stall.",
+      "severity": "critical",
+      "likelihood": "medium",
+      "time_horizon": "5y",
+      "mitigations": "Test blanket modules at ITER (2035+); accelerated breeder R&D at private companies (CFS, Helion alternative fuels).",
+      "affected_capability_keys": ["tritium_breeding", "plant_economics"],
+      "display_order": 10
+    },
+    {
+      "key": "foak_cost_overruns",
+      "category": "financial",
+      "name": "FOAK plant cost overruns",
+      "description": "ITER's $20B+ overrun pattern repeats in commercial FOAK plants; investor capital dries up.",
+      "severity": "high",
+      "likelihood": "high",
+      "time_horizon": "3y",
+      "mitigations": "Fixed-price contracting; small-plant strategies (CFS, Helion); diversified investor base (sovereign + corporate).",
+      "affected_capability_keys": ["plant_economics"],
+      "display_order": 20
+    },
+    {
+      "key": "wall_neutron_damage",
+      "category": "safety",
+      "name": "First-wall failure modes at scale",
+      "description": "Helium production, swelling, and embrittlement under 14 MeV neutron flux may force shorter replacement cycles than designed.",
+      "severity": "high",
+      "likelihood": "medium",
+      "time_horizon": "5y",
+      "mitigations": "Materials irradiation testing (IFMIF-DONES); liquid-wall alternatives; modular wall design for fast swaps.",
+      "affected_capability_keys": ["first_wall_materials", "plant_economics"],
+      "display_order": 30
+    },
+    {
+      "key": "fission_political_drag",
+      "category": "political",
+      "name": "Anti-nuclear policy drag",
+      "description": "Public confusion conflating fusion with fission could drive permitting delays in some jurisdictions, even with clear NRC framework.",
+      "severity": "medium",
+      "likelihood": "medium",
+      "time_horizon": "10y",
+      "mitigations": "Communications campaigns emphasizing zero long-lived waste; siting in pro-energy jurisdictions (Texas, UK, Korea).",
+      "affected_capability_keys": ["regulatory_pathway"],
+      "display_order": 40
+    },
+    {
+      "key": "rebco_concentration",
+      "category": "supply",
+      "name": "REBCO supplier concentration",
+      "description": "REBCO tape supply is concentrated across 4-5 vendors; any disruption (geopolitics, IP litigation) stalls magnet production globally.",
+      "severity": "medium",
+      "likelihood": "medium",
+      "time_horizon": "3y",
+      "mitigations": "Multi-source qualification at each fusion company; Faraday + AMSC US capacity expansions.",
+      "affected_capability_keys": ["hts_magnets", "supply_chain_rebco"],
+      "display_order": 50
+    },
+    {
+      "key": "alt_clean_baseload",
+      "category": "environmental",
+      "name": "Alternative clean baseload outpaces fusion",
+      "description": "SMRs (small modular fission), enhanced geothermal, or long-duration storage may capture the clean-baseload market before fusion ships.",
+      "severity": "medium",
+      "likelihood": "high",
+      "time_horizon": "10y",
+      "mitigations": "Fusion's positioning shifts to niches (industrial heat, no-water siting); accelerated commercialization timeline.",
+      "affected_capability_keys": ["plant_economics", "grid_integration"],
+      "display_order": 60
+    }
+  ]
+}

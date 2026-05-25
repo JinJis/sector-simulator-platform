@@ -299,6 +299,189 @@
       "description": "New Glenn heavy-lift reusable; lunar Blue Moon lander program.",
       "stage": "pilot",
       "signal_keywords": ["Blue Origin", "New Glenn", "Blue Moon", "Bezos"]
+    },
+
+    {
+      "key": "cfs",
+      "name": "Commonwealth Fusion Systems",
+      "short_name": "CFS",
+      "iso_country": "US",
+      "category": "private_startup",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "SPARC tokamak; HTS magnet breakthrough (2021) revived private fusion.",
+      "description": "MIT PSFC spinout. Building SPARC (140 MW thermal, Q > 10) in Devens, MA; targets first plasma 2026. ARC commercial follow-on planned 2030s.",
+      "stage": "pilot",
+      "signal_keywords": ["Commonwealth Fusion", "CFS", "SPARC", "ARC tokamak", "Bob Mumgaard", "Devens"]
+    },
+    {
+      "key": "helion",
+      "name": "Helion Energy",
+      "short_name": "Helion",
+      "iso_country": "US",
+      "category": "private_startup",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "D-He3 pulsed FRC plant; Microsoft PPA 2028.",
+      "description": "Pulsed magneto-inertial fusion using D-He3 reactions. Microsoft signed 50 MW PPA for 2028 delivery — most aggressive commercial timeline.",
+      "stage": "pilot",
+      "signal_keywords": ["Helion", "Helion Energy", "Polaris", "D-He3", "David Kirtley"]
+    },
+    {
+      "key": "tae",
+      "name": "TAE Technologies",
+      "short_name": "TAE",
+      "iso_country": "US",
+      "category": "private_startup",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "FRC + boron fuel; longest-running private fusion company.",
+      "description": "Field-reversed configuration with p-B11 aneutronic fuel ambition. Norman device sustained 30M+ K plasmas; Copernicus next.",
+      "stage": "pilot",
+      "signal_keywords": ["TAE Technologies", "Tri Alpha", "Norman", "Copernicus", "FRC"]
+    },
+    {
+      "key": "tokamak_energy",
+      "name": "Tokamak Energy",
+      "short_name": "Tokamak Energy",
+      "iso_country": "UK",
+      "category": "private_startup",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "Spherical tokamak with HTS magnets; ST40 Q-test 2026.",
+      "description": "UK spherical tokamak company. ST40 achieved 100M K plasma 2022; ST80-HTS planned 2026.",
+      "stage": "pilot",
+      "signal_keywords": ["Tokamak Energy", "ST40", "ST80", "spherical tokamak"]
+    },
+    {
+      "key": "general_fusion",
+      "name": "General Fusion",
+      "short_name": "General Fusion",
+      "iso_country": "CA",
+      "category": "private_startup",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "Magnetized target fusion; LM26 demo in Vancouver.",
+      "description": "Canadian MTF approach using liquid lithium vortex + plasma compression. LM26 demo plant under construction at Culham, UK.",
+      "stage": "pilot",
+      "signal_keywords": ["General Fusion", "LM26", "magnetized target fusion", "Culham"]
+    },
+    {
+      "key": "iter",
+      "name": "ITER Organization",
+      "short_name": "ITER",
+      "iso_country": "FR",
+      "category": "government_lab",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "500 MW intergovernmental tokamak; first plasma slipped to 2035.",
+      "description": "International collaboration (EU, US, JP, KR, CN, IN, RU). Cadarache site. Q > 10 demonstrator. TBM test blanket modules expected 2035+.",
+      "stage": "research",
+      "signal_keywords": ["ITER", "Cadarache", "ITER Organization", "test blanket module"]
+    },
+    {
+      "key": "llnl_nif",
+      "name": "Lawrence Livermore — NIF",
+      "short_name": "LLNL / NIF",
+      "iso_country": "US",
+      "category": "national_lab",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "NIF achieved Q > 1 inertial confinement, Dec 2022.",
+      "description": "National Ignition Facility. Laser-driven inertial confinement. First repeated Q > 1 ignition shots 2022-24 — proved net energy gain is physically possible.",
+      "stage": "research",
+      "signal_keywords": ["NIF", "National Ignition Facility", "Livermore", "LLNL", "inertial confinement"]
+    },
+    {
+      "key": "mit_psfc",
+      "name": "MIT Plasma Science & Fusion Center",
+      "short_name": "MIT PSFC",
+      "iso_country": "US",
+      "category": "academic_lab",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "Academic anchor; HTS magnet test bed; CFS parent.",
+      "description": "Spawned CFS via SPARC concept. Test cell for high-field magnets. Workforce pipeline for US private fusion.",
+      "stage": "research",
+      "signal_keywords": ["MIT PSFC", "MIT Plasma Science", "Whyte", "ARC reactor"]
+    },
+    {
+      "key": "kstar",
+      "name": "KSTAR (Korea)",
+      "short_name": "KSTAR",
+      "iso_country": "KR",
+      "category": "government_lab",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "Daejeon tokamak; 100M K sustained 48s record (2024).",
+      "description": "Korea Superconducting Tokamak Advanced Research. Operated by KFE. Holds duration record for >100M K plasma.",
+      "stage": "research",
+      "signal_keywords": ["KSTAR", "Korea Superconducting Tokamak", "KFE", "Daejeon"]
+    },
+    {
+      "key": "ukaea",
+      "name": "UK Atomic Energy Authority",
+      "short_name": "UKAEA",
+      "iso_country": "UK",
+      "category": "government_lab",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "JET legacy + STEP prototype targeting 2040.",
+      "description": "Operates JET (decommissioning 2024); leads STEP (Spherical Tokamak for Energy Production) prototype targeting net power by 2040.",
+      "stage": "research",
+      "signal_keywords": ["UKAEA", "JET", "STEP fusion", "Culham"]
+    },
+    {
+      "key": "us_doe_fes",
+      "name": "US DOE Fusion Energy Sciences",
+      "short_name": "DOE FES",
+      "iso_country": "US",
+      "category": "government_lab",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "Primary US fusion R&D funder; Milestone-Based Program 2023.",
+      "description": "Office of Science FES program. Funded $46M Milestone-Based Fusion Development across 8 private companies in 2023.",
+      "stage": "research",
+      "signal_keywords": ["DOE Fusion Energy Sciences", "DOE FES", "milestone fusion", "Inertial Fusion Energy"]
+    },
+    {
+      "key": "us_nrc_fusion",
+      "name": "US Nuclear Regulatory Commission",
+      "short_name": "NRC",
+      "iso_country": "US",
+      "category": "standards_body",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "April 2024 ruling: fusion under Part 30 byproduct material framework.",
+      "description": "Issued landmark fusion-regulatory framework decision April 2024 — fusion plants licensed as byproduct material, not Part 50 reactors. Order-of-magnitude faster licensing.",
+      "stage": "commercial",
+      "signal_keywords": ["NRC fusion", "Part 30 byproduct", "fusion licensing"]
+    },
+    {
+      "key": "faraday_factory",
+      "name": "Faraday Factory Japan",
+      "short_name": "Faraday",
+      "iso_country": "JP",
+      "category": "private_startup",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "REBCO HTS tape producer; supplies CFS + Tokamak Energy.",
+      "description": "Japan-based REBCO tape manufacturer. Doubling capacity 2024-26 to meet fusion demand.",
+      "stage": "scaling",
+      "signal_keywords": ["Faraday Factory", "REBCO tape", "HTS tape"]
+    },
+    {
+      "key": "amsc",
+      "name": "American Superconductor",
+      "short_name": "AMSC",
+      "iso_country": "US",
+      "category": "public_corp",
+      "ticker": "AMSC",
+      "exchange": "NASDAQ",
+      "blurb": "US REBCO supplier; DOE-funded capacity expansion 2024.",
+      "description": "Public US superconductor company. REBCO tape products supply fusion + grid + utility customers. DOE awards 2024 expand domestic capacity.",
+      "stage": "commercial",
+      "signal_keywords": ["American Superconductor", "AMSC", "REBCO", "HTS wire"]
     }
   ],
   "vision_assignments": {
@@ -313,6 +496,22 @@
       { "actor_key": "esa", "relevance": 55, "rationale": "Active across downlink + thermal capabilities; lab-scale demos feed commercial pipeline.", "display_order": 80 },
       { "actor_key": "lloyds", "relevance": 45, "rationale": "Gating factor on orbital DC capex; underwriting depth caps project size.", "display_order": 90 },
       { "actor_key": "itu", "relevance": 40, "rationale": "Spectrum allocation largely settled; tail coordination matters per constellation.", "display_order": 100 }
+    ],
+    "fusion-power": [
+      { "actor_key": "cfs", "relevance": 95, "rationale": "Most-funded private tokamak; SPARC first plasma 2026 is the demo gate.", "display_order": 10 },
+      { "actor_key": "helion", "relevance": 85, "rationale": "Aggressive commercial timeline; Microsoft PPA 2028 is the most concrete commercial commitment.", "display_order": 20 },
+      { "actor_key": "iter", "relevance": 80, "rationale": "Anchors the international DT roadmap; TBM modules drive tritium-breeding learning.", "display_order": 30 },
+      { "actor_key": "us_nrc_fusion", "relevance": 75, "rationale": "Part 30 framework is the single biggest regulatory tailwind in 20 years.", "display_order": 40 },
+      { "actor_key": "tokamak_energy", "relevance": 70, "rationale": "UK leader in HTS-spherical-tokamak path; ST80-HTS demo 2026.", "display_order": 50 },
+      { "actor_key": "tae", "relevance": 65, "rationale": "Longest-running private fusion player; aneutronic ambition is a wildcard.", "display_order": 60 },
+      { "actor_key": "llnl_nif", "relevance": 60, "rationale": "Q > 1 ignition proof point; not directly commercial but unblocks IFE thinking.", "display_order": 70 },
+      { "actor_key": "general_fusion", "relevance": 55, "rationale": "MTF approach diversifies bet portfolio; LM26 demo at Culham.", "display_order": 80 },
+      { "actor_key": "kstar", "relevance": 50, "rationale": "Korean academic lab; K-DEMO planning underway; workforce pipeline for KR fusion.", "display_order": 90 },
+      { "actor_key": "ukaea", "relevance": 50, "rationale": "STEP program is UK's commercial bet; JET decommissioning frees skilled workforce.", "display_order": 100 },
+      { "actor_key": "us_doe_fes", "relevance": 48, "rationale": "Funder of last resort + workforce pipeline.", "display_order": 110 },
+      { "actor_key": "mit_psfc", "relevance": 45, "rationale": "Academic anchor for HTS magnet science.", "display_order": 120 },
+      { "actor_key": "faraday_factory", "relevance": 40, "rationale": "REBCO supplier; capacity expansion gates magnet manufacturing.", "display_order": 130 },
+      { "actor_key": "amsc", "relevance": 38, "rationale": "US REBCO source; DOE-funded capacity expansion 2024.", "display_order": 140 }
     ]
   },
   "capability_assignments": {
@@ -347,6 +546,42 @@
       { "capability_key": "launch_economics", "actor_key": "spacex", "role": "lead", "rationale": "Falcon 9 + Starship cost curve." },
       { "capability_key": "launch_economics", "actor_key": "rocket_lab", "role": "competitor", "rationale": "Neutron medium-lift." },
       { "capability_key": "launch_economics", "actor_key": "blue_origin", "role": "competitor", "rationale": "New Glenn heavy-lift." }
+    ],
+    "fusion-power": [
+      { "capability_key": "tritium_breeding", "actor_key": "iter", "role": "lead", "rationale": "TBM test blanket modules — the canonical breeding learning ground." },
+      { "capability_key": "tritium_breeding", "actor_key": "cfs", "role": "competitor", "rationale": "ARC FLiBe immersion blanket concept; private TBR push." },
+      { "capability_key": "tritium_breeding", "actor_key": "ukaea", "role": "competitor", "rationale": "STEP blanket R&D." },
+
+      { "capability_key": "plasma_confinement", "actor_key": "cfs", "role": "lead", "rationale": "SPARC targets sustained Q > 10 at high field." },
+      { "capability_key": "plasma_confinement", "actor_key": "iter", "role": "competitor", "rationale": "Q ≥ 10 long-pulse goal." },
+      { "capability_key": "plasma_confinement", "actor_key": "kstar", "role": "competitor", "rationale": "Duration record at 100M K." },
+      { "capability_key": "plasma_confinement", "actor_key": "tokamak_energy", "role": "competitor", "rationale": "Spherical tokamak high-beta route." },
+      { "capability_key": "plasma_confinement", "actor_key": "helion", "role": "competitor", "rationale": "Pulsed FRC alternative." },
+
+      { "capability_key": "first_wall_materials", "actor_key": "iter", "role": "lead", "rationale": "Be/W wall reference design." },
+      { "capability_key": "first_wall_materials", "actor_key": "us_doe_fes", "role": "supplier", "rationale": "Funds IFMIF-DONES + materials irradiation testing." },
+      { "capability_key": "first_wall_materials", "actor_key": "mit_psfc", "role": "competitor", "rationale": "FLiBe liquid wall concept." },
+
+      { "capability_key": "hts_magnets", "actor_key": "cfs", "role": "lead", "rationale": "20T REBCO magnet test 2021 — the breakthrough." },
+      { "capability_key": "hts_magnets", "actor_key": "tokamak_energy", "role": "competitor", "rationale": "UK HTS magnet for ST80-HTS." },
+      { "capability_key": "hts_magnets", "actor_key": "mit_psfc", "role": "supplier", "rationale": "Academic test cell + co-development." },
+
+      { "capability_key": "plant_economics", "actor_key": "helion", "role": "lead", "rationale": "Microsoft PPA at $/MWh — first commercial price point." },
+      { "capability_key": "plant_economics", "actor_key": "cfs", "role": "competitor", "rationale": "ARC commercial business case targets $100/MWh." },
+      { "capability_key": "plant_economics", "actor_key": "ukaea", "role": "competitor", "rationale": "STEP commercial pathway." },
+
+      { "capability_key": "regulatory_pathway", "actor_key": "us_nrc_fusion", "role": "regulator", "rationale": "Part 30 byproduct framework, April 2024." },
+      { "capability_key": "regulatory_pathway", "actor_key": "ukaea", "role": "regulator", "rationale": "UK fusion regulatory framework (ONR + EA)." },
+
+      { "capability_key": "supply_chain_rebco", "actor_key": "faraday_factory", "role": "supplier", "rationale": "Japan REBCO tape capacity." },
+      { "capability_key": "supply_chain_rebco", "actor_key": "amsc", "role": "supplier", "rationale": "US REBCO; DOE-funded capacity expansion." },
+
+      { "capability_key": "workforce_skills", "actor_key": "mit_psfc", "role": "lead", "rationale": "Academic pipeline; spinoff CFS." },
+      { "capability_key": "workforce_skills", "actor_key": "ukaea", "role": "supplier", "rationale": "JET workforce graduating into STEP." },
+      { "capability_key": "workforce_skills", "actor_key": "kstar", "role": "competitor", "rationale": "Korean fusion workforce pipeline." },
+      { "capability_key": "workforce_skills", "actor_key": "us_doe_fes", "role": "supplier", "rationale": "Funds postdoc + workforce programs." },
+
+      { "capability_key": "grid_integration", "actor_key": "helion", "role": "lead", "rationale": "First commercial PPA forces grid integration to be solved." }
     ]
   }
 }
