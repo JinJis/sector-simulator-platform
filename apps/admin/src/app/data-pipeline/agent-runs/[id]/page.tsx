@@ -1,4 +1,3 @@
-import { Breadcrumbs } from "@platform/ui";
 import { notFound } from "next/navigation";
 
 import { getAgentWorkflow, type AgentWorkflow } from "@/lib/sim-client";
@@ -23,39 +22,32 @@ export default async function AgentRunDetail({
       notFound();
     }
     return (
-      <main className="mx-auto max-w-5xl px-6 py-8">
-        <Breadcrumbs
-          className="mb-3"
-          items={[
-            { label: "Agent runs", href: "/agent-runs" },
-            { label: shortId(id) },
-          ]}
-        />
+      <>
+        <h2 className="text-base font-semibold text-neutral-50">
+          Workflow {shortId(id)}
+        </h2>
         <p className="mt-4 text-sm text-red-400">
           Failed to load workflow {id}.
         </p>
         <p className="mt-1 text-xs text-neutral-500">
           {err instanceof Error ? err.message : String(err)}
         </p>
-      </main>
+      </>
     );
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-8">
-      <Breadcrumbs
-        className="mb-3"
-        items={[
-          { label: "Agent runs", href: "/agent-runs" },
-          { label: shortId(id) },
-        ]}
-      />
-      <RunWatcher id={id} initial={initial} />
-    </main>
+    <>
+      <h2 className="text-base font-semibold text-neutral-50">
+        Workflow {shortId(id)}
+      </h2>
+      <div className="mt-3">
+        <RunWatcher id={id} initial={initial} />
+      </div>
+    </>
   );
 }
 
-/** wf_abc123def456 → wf_abc123…. Keeps breadcrumbs compact for long IDs. */
 function shortId(id: string): string {
   return id.length > 12 ? `${id.slice(0, 11)}…` : id;
 }

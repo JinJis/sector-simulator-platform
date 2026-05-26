@@ -39,29 +39,17 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                 <Link href="/" className="hover:text-neutral-100">
                   Dashboard
                 </Link>
-                <Link href="/users" className="hover:text-neutral-100">
-                  Users
-                </Link>
-                <Link href="/monitoring" className="hover:text-neutral-100">
-                  Monitoring
-                </Link>
-                <Link href="/crawler" className="hover:text-neutral-100">
-                  Crawler
-                </Link>
-                <Link href="/audit" className="hover:text-neutral-100">
-                  Audit
-                </Link>
-                <Link href="/lifecycle" className="hover:text-neutral-100">
-                  Lifecycle
-                </Link>
                 <Link href="/visions" className="hover:text-neutral-100">
                   Visions
                 </Link>
-                <Link href="/agent-runs" className="hover:text-neutral-100">
-                  Agent runs
+                <Link href="/data-pipeline" className="hover:text-neutral-100">
+                  Data Pipeline
                 </Link>
-                <Link href="/scenarios" className="hover:text-neutral-100">
-                  Scenarios
+                <Link href="/users" className="hover:text-neutral-100">
+                  Users
+                </Link>
+                <Link href="/audit" className="hover:text-neutral-100">
+                  Audit
                 </Link>
                 <a
                   href="http://localhost:3000"

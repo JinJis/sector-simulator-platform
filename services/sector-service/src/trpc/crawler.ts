@@ -90,6 +90,14 @@ const RiskTriggerOut = z.object({
   risk_likelihood: z.string(),
 });
 
+const DigestRunOut = z.object({
+  run: CrawlRunOut,
+  anchor_capability_key: z.string().nullable(),
+  signal_id: z.string().nullable(),
+  dr_cached: z.boolean(),
+  scoring_confidence: z.number().nullable(),
+});
+
 const OrchestratorCandidateOut = z.object({
   vision_slug: z.string(),
   fetcher_kind: z.string(),
@@ -372,6 +380,23 @@ export const crawlerRouter = router({
         ),
       ),
   }),
+
+  // Commit 5/6 — daily DR digest. Manual trigger only at this time.
+  digestRun: publicProcedure
+    .input(
+      z.object({
+        vision_slug: z.string().min(1).max(128),
+        prompt: z.string().max(4000).optional(),
+      }),
+    )
+    .output(DigestRunOut)
+    .mutation(async ({ input }) =>
+      proxy(
+        "/jobs/deep-research-digest/run",
+        { method: "POST", body: JSON.stringify(input) },
+        DigestRunOut,
+      ),
+    ),
 
   // M49f — orchestrator dry-run + execute. Cockpit defaults to
   // dry_run so admins can preview the tick without burning budget.

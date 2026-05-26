@@ -1,18 +1,16 @@
 import Link from "next/link";
 
 import {
-  fetchScenarios,
-  fetchSims,
+  fetchHealth24h,
   listAdminUsers,
   listSectors,
   SECTOR_SERVICE_URL,
   type AdminUserListResult,
-  type Scenario,
+  type CrawlRun,
+  type Health24h,
   type SectorRow,
-  type SimMetadata,
+  listCrawlRuns,
 } from "@/lib/sim-client";
-
-import { DraftSectorRow } from "./draft-sector-row";
 
 export const dynamic = "force-dynamic";
 
@@ -27,63 +25,50 @@ async function settle<T>(p: Promise<T>): Promise<Settled<T>> {
 }
 
 export default async function AdminHome() {
-  // M48 follow-up: each upstream call settles independently so one
-  // hiccup (sim-service down, agent-orch unreachable, …) doesn't
-  // blank the whole dashboard. The page renders all sections it CAN
-  // render and surfaces an inline notice for the ones it can't.
-  const [simsR, scenariosR, dbSectorsR, usersR] = await Promise.all([
-    settle(fetchSims()),
-    settle(fetchScenarios()),
-    settle(listSectors()),
+  const [usersR, sectorsR, statsR, runsR] = await Promise.all([
     settle(listAdminUsers({ limit: 5 })),
+    settle(listSectors()),
+    settle(fetchHealth24h(24)),
+    settle(listCrawlRuns({ limit: 8 })),
   ]);
 
-  const sims: SimMetadata[] = simsR.ok ? simsR.value : [];
-  const scenarios: Scenario[] = scenariosR.ok ? scenariosR.value : [];
-  const dbSectors: SectorRow[] = dbSectorsR.ok ? dbSectorsR.value : [];
   const users: AdminUserListResult = usersR.ok
     ? usersR.value
     : { rows: [], total: 0 };
+  const sectors: SectorRow[] = sectorsR.ok ? sectorsR.value : [];
+  const stats: Health24h | null = statsR.ok ? statsR.value : null;
+  const runs: CrawlRun[] = runsR.ok ? runsR.value : [];
 
   const failures = [
-    simsR.ok ? null : { source: "fetchSims (simulation-service)", error: simsR.error },
-    scenariosR.ok ? null : { source: "fetchScenarios (sector-service)", error: scenariosR.error },
-    dbSectorsR.ok ? null : { source: "listSectors (sector-service)", error: dbSectorsR.error },
-    usersR.ok ? null : { source: "listAdminUsers (sector-service)", error: usersR.error },
+    usersR.ok ? null : { source: "users", error: usersR.error },
+    sectorsR.ok ? null : { source: "sectors", error: sectorsR.error },
+    statsR.ok ? null : { source: "data-pipeline 24h", error: statsR.error },
+    runsR.ok ? null : { source: "data-pipeline runs", error: runsR.error },
   ].filter((x): x is { source: string; error: string } => x != null);
 
-  const scenarioCount = new Map<string, number>();
-  for (const s of scenarios) {
-    scenarioCount.set(s.sector_slug, (scenarioCount.get(s.sector_slug) ?? 0) + 1);
-  }
-
-  // Hide the seed-only placeholder unless it's the only registered sim.
-  const visible = sims.filter((s) => s.slug !== "placeholder");
-  const list = visible.length > 0 ? visible : sims;
-  const drafts = dbSectors.filter((s) => s.status === "draft");
-  const archived = dbSectors.filter((s) => s.status === "archived");
-
+  const liveVisions = sectors.filter((s) => s.status === "live");
+  const draftCount = sectors.filter((s) => s.status === "draft").length;
   const premiumCount = users.rows.filter((u) => u.tier === "premium").length;
+  const signals24h = stats
+    ? stats.by_fetcher.reduce((n, r) => n + r.count, 0)
+    : 0;
+  const spend24h = stats?.total_cost_usd ?? 0;
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
-      <div className="mb-6 flex items-baseline justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-50">
-            모니터링 대시보드
-          </h1>
-          <p className="mt-1 text-[11px] text-neutral-500">
-            플랫폼 상태 · 사용자 · 섹터 · 데이터 freshness 한눈에 보기.
-            에이전트 시뮬레이터 생성은 일반 사용자 앱(:3000)으로 이동되었습니다.
-          </p>
-        </div>
+      <div className="mb-6">
+        <h1 className="text-xl font-semibold text-neutral-50">
+          Vision Feasibility Monitor — Admin
+        </h1>
+        <p className="mt-1 text-[11px] text-neutral-500">
+          한눈에 보는 운영 상태. 상세 작업은 우측 네비게이션의 각 섹션으로.
+        </p>
       </div>
 
-      {failures.length > 0 && (
+      {failures.length > 0 ? (
         <div className="mb-6 rounded-lg border border-amber-800/60 bg-amber-950/30 px-4 py-3">
           <div className="text-[11px] font-medium uppercase tracking-wider text-amber-200">
-            Partial data — {failures.length} upstream{" "}
-            {failures.length === 1 ? "source" : "sources"} unreachable
+            Partial data — {failures.length} source(s) unreachable
           </div>
           <ul className="mt-1 space-y-0.5 text-[11px] text-amber-100/80">
             {failures.map((f) => (
@@ -97,7 +82,7 @@ export default async function AdminHome() {
             sector-service: {SECTOR_SERVICE_URL}
           </div>
         </div>
-      )}
+      ) : null}
 
       <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricTile
@@ -107,163 +92,185 @@ export default async function AdminHome() {
           href="/users"
         />
         <MetricTile
-          label="Live 섹터"
-          value={list.length.toString()}
-          sub={`초안 ${drafts.length} · 보관 ${archived.length}`}
+          label="Live 비전"
+          value={liveVisions.length.toString()}
+          sub={`Draft ${draftCount}`}
+          href="/visions"
         />
         <MetricTile
-          label="저장 시나리오"
-          value={scenarios.length.toString()}
+          label="24h 신호 흐름"
+          value={signals24h.toLocaleString("en-US")}
+          sub={`${stats?.by_fetcher.length ?? 0} fetcher`}
+          href="/data-pipeline"
         />
         <MetricTile
-          label="에이전트 활동"
-          value="모니터"
-          sub="사용자 에이전트 런 조회"
-          href="/agent-runs"
+          label="24h LLM 비용"
+          value={`$${spend24h.toFixed(2)}`}
+          sub="data-pipeline 합계"
+          href="/data-pipeline/health"
         />
       </section>
 
-      <div className="mb-6 flex flex-wrap gap-2">
-        <Link
-          href="/users"
-          className="rounded border border-cyan-700 bg-cyan-900/40 px-3 py-1.5 text-[11px] font-medium text-cyan-200 hover:bg-cyan-800/60"
-          title="가입자 / Premium / 활동 통계"
-        >
-          👤 사용자
-        </Link>
-        <Link
-          href="/monitoring"
-          className="rounded border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-[11px] font-medium text-neutral-300 hover:bg-neutral-800"
-          title="data-pipeline freshness + DB row counts"
-        >
-          ◔ Monitoring
-        </Link>
-        <Link
-          href="/audit"
-          className="rounded border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-[11px] font-medium text-neutral-300 hover:bg-neutral-800"
-          title="Full audit log viewer with filters"
-        >
-          ☷ Audit log
-        </Link>
-        <Link
-          href="/lifecycle"
-          className="rounded border border-amber-700 bg-amber-900/40 px-3 py-1.5 text-[11px] font-medium text-amber-200 hover:bg-amber-800/60"
-          title="Stale equity / orphan node / cold sector deprecate review"
-        >
-          ⚠ Lifecycle review
-        </Link>
-        <Link
-          href="/agent-runs"
-          className="rounded border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-[11px] font-medium text-neutral-300 hover:bg-neutral-800"
-          title="See past + in-flight agent runs (now user-driven)"
-        >
-          🤖 Agent runs
-        </Link>
-        <StubAction title="kicks data-pipeline-service">
-          ↻ Run ingest (all)
-        </StubAction>
-      </div>
+      <section className="mb-8 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4">
+          <div className="mb-2 flex items-baseline justify-between">
+            <h2 className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+              최근 fetcher 실행
+            </h2>
+            <Link
+              href="/data-pipeline"
+              className="text-[10px] text-cyan-400 hover:text-cyan-300"
+            >
+              전체 보기 →
+            </Link>
+          </div>
+          {runs.length === 0 ? (
+            <p className="text-xs text-neutral-500">
+              아직 fetcher 실행 기록이 없습니다.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-1.5 text-[11px]">
+              {runs.slice(0, 8).map((r) => (
+                <li
+                  key={r.id}
+                  className="flex items-baseline gap-2 border-b border-neutral-800/60 pb-1.5 last:border-b-0"
+                >
+                  <StatusDot status={r.status} />
+                  <span className="font-mono text-neutral-500">
+                    {r.fetcher_kind}
+                  </span>
+                  <span className="text-neutral-300">{r.vision_slug}</span>
+                  {r.signals_written > 0 ? (
+                    <span className="text-neutral-500">
+                      +{r.signals_written} signals
+                    </span>
+                  ) : null}
+                  {r.cost_usd != null && r.cost_usd > 0 ? (
+                    <span className="text-neutral-500">
+                      ${r.cost_usd.toFixed(4)}
+                    </span>
+                  ) : null}
+                  <span className="ml-auto text-neutral-600">
+                    {timeAgo(r.started_at)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
-      <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-        Live · {list.length}
-      </h2>
-      <div className="mb-8 grid grid-cols-1 gap-3 md:grid-cols-2">
-        {list.map((sim) => (
-          <SectorCard
-            key={sim.slug}
-            sim={sim}
-            scenarios={scenarioCount.get(sim.slug) ?? 0}
-          />
-        ))}
-      </div>
+        <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4">
+          <div className="mb-2 flex items-baseline justify-between">
+            <h2 className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+              비전별 24h 비용
+            </h2>
+            <Link
+              href="/data-pipeline/health"
+              className="text-[10px] text-cyan-400 hover:text-cyan-300"
+            >
+              상세 →
+            </Link>
+          </div>
+          {!stats || stats.by_vision.length === 0 ? (
+            <p className="text-xs text-neutral-500">
+              지난 24시간 동안 비용이 발생하지 않았습니다.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-1 text-[11px]">
+              {stats.by_vision.slice(0, 8).map((v) => (
+                <li
+                  key={v.vision_slug}
+                  className="flex items-baseline justify-between border-b border-neutral-800/60 pb-1 last:border-b-0"
+                >
+                  <span className="text-neutral-300">{v.vision_slug}</span>
+                  <span className="font-mono text-neutral-200">
+                    ${v.total_cost_usd.toFixed(4)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
 
-      {drafts.length > 0 && (
-        <>
-          <h2 className="mb-2 flex items-baseline gap-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-            Draft · {drafts.length}
-            <span className="text-[10px] font-normal normal-case text-neutral-600">
-              agent decomposition으로 등록됨 — user app에는 노출되지 않음
-            </span>
+      <section>
+        <div className="mb-2 flex items-baseline justify-between">
+          <h2 className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+            Live 비전 · {liveVisions.length}
           </h2>
-          <ul className="mb-8 flex flex-col gap-2">
-            {drafts.map((s) => (
-              <DraftSectorRow key={s.slug} sector={s} />
+          <Link
+            href="/visions"
+            className="text-[10px] text-cyan-400 hover:text-cyan-300"
+          >
+            전체 비전 →
+          </Link>
+        </div>
+        {liveVisions.length === 0 ? (
+          <p className="text-xs text-neutral-500">
+            등록된 비전이 없습니다.{" "}
+            <Link
+              href="/visions/new"
+              className="text-cyan-400 hover:text-cyan-300"
+            >
+              새 비전 만들기 →
+            </Link>
+          </p>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2">
+            {liveVisions.map((s) => (
+              <Link
+                key={s.slug}
+                href={`/visions/${encodeURIComponent(s.slug)}`}
+                className="group rounded-lg border border-neutral-800 bg-neutral-900/40 p-4 transition hover:border-cyan-700"
+              >
+                <div className="flex items-baseline justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-neutral-50 group-hover:text-cyan-200">
+                    {s.name ?? s.slug}
+                  </h3>
+                  <span className="text-[10px] uppercase tracking-wider text-neutral-600">
+                    {s.slug}
+                  </span>
+                </div>
+                {s.description ? (
+                  <p className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-neutral-400">
+                    {s.description}
+                  </p>
+                ) : null}
+              </Link>
             ))}
-          </ul>
-        </>
-      )}
-
-      {archived.length > 0 && (
-        <>
-          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-            Archived · {archived.length}
-          </h2>
-          <ul className="flex flex-col gap-2">
-            {archived.map((s) => (
-              <DraftSectorRow key={s.slug} sector={s} />
-            ))}
-          </ul>
-        </>
-      )}
+          </div>
+        )}
+      </section>
     </main>
   );
 }
 
-function SectorCard({ sim, scenarios }: { sim: SimMetadata; scenarios: number }) {
-  const driverGroups = new Set(sim.drivers.map((d) => d.group).filter(Boolean));
-  const sourceCount = Object.values(sim.provenance).reduce(
-    (n, p) => n + p.sources.length,
-    0,
-  );
-  const presets = Object.keys(sim.presets).length;
+function StatusDot({ status }: { status: string }) {
+  const tone =
+    status === "ok"
+      ? "bg-emerald-400"
+      : status === "running" || status === "queued"
+        ? "bg-cyan-400 animate-pulse"
+        : status === "error"
+          ? "bg-rose-400"
+          : "bg-neutral-500";
   return (
-    <Link
-      href={`/sectors/${encodeURIComponent(sim.slug)}`}
-      className="group rounded-lg border border-neutral-800 bg-neutral-900/40 p-4 transition hover:border-neutral-700 hover:bg-neutral-900/70"
-    >
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-sm font-semibold text-neutral-50 group-hover:text-cyan-200">
-          {sim.name}
-        </h2>
-        <span className="text-[10px] uppercase tracking-wider text-neutral-600">
-          {sim.slug}
-        </span>
-      </div>
-      <p className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-neutral-400">
-        {sim.description}
-      </p>
-      <dl className="mt-3 grid grid-cols-4 gap-2 text-[11px]">
-        <Stat label="horizon" value={`${sim.horizon_years} yr`} />
-        <Stat label="drivers" value={`${sim.drivers.length}`} sub={`${driverGroups.size} groups`} />
-        <Stat label="presets" value={`${presets}`} />
-        <Stat label="sources" value={`${sourceCount}`} sub={`${scenarios} scenarios`} />
-      </dl>
-      <div className="mt-3 flex items-center justify-end text-[10px] text-neutral-500">
-        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-900/60 bg-emerald-950/40 px-1.5 py-0.5 text-emerald-300">
-          <span className="h-1 w-1 rounded-full bg-emerald-400" />
-          live
-        </span>
-      </div>
-    </Link>
+    <span
+      className={`inline-block h-1.5 w-1.5 rounded-full ${tone}`}
+      aria-label={status}
+    />
   );
 }
 
-function Stat({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-}) {
-  return (
-    <div>
-      <dt className="text-[9px] uppercase tracking-wider text-neutral-600">{label}</dt>
-      <dd className="text-sm font-semibold tabular-nums text-neutral-100">{value}</dd>
-      {sub && <dd className="text-[10px] text-neutral-500">{sub}</dd>}
-    </div>
-  );
+function timeAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
 }
 
 function MetricTile({
@@ -285,7 +292,9 @@ function MetricTile({
       <div className="mt-1 text-2xl font-semibold tabular-nums text-neutral-100">
         {value}
       </div>
-      {sub && <div className="mt-0.5 text-[11px] text-neutral-500">{sub}</div>}
+      {sub ? (
+        <div className="mt-0.5 text-[11px] text-neutral-500">{sub}</div>
+      ) : null}
     </>
   );
   if (href) {
@@ -302,27 +311,5 @@ function MetricTile({
     <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4">
       {inner}
     </div>
-  );
-}
-
-function StubAction({
-  children,
-  title,
-}: {
-  children: React.ReactNode;
-  title: string;
-}) {
-  return (
-    <button
-      type="button"
-      disabled
-      title={title}
-      className="rounded border border-neutral-800 bg-neutral-900/40 px-3 py-1.5 text-[11px] font-medium text-neutral-500 hover:border-neutral-700 disabled:cursor-not-allowed"
-    >
-      {children}
-      <span className="ml-1.5 text-[9px] uppercase tracking-wider text-neutral-700">
-        soon
-      </span>
-    </button>
   );
 }

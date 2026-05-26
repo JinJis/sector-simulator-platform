@@ -29,23 +29,19 @@ export default async function AgentRunsIndex() {
         "AGENT_ORCHESTRATION_URL 환경변수를 가리키세요."
       : `sector-service: ${SECTOR_SERVICE_URL}`;
     return (
-      <main className="mx-auto max-w-6xl px-6 py-8">
-        <h1 className="text-xl font-semibold text-neutral-50">Agent runs</h1>
-        <div className="mt-4 rounded-lg border border-amber-800/60 bg-amber-950/30 px-4 py-3">
-          <p className="text-sm text-amber-200">{headline}</p>
-          <p className="mt-1 text-[11px] text-amber-200/70">{hint}</p>
-          <p className="mt-2 font-mono text-[10px] text-amber-200/50">{msg}</p>
-        </div>
-      </main>
+      <div className="rounded-lg border border-amber-800/60 bg-amber-950/30 px-4 py-3">
+        <p className="text-sm text-amber-200">{headline}</p>
+        <p className="mt-1 text-[11px] text-amber-200/70">{hint}</p>
+        <p className="mt-2 font-mono text-[10px] text-amber-200/50">{msg}</p>
+      </div>
     );
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
-      <div className="mb-6 flex items-baseline justify-between gap-4">
-        <h1 className="text-xl font-semibold text-neutral-50">Agent runs</h1>
+    <>
+      <div className="mb-4 flex items-baseline justify-end">
         <Link
-          href="/agent-runs/new"
+          href="/data-pipeline/agent-runs/new"
           className="rounded border border-rose-700 bg-rose-900/40 px-3 py-1.5 text-xs font-medium text-rose-200 hover:bg-rose-800/60"
         >
           + New decomposition
@@ -55,7 +51,7 @@ export default async function AgentRunsIndex() {
       {runs.length === 0 ? (
         <div className="rounded-lg border border-neutral-800 bg-neutral-900/30 p-6 text-sm text-neutral-500">
           No runs yet. Kick one off with{" "}
-          <Link href="/agent-runs/new" className="text-cyan-400 hover:text-cyan-300">
+          <Link href="/data-pipeline/agent-runs/new" className="text-cyan-400 hover:text-cyan-300">
             + New decomposition
           </Link>{" "}
           to validate the agent layer end-to-end.
@@ -82,7 +78,7 @@ export default async function AgentRunsIndex() {
                   <td className="px-3 py-1.5 text-neutral-400">{r.kind}</td>
                   <td className="px-3 py-1.5 font-mono text-[10px]">
                     <Link
-                      href={`/agent-runs/${encodeURIComponent(r.id)}`}
+                      href={`/data-pipeline/agent-runs/${encodeURIComponent(r.id)}`}
                       className="text-cyan-400 hover:text-cyan-300"
                     >
                       {r.id}
@@ -103,6 +99,6 @@ export default async function AgentRunsIndex() {
           </table>
         </div>
       )}
-    </main>
+    </>
   );
 }

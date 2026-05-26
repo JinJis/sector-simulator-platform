@@ -424,7 +424,18 @@ export async function runRiskFetcher(input: {
 
 export type OrchestratorTickResult = RouterOutput["crawler"]["orchestratorTick"];
 export type DiscoveryRunResult = RouterOutput["crawler"]["discoveryRun"];
+export type DigestRunResult = RouterOutput["crawler"]["digestRun"];
 export type Health24h = RouterOutput["crawler"]["stats"]["health24h"];
+
+export async function runDeepResearchDigest(input: {
+  vision_slug: string;
+  prompt?: string;
+}): Promise<DigestRunResult> {
+  return rethrow(
+    () => trpc.crawler.digestRun.mutate(input),
+    `runDeepResearchDigest(${input.vision_slug})`,
+  );
+}
 
 export async function runOrchestratorTick(input: {
   dry_run?: boolean;

@@ -42,7 +42,7 @@ export function NewDecompositionForm() {
       } else {
         record = await startDecomposition(payload);
       }
-      router.push(`/agent-runs/${encodeURIComponent(record.id)}`);
+      router.push(`/data-pipeline/agent-runs/${encodeURIComponent(record.id)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
@@ -165,7 +165,7 @@ export function NewDecompositionForm() {
         <p className="text-[10px] text-neutral-600">
           {tooShort
             ? "Description is too short to submit."
-            : "Submitting will route to /agent-runs/[id] with live status."}
+            : "Submitting will route to /data-pipeline/agent-runs/[id] with live status."}
         </p>
         <button
           type="submit"
