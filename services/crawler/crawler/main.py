@@ -262,19 +262,22 @@ class DiscoveryRunOut(BaseModel):
 
 def _build_deep_research_client() -> DeepResearchClient | None:
     """Construct a DeepResearchClient backed by the real google-genai
-    client. Two auth paths, tried in order:
+    client. Vertex AI is the **only** supported auth path because the
+    deep-research-* models live on the Vertex Interactions API; the
+    AI Studio `GEMINI_API_KEY` endpoint returns HTML 404 for those
+    model names and the resulting failure mode is opaque.
 
-      1. **Vertex AI (production)** — requires
-         `GOOGLE_GENAI_USE_VERTEXAI=true` +
-         `GOOGLE_APPLICATION_CREDENTIALS=/path/to/vertex-ai-sa.json`.
-      2. **Gemini API key (dev fallback)** — requires `GEMINI_API_KEY`
-         from https://aistudio.google.com/apikey. Cheaper to wire up;
-         not for prod but unblocks local crawler smoke without an
-         SA JSON mount.
+    Returns None — fetcher endpoints then 503 with a clear remediation
+    hint — in any of these cases:
+      - google-genai SDK not installed
+      - `GOOGLE_GENAI_USE_VERTEXAI` is not truthy
+      - `GOOGLE_APPLICATION_CREDENTIALS` is empty
+      - the SA JSON file at that path doesn't exist
+      - Vertex client construction raises
 
-    Returns None when neither is wired — the fetcher endpoints then
-    503 with a remediation hint instead of crashing on startup, so
-    docker-compose stays green.
+    Setup: drop a Vertex service-account JSON at
+    `infra/secrets/vertex-ai-sa.json` per `infra/secrets/README.md`,
+    set the four `GOOGLE_*` env vars in `.env`, restart the container.
     """
     try:
         from google import genai  # noqa: PLC0415  (optional dep)
@@ -282,38 +285,55 @@ def _build_deep_research_client() -> DeepResearchClient | None:
         log.warning("crawler: google-genai not installed — Deep Research disabled")
         return None
 
-    # Path 1 — Vertex AI.
     use_vertex = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in {
-        "1", "true", "yes", "on"
+        "1",
+        "true",
+        "yes",
+        "on",
     }
     creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    if use_vertex and creds and os.path.exists(creds):
-        try:
-            client = genai.Client(
-                vertexai=True,
-                location=os.environ.get("GOOGLE_CLOUD_LOCATION", "global"),
+    has_api_key = bool((os.environ.get("GEMINI_API_KEY") or "").strip())
+
+    if not use_vertex:
+        log.warning(
+            "crawler: Deep Research disabled — GOOGLE_GENAI_USE_VERTEXAI is "
+            "not set to true. Fetcher endpoints will 503."
+            + (
+                "  (GEMINI_API_KEY is present but cannot serve deep-research-* models.)"
+                if has_api_key
+                else ""
             )
-            log.info("crawler: Deep Research enabled via Vertex AI (sa=%s)", creds)
-            return DeepResearchClient(genai_client=client)
-        except Exception as exc:  # pragma: no cover — exercised in compose
-            log.error("crawler: Vertex AI client construction failed: %s", exc)
-
-    # Path 2 — Gemini API key (AI Studio).
-    api_key = (os.environ.get("GEMINI_API_KEY") or "").strip()
-    if api_key:
-        try:
-            client = genai.Client(api_key=api_key)
-            log.info("crawler: Deep Research enabled via Gemini API key (AI Studio)")
-            return DeepResearchClient(genai_client=client)
-        except Exception as exc:  # pragma: no cover — exercised in compose
-            log.error("crawler: API key client construction failed: %s", exc)
-
-    log.warning(
-        "crawler: Deep Research disabled — neither Vertex AI "
-        "(GOOGLE_GENAI_USE_VERTEXAI + GOOGLE_APPLICATION_CREDENTIALS) "
-        "nor GEMINI_API_KEY is configured. Fetcher endpoints will 503."
-    )
-    return None
+        )
+        return None
+    if not creds:
+        log.warning(
+            "crawler: Deep Research disabled — GOOGLE_APPLICATION_CREDENTIALS "
+            "unset. Set it to /secrets/vertex-ai-sa.json (in-container path)."
+        )
+        return None
+    if not os.path.exists(creds):
+        log.error(
+            "crawler: Deep Research disabled — SA JSON not found at %s. "
+            "Drop a Vertex AI service-account key at infra/secrets/"
+            "vertex-ai-sa.json on the host (see infra/secrets/README.md); "
+            "docker-compose mounts that directory read-only into /secrets.",
+            creds,
+        )
+        return None
+    try:
+        client = genai.Client(
+            vertexai=True,
+            location=os.environ.get("GOOGLE_CLOUD_LOCATION", "global"),
+        )
+    except Exception as exc:  # pragma: no cover — exercised in compose
+        log.error(
+            "crawler: Vertex AI client construction failed (%s). "
+            "Verify GOOGLE_CLOUD_PROJECT + the SA's roles/aiplatform.user grant.",
+            exc,
+        )
+        return None
+    log.info("crawler: Deep Research enabled via Vertex AI (sa=%s)", creds)
+    return DeepResearchClient(genai_client=client)
 
 
 @asynccontextmanager
@@ -394,8 +414,7 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         repo = getattr(app.state, "repo", None)
         if isinstance(repo, PostgresCrawlRunRepository):
             row = await repo.pool.fetchrow(
-                "SELECT id FROM users WHERE bot_kind = 'research_agent' "
-                "AND is_bot = true LIMIT 1"
+                "SELECT id FROM users WHERE bot_kind = 'research_agent' AND is_bot = true LIMIT 1"
             )
             app.state.bot_user_id = row["id"] if row is not None else None
             if app.state.bot_user_id is None:
@@ -464,8 +483,7 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
             scheduler.start()
             app.state.scheduler = scheduler
             log.info(
-                "crawler: orchestrator cron armed (every 15min) — "
-                "CRAWLER_SCHEDULE=%s",
+                "crawler: orchestrator cron armed (every 15min) — CRAWLER_SCHEDULE=%s",
                 schedule_mode,
             )
         except Exception as exc:  # noqa: BLE001 — APScheduler may be missing
@@ -580,12 +598,16 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status_code=503,
                 detail=(
-                    "Deep Research is not configured. Set ONE of: "
-                    "(A) GEMINI_API_KEY=<aistudio.google.com/apikey> "
-                    "in your .env (simplest for dev); "
-                    "(B) GOOGLE_GENAI_USE_VERTEXAI=true + "
-                    "GOOGLE_APPLICATION_CREDENTIALS=/secrets/vertex-ai-sa.json "
-                    "(production). Restart the crawler container after."
+                    "Deep Research not configured. The deep-research-* "
+                    "models live on the Vertex AI Interactions API; the "
+                    "AI Studio GEMINI_API_KEY endpoint cannot serve them. "
+                    "(1) Drop a Vertex SA JSON at "
+                    "infra/secrets/vertex-ai-sa.json (see "
+                    "infra/secrets/README.md). "
+                    "(2) Set GOOGLE_GENAI_USE_VERTEXAI=true + "
+                    "GOOGLE_CLOUD_PROJECT + GOOGLE_APPLICATION_CREDENTIALS="
+                    "/secrets/vertex-ai-sa.json in .env. "
+                    "(3) Restart the crawler container."
                 ),
             )
         return dr
@@ -623,8 +645,7 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status_code=503,
                 detail=(
-                    "crawler unavailable — orchestrator_reader not configured "
-                    "(needs DATABASE_URL)"
+                    "crawler unavailable — orchestrator_reader not configured (needs DATABASE_URL)"
                 ),
             )
         return reader
@@ -652,10 +673,7 @@ def create_app() -> FastAPI:
         if not bot_id:
             raise HTTPException(
                 status_code=503,
-                detail=(
-                    "crawler unavailable — no @feasibility_bot user; "
-                    "run `pnpm db:seed`"
-                ),
+                detail=("crawler unavailable — no @feasibility_bot user; run `pnpm db:seed`"),
             )
         return bot_id
 
@@ -737,9 +755,7 @@ def create_app() -> FastAPI:
             run=CrawlRunOut.from_row(out.run),
             signal_id=out.signal_id,
             dr_cached=out.deep_research.cached,
-            scoring_confidence=out.scoring.scoring.confidence
-            if out.scoring is not None
-            else None,
+            scoring_confidence=out.scoring.scoring.confidence if out.scoring is not None else None,
         )
 
     @app.post("/jobs/discovery/run", response_model=DiscoveryRunOut)
@@ -803,8 +819,7 @@ def create_app() -> FastAPI:
                 over_budget_skipped=pick.over_budget_skipped,
                 picked=picked_out,
                 per_vision_remaining_usd={
-                    k: round(v, 4)
-                    for k, v in pick.per_vision_remaining_usd.items()
+                    k: round(v, 4) for k, v in pick.per_vision_remaining_usd.items()
                 },
                 dispatch_summary=None,
             )
@@ -871,9 +886,7 @@ def create_app() -> FastAPI:
             run=CrawlRunOut.from_row(out.run),
             signal_id=out.signal_id,
             dr_cached=out.deep_research.cached,
-            scoring_confidence=out.scoring.scoring.confidence
-            if out.scoring is not None
-            else None,
+            scoring_confidence=out.scoring.scoring.confidence if out.scoring is not None else None,
             primary_capability_key=out.risk.primary_capability.key
             if out.risk.primary_capability is not None
             else None,
@@ -910,9 +923,7 @@ def create_app() -> FastAPI:
             raw_signals_fetched=out.ingest.raw_signals_fetched if out.ingest else 0,
             signals_written=out.ingest.signals_written if out.ingest else 0,
             extractor_failures=out.ingest.extractor_failures if out.ingest else 0,
-            extractor_total_cost_usd=out.ingest.extractor_total_cost_usd
-            if out.ingest
-            else 0.0,
+            extractor_total_cost_usd=out.ingest.extractor_total_cost_usd if out.ingest else 0.0,
         )
 
     @app.post("/fetchers/actor/run", response_model=ActorTriggerOut)
@@ -946,9 +957,7 @@ def create_app() -> FastAPI:
             run=CrawlRunOut.from_row(out.run),
             signal_id=out.signal_id,
             dr_cached=out.deep_research.cached,
-            scoring_confidence=out.scoring.scoring.confidence
-            if out.scoring is not None
-            else None,
+            scoring_confidence=out.scoring.scoring.confidence if out.scoring is not None else None,
             matched_actor_key=out.scoring.scoring.matched_actor_key
             if out.scoring is not None
             else None,

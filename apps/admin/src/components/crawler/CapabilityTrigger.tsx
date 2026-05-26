@@ -10,7 +10,7 @@ import { TriggerError, TriggerOk } from "./TriggerFeedback";
 export function CapabilityTrigger() {
   const router = useRouter();
   const [vision, setVision] = useState<string>("space-data-center");
-  const [capability, setCapability] = useState<string>("rad-hard-compute");
+  const [capability, setCapability] = useState<string>("rad_hard_compute");
   const [error, setError] = useState<string | null>(null);
   const [lastOk, setLastOk] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();

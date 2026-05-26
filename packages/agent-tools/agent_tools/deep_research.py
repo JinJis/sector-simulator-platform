@@ -39,7 +39,6 @@ import hashlib
 import json
 import time
 from collections import OrderedDict
-from collections.abc import MutableMapping
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
@@ -48,7 +47,6 @@ from agent_tools.cost import (
     PricedUsage,
     deep_research_price_usd,
 )
-
 
 DeepResearchTier = Literal["fast", "max"]
 DeepResearchSurface = Literal[
@@ -272,14 +270,23 @@ class DeepResearchClient:
         }
 
         started_at = time.monotonic()
-        interaction = await asyncio.to_thread(
-            self.genai_client.interactions.create,
-            input=prompt,
-            agent=model,
-            background=True,
-            agent_config=agent_config,
-        )
-        interaction_id: str = getattr(interaction, "id")
+        try:
+            interaction = await asyncio.to_thread(
+                self.genai_client.interactions.create,
+                input=prompt,
+                agent=model,
+                background=True,
+                agent_config=agent_config,
+            )
+        except Exception as exc:  # noqa: BLE001 — convert to structured result
+            return _error_result(
+                tier=tier,
+                model=model,
+                exc=exc,
+                elapsed=time.monotonic() - started_at,
+                step="interactions.create",
+            )
+        interaction_id: str = getattr(interaction, "id", "") or ""
 
         # Poll until terminal status or timeout.
         deadline = started_at + self.max_wait_seconds
@@ -304,9 +311,19 @@ class DeepResearchClient:
                     raw_usage={},
                 )
             await asyncio.sleep(self.poll_interval_seconds)
-            interaction = await asyncio.to_thread(
-                self.genai_client.interactions.get, interaction_id
-            )
+            try:
+                interaction = await asyncio.to_thread(
+                    self.genai_client.interactions.get, interaction_id
+                )
+            except Exception as exc:  # noqa: BLE001
+                return _error_result(
+                    tier=tier,
+                    model=model,
+                    exc=exc,
+                    elapsed=time.monotonic() - started_at,
+                    step="interactions.get",
+                    interaction_id=interaction_id,
+                )
 
         elapsed = time.monotonic() - started_at
         status = (getattr(interaction, "status", "") or "").lower()
@@ -362,3 +379,51 @@ class DeepResearchClient:
             if isinstance(value, int):
                 out[attr] = value
         return out
+
+
+def _friendly_api_error(exc: Exception, *, model: str) -> str:
+    """Convert google-genai API exceptions into operator-readable strings.
+
+    The most common painful case is calling deep-research-* models with
+    an AI Studio (GEMINI_API_KEY) client: the endpoint returns an HTML
+    404 page, the SDK raises a generic NotFoundError whose `str(exc)`
+    is literally `<!DOCTYPE html>...`. That's a configuration story we
+    can name out loud, not a transient API failure.
+    """
+    raw = str(exc) or exc.__class__.__name__
+    first_line = raw.splitlines()[0] if raw else exc.__class__.__name__
+    if "<!DOCTYPE" in raw or "<html" in raw.lower():
+        return (
+            f"Deep Research API returned an HTML 404 — model "
+            f"{model!r} is not reachable on this Gemini tier. The "
+            "deep-research-* models require Vertex AI access via a "
+            "service-account JSON at infra/secrets/vertex-ai-sa.json "
+            "(see infra/secrets/README.md). The AI Studio "
+            "GEMINI_API_KEY path does not host Interactions API."
+        )
+    # Permission denied / quota / location errors — keep the SDK's
+    # first line, which is usually the right hint.
+    return f"{type(exc).__name__}: {first_line[:480]}"
+
+
+def _error_result(
+    *,
+    tier: DeepResearchTier,
+    model: str,
+    exc: Exception,
+    elapsed: float,
+    step: str,
+    interaction_id: str = "",
+) -> DeepResearchResult:
+    return DeepResearchResult(
+        interaction_id=interaction_id,
+        tier=tier,
+        model=model,
+        status="error",
+        output_text="",
+        error=f"{step}: {_friendly_api_error(exc, model=model)}",
+        cached=False,
+        cost_usd=0.0,
+        elapsed_seconds=elapsed,
+        raw_usage={},
+    )
