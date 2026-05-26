@@ -6,7 +6,7 @@ import { useState, useTransition } from "react";
 import { runRiskFetcher } from "@/lib/sim-client";
 
 import { TriggerSelectors, type TriggerSelectorsValue } from "./TriggerSelectors";
-import { TriggerError, TriggerOk } from "./TriggerFeedback";
+import { TriggerError, TriggerOk, TriggerPendingHint } from "./TriggerFeedback";
 
 export function RiskTrigger() {
   const router = useRouter();
@@ -60,13 +60,16 @@ export function RiskTrigger() {
           value={sel}
           onChange={setSel}
         />
-        <button
-          type="submit"
-          disabled={!ready}
-          className="self-start rounded bg-rose-700 px-3 py-1 text-xs font-medium text-rose-50 hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
-        >
-          {pending ? "Running…" : "Run Risk fetcher"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="submit"
+            disabled={!ready}
+            className="rounded bg-rose-700 px-3 py-1 text-xs font-medium text-rose-50 hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+          >
+            {pending ? "Running…" : "Run Risk fetcher"}
+          </button>
+          {pending ? <TriggerPendingHint /> : null}
+        </div>
       </form>
       {lastOk ? <TriggerOk text={lastOk} /> : null}
       {error ? <TriggerError raw={error} /> : null}

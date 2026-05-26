@@ -6,7 +6,7 @@ import { useState, useTransition } from "react";
 import { runDeepResearchDigest } from "@/lib/sim-client";
 
 import { TriggerSelectors, type TriggerSelectorsValue } from "./TriggerSelectors";
-import { TriggerError, TriggerOk } from "./TriggerFeedback";
+import { TriggerError, TriggerOk, TriggerPendingHint } from "./TriggerFeedback";
 
 export function DigestTrigger() {
   const router = useRouter();
@@ -67,13 +67,16 @@ export function DigestTrigger() {
           value={sel}
           onChange={setSel}
         />
-        <button
-          type="submit"
-          disabled={!ready}
-          className="self-start rounded bg-violet-700 px-3 py-1 text-xs font-medium text-violet-50 hover:bg-violet-600 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
-        >
-          {pending ? "Running…" : "Run DR digest"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="submit"
+            disabled={!ready}
+            className="rounded bg-violet-700 px-3 py-1 text-xs font-medium text-violet-50 hover:bg-violet-600 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+          >
+            {pending ? "Running…" : "Run DR digest"}
+          </button>
+          {pending ? <TriggerPendingHint kind="digest" /> : null}
+        </div>
       </form>
       {lastOk ? <TriggerOk text={lastOk} /> : null}
       {error ? <TriggerError raw={error} /> : null}

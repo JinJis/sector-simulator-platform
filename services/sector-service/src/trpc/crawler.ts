@@ -179,10 +179,28 @@ function crawlerBase(): string {
   return base.replace(/\/+$/, "");
 }
 
+// Default for short read-side calls (health / lookups / runs.list /
+// runs.get / stats.health24h). The cockpit polls those frequently —
+// a 2.5s ceiling keeps a degraded data-pipeline from freezing the UI.
+const SHORT_TIMEOUT_MS = 2_500;
+
+// For LLM-bound trigger calls (fetchers + digest + orchestrator
+// execute path). The data-pipeline fetcher functions are synchronous
+// from the HTTP layer's perspective — they await the grounded gemini
+// response (10-40s) + the SignalExtractor agent (~1-3s) + DB writes
+// before returning. The 2.5s default would 504 on every trigger
+// click. 180s covers the slowest DEEP-tier digest with margin.
+const TRIGGER_TIMEOUT_MS = 180_000;
+
+// Orchestrator tick (dry_run=false) dispatches multiple fetchers
+// sequentially; budget for ~5 candidates × 30s each.
+const ORCHESTRATOR_TIMEOUT_MS = 300_000;
+
 async function proxy<T>(
   path: string,
   init: RequestInit,
   schema: z.ZodType<T>,
+  opts: { timeoutMs?: number } = {},
 ): Promise<T> {
   const base = crawlerBase();
   let res: Response;
@@ -193,11 +211,7 @@ async function proxy<T>(
         "content-type": "application/json",
         ...(init.headers ?? {}),
       },
-      // The cockpit polls these — a 2.5s ceiling is plenty for
-      // list/get and acceptable for trigger (which itself returns
-      // immediately because the fetcher updates the row async on
-      // the Python side once the LLM finishes).
-      signal: AbortSignal.timeout(2500),
+      signal: AbortSignal.timeout(opts.timeoutMs ?? SHORT_TIMEOUT_MS),
     });
   } catch (err) {
     throw new TRPCError({
@@ -363,6 +377,7 @@ export const crawlerRouter = router({
             body: JSON.stringify(input),
           },
           HelloWorldOut,
+          { timeoutMs: TRIGGER_TIMEOUT_MS },
         ),
       ),
 
@@ -386,6 +401,7 @@ export const crawlerRouter = router({
             body: JSON.stringify(input),
           },
           CapabilityOut,
+          { timeoutMs: TRIGGER_TIMEOUT_MS },
         ),
       ),
 
@@ -404,6 +420,7 @@ export const crawlerRouter = router({
           "/fetchers/actor/run",
           { method: "POST", body: JSON.stringify(input) },
           ActorTriggerOut,
+          { timeoutMs: TRIGGER_TIMEOUT_MS },
         ),
       ),
 
@@ -423,6 +440,7 @@ export const crawlerRouter = router({
           "/fetchers/signal/run",
           { method: "POST", body: JSON.stringify(input) },
           SignalTriggerOut,
+          { timeoutMs: TRIGGER_TIMEOUT_MS },
         ),
       ),
 
@@ -441,6 +459,7 @@ export const crawlerRouter = router({
           "/fetchers/risk/run",
           { method: "POST", body: JSON.stringify(input) },
           RiskTriggerOut,
+          { timeoutMs: TRIGGER_TIMEOUT_MS },
         ),
       ),
   }),
@@ -459,6 +478,7 @@ export const crawlerRouter = router({
         "/jobs/deep-research-digest/run",
         { method: "POST", body: JSON.stringify(input) },
         DigestRunOut,
+        { timeoutMs: TRIGGER_TIMEOUT_MS },
       ),
     ),
 
@@ -484,6 +504,11 @@ export const crawlerRouter = router({
           }),
         },
         OrchestratorTickOut,
+        {
+          // Dry-run is a pure-DB read (no LLM) and finishes in <1s.
+          // Execute path dispatches multiple fetchers sequentially.
+          timeoutMs: input.dry_run ? SHORT_TIMEOUT_MS : ORCHESTRATOR_TIMEOUT_MS,
+        },
       ),
     ),
 
@@ -505,6 +530,7 @@ export const crawlerRouter = router({
         "/jobs/discovery/run",
         { method: "POST", body: JSON.stringify(input) },
         DiscoveryRunOut,
+        { timeoutMs: TRIGGER_TIMEOUT_MS },
       ),
     ),
 
