@@ -580,6 +580,7 @@ export default async function VisionOverviewPage({ params }: Props) {
                   }
                   deltaComposite={deltaComposite}
                   sourceUrl={s.source_url}
+                  citations={s.citations}
                   publishedAt={s.published_at}
                   highlighted={s.is_highlight}
                 />

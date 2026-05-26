@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 
-import { SourceChip } from "./source-chip";
+import { SourceChip, SourceList } from "./source-chip";
 
 export type SignalKind =
   | "paper"
@@ -24,6 +24,10 @@ export interface SignalRowProps {
   deltaComposite?: number | null;
   /** Source URL — when set, the title links out. */
   sourceUrl?: string | null;
+  /** Grounded-search citations (digest signals). Each rendered as a
+   *  small chip; popover lists all when ≥2. Empty / omitted = no
+   *  extra chips. */
+  citations?: { url: string; title: string }[] | null;
   /** ISO date string or Date — rendered as "3d ago" relative format. */
   publishedAt?: string | Date | null;
   /** Set true if the row is in the highlight stream (hero "Live Signals"). */
@@ -56,6 +60,16 @@ const KIND_LABEL: Record<string, string> = {
   social: "Social",
 };
 
+/**
+ * `internal://digest/...` and `internal://crawler/...` are synthetic
+ * source URLs the digest + fetcher pipeline uses for de-duplication
+ * — they're not navigable, so don't render a SourceChip that links
+ * to them. Real citations (when present) carry the actual URLs.
+ */
+function isInternalUrl(url: string): boolean {
+  return url.startsWith("internal://");
+}
+
 function relativeTime(d: Date): string {
   const ms = Date.now() - d.getTime();
   const sec = Math.round(ms / 1000);
@@ -87,6 +101,7 @@ export function SignalRow({
   capability,
   deltaComposite,
   sourceUrl,
+  citations,
   publishedAt,
   highlighted = false,
   showSummary = false,
@@ -130,7 +145,7 @@ export function SignalRow({
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          {sourceUrl ? (
+          {sourceUrl && !isInternalUrl(sourceUrl) ? (
             <a
               href={sourceUrl}
               target="_blank"
@@ -148,7 +163,7 @@ export function SignalRow({
               {title}
             </span>
           )}
-          {sourceUrl && (
+          {sourceUrl && !isInternalUrl(sourceUrl) && (
             <SourceChip
               source={{
                 url: sourceUrl,
@@ -156,6 +171,18 @@ export function SignalRow({
                 kind,
                 published_at: publishedAt,
               }}
+              className="shrink-0"
+            />
+          )}
+          {citations && citations.length > 0 && (
+            <SourceList
+              sources={citations.map((c) => ({
+                url: c.url,
+                title: c.title,
+                kind: "research_brief",
+                published_at: publishedAt,
+              }))}
+              label={`${citations.length} src`}
               className="shrink-0"
             />
           )}

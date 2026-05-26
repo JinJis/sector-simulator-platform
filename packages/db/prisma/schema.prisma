@@ -757,6 +757,15 @@ model Signal {
   // extractor when the magnitude warrants attention.
   is_highlight Boolean @default(false) @map("is_highlight")
 
+  // Optional grounded-search citations. Populated by the digest
+  // fetcher (gemini + google_search) and any other fetcher that
+  // pipes GroundedResearchResult.citations through to the writer.
+  // Shape: `[{url: string, title: string}, ...]`. Null = no
+  // citations attached (most adapter-sourced signals — arXiv / USPTO
+  // / crawl4ai — leave this null since their source_url is already
+  // the primary reference).
+  citations Json? @map("citations")
+
   ingested_at DateTime @default(now()) @map("ingested_at")
 
   @@unique([source_url, capability_id])

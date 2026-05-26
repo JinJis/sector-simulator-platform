@@ -604,6 +604,7 @@ export const spaceDataCenterFixture: VisionOverview = {
       delta_economic: 2,
       delta_regulatory: null,
       delta_supply: 1,
+      citations: [],
       is_highlight: true,
     },
     {
@@ -620,6 +621,7 @@ export const spaceDataCenterFixture: VisionOverview = {
       delta_economic: null,
       delta_regulatory: null,
       delta_supply: -1,
+      citations: [],
       is_highlight: true,
     },
     {
@@ -636,6 +638,7 @@ export const spaceDataCenterFixture: VisionOverview = {
       delta_economic: null,
       delta_regulatory: null,
       delta_supply: null,
+      citations: [],
       is_highlight: true,
     },
     {
@@ -652,6 +655,7 @@ export const spaceDataCenterFixture: VisionOverview = {
       delta_economic: null,
       delta_regulatory: null,
       delta_supply: null,
+      citations: [],
       is_highlight: false,
     },
     {
@@ -668,6 +672,7 @@ export const spaceDataCenterFixture: VisionOverview = {
       delta_economic: 3,
       delta_regulatory: 2,
       delta_supply: null,
+      citations: [],
       is_highlight: true,
     },
     {
@@ -684,6 +689,7 @@ export const spaceDataCenterFixture: VisionOverview = {
       delta_economic: null,
       delta_regulatory: null,
       delta_supply: null,
+      citations: [],
       is_highlight: false,
     },
     {
@@ -700,6 +706,7 @@ export const spaceDataCenterFixture: VisionOverview = {
       delta_economic: null,
       delta_regulatory: null,
       delta_supply: null,
+      citations: [],
       is_highlight: false,
     },
     {
@@ -716,6 +723,7 @@ export const spaceDataCenterFixture: VisionOverview = {
       delta_economic: 0,
       delta_regulatory: null,
       delta_supply: 0,
+      citations: [],
       is_highlight: false,
     },
   ],

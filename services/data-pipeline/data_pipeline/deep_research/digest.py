@@ -35,7 +35,11 @@ from data_pipeline.agents import (
     SignalExtractorRunResult,
 )
 from data_pipeline.crawl_run_repo import CrawlRunRepository, CrawlRunRow
-from data_pipeline.db.signal_writer import SignalUpsert, SignalWriter
+from data_pipeline.db.signal_writer import (
+    SignalCitation,
+    SignalUpsert,
+    SignalWriter,
+)
 from data_pipeline.signal_repo import CapabilityHandle, SignalRepository
 
 _DEFAULT_PROMPT = (
@@ -347,6 +351,13 @@ async def run_deep_research_digest(
         if scoring.scoring.confidence >= 0.5
         else None,
         is_highlight=True,
+        # Persist the grounded-search citations on the signal row so
+        # the user-facing /visions/[slug]/signals view can render
+        # them inline. Crawl_runs.result_summary keeps a copy for
+        # the admin cockpit; both reads pull from the same source.
+        citations=tuple(
+            SignalCitation(url=c.url, title=c.title) for c in dr.citations
+        ),
     )
     signal_id = await signal_writer.upsert(upsert)
     signals_written = 1

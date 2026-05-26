@@ -88,6 +88,7 @@ type RecentSignal = {
   delta_regulatory: number | null;
   delta_supply: number | null;
   is_highlight: boolean;
+  citations?: { url: string; title: string }[];
 };
 
 function compositeDelta(s: RecentSignal): number | null {
@@ -401,6 +402,7 @@ export default async function ActorDetailPage({ params }: Props) {
                 }
                 deltaComposite={compositeDelta(s)}
                 sourceUrl={s.source_url}
+                citations={s.citations}
                 publishedAt={s.published_at}
                 highlighted={s.is_highlight}
                 showSummary

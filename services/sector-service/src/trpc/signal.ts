@@ -29,6 +29,15 @@ const SignalKind = z.enum([
   "social",
 ]);
 
+// Grounded-search citations the digest fetcher attaches to its
+// signal row (one url + display title each). Most adapter-sourced
+// signals (arXiv / USPTO / crawl4ai news) leave this empty since
+// their `source_url` is already the primary reference.
+const SignalCitation = z.object({
+  url: z.string(),
+  title: z.string(),
+});
+
 const SignalOut = z.object({
   id: z.string(),
   sector_slug: z.string(),
@@ -46,7 +55,28 @@ const SignalOut = z.object({
   delta_supply: z.number().nullable(),
   is_highlight: z.boolean(),
   ingested_at: z.date(),
+  citations: z.array(SignalCitation).default([]),
 });
+
+/**
+ * Defensive parse of the Signal.citations JSONB column. The DB
+ * stores `[{url, title}]` when the digest wrote them, NULL otherwise.
+ * Any older row written before the column existed parses as `[]`.
+ */
+function parseCitations(raw: unknown): { url: string; title: string }[] {
+  if (!Array.isArray(raw)) return [];
+  const out: { url: string; title: string }[] = [];
+  for (const item of raw) {
+    if (item && typeof item === "object") {
+      const url = (item as { url?: unknown }).url;
+      const title = (item as { title?: unknown }).title;
+      if (typeof url === "string" && url.length > 0) {
+        out.push({ url, title: typeof title === "string" ? title : url });
+      }
+    }
+  }
+  return out;
+}
 
 const ListInput = z.object({
   sector_slug: z.string().min(1),
@@ -146,6 +176,7 @@ export const signalRouter = router({
           delta_supply: s.delta_supply,
           is_highlight: s.is_highlight,
           ingested_at: s.ingested_at,
+          citations: parseCitations(s.citations),
         })),
         next_cursor,
       };
@@ -179,6 +210,7 @@ export const signalRouter = router({
         delta_supply: s.delta_supply,
         is_highlight: s.is_highlight,
         ingested_at: s.ingested_at,
+        citations: parseCitations(s.citations),
       };
     }),
 

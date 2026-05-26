@@ -103,6 +103,7 @@ export default async function SignalsIndexPage({ params, searchParams }: Props) 
         delta_supply: s.delta_supply,
         is_highlight: s.is_highlight,
         ingested_at: s.published_at,
+        citations: [],
       })),
       next_cursor: null,
     };
@@ -220,6 +221,7 @@ export default async function SignalsIndexPage({ params, searchParams }: Props) 
                 }
                 deltaComposite={pickDeltaComposite(s)}
                 sourceUrl={s.source_url}
+                citations={s.citations}
                 publishedAt={s.published_at}
                 highlighted={s.is_highlight}
                 showSummary

@@ -14,12 +14,22 @@ source_url so multiple runs on the same day collapse to one row
 
 from __future__ import annotations
 
+import json
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
 
 import asyncpg
+
+
+@dataclass(frozen=True, slots=True)
+class SignalCitation:
+    """One source URL retrieved by the grounded_search tool. Persisted
+    as part of the Signal row's `citations` JSON array."""
+
+    url: str
+    title: str
 
 
 def _new_signal_id() -> str:
@@ -48,6 +58,10 @@ class SignalUpsert:
     delta_regulatory: float | None
     delta_supply: float | None
     is_highlight: bool
+    # Grounded-search citations (digest fetcher populates these; other
+    # adapters leave them empty since their `source_url` IS the
+    # primary reference). Persisted as JSONB; empty tuple → NULL.
+    citations: tuple[SignalCitation, ...] = field(default_factory=tuple)
 
 
 class SignalWriter(Protocol):
@@ -61,16 +75,22 @@ class PostgresSignalWriter:
         self._pool = pool
 
     async def upsert(self, signal: SignalUpsert) -> str:
+        citations_json: str | None = (
+            json.dumps([{"url": c.url, "title": c.title} for c in signal.citations])
+            if signal.citations
+            else None
+        )
         row = await self._pool.fetchrow(
             """
             INSERT INTO signals (
                 id, sector_slug, capability_id, actor_id, source_kind,
                 source_url, source_id_ext, title, summary, published_at,
                 delta_technical, delta_economic, delta_regulatory, delta_supply,
-                is_highlight
+                is_highlight, citations
             )
             VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+                $16::jsonb
             )
             ON CONFLICT (source_url, capability_id) DO UPDATE
             SET actor_id        = EXCLUDED.actor_id,
@@ -83,7 +103,11 @@ class PostgresSignalWriter:
                 delta_economic  = EXCLUDED.delta_economic,
                 delta_regulatory= EXCLUDED.delta_regulatory,
                 delta_supply    = EXCLUDED.delta_supply,
-                is_highlight    = EXCLUDED.is_highlight
+                is_highlight    = EXCLUDED.is_highlight,
+                -- Citations: only overwrite when the new write has
+                -- some (don't clobber a digest's citations with a
+                -- subsequent extractor backfill that has none).
+                citations       = COALESCE(EXCLUDED.citations, signals.citations)
             RETURNING id
             """,
             _new_signal_id(),
@@ -101,6 +125,7 @@ class PostgresSignalWriter:
             signal.delta_regulatory,
             signal.delta_supply,
             signal.is_highlight,
+            citations_json,
         )
         assert row is not None
         return row["id"]

@@ -148,6 +148,11 @@ const SignalInVisionOverview = z.object({
   delta_regulatory: z.number().nullable(),
   delta_supply: z.number().nullable(),
   is_highlight: z.boolean(),
+  // Grounded-search citations (digest signals carry them; adapter
+  // signals leave the array empty). Same shape as `crawler.signal.list`.
+  citations: z
+    .array(z.object({ url: z.string(), title: z.string() }))
+    .default([]),
 });
 
 const VisionOverview = z.object({
@@ -175,6 +180,27 @@ const FeasibilityHistoryPoint = z.object({
  * surfaces as the "delta_composite" on the latest-signal hero pill.
  * Returns null when every dim is null (signal not yet scored).
  */
+/**
+ * Same helper as in signal.ts — defensive parse of Signal.citations
+ * (JSONB column). Kept duplicated rather than extracted because each
+ * router file should be readable in isolation; promote to a shared
+ * helper if a third callsite appears.
+ */
+function parseSignalCitations(raw: unknown): { url: string; title: string }[] {
+  if (!Array.isArray(raw)) return [];
+  const out: { url: string; title: string }[] = [];
+  for (const item of raw) {
+    if (item && typeof item === "object") {
+      const url = (item as { url?: unknown }).url;
+      const title = (item as { title?: unknown }).title;
+      if (typeof url === "string" && url.length > 0) {
+        out.push({ url, title: typeof title === "string" ? title : url });
+      }
+    }
+  }
+  return out;
+}
+
 function pickComposite(s: {
   delta_technical: number | null;
   delta_economic: number | null;
@@ -538,6 +564,7 @@ export const visionRouter = router({
           delta_regulatory: s.delta_regulatory,
           delta_supply: s.delta_supply,
           is_highlight: s.is_highlight,
+          citations: parseSignalCitations(s.citations),
         })),
         actors: visionActors.map((va) => ({
           actor_key: va.actor.key,
