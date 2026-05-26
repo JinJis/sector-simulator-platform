@@ -96,6 +96,50 @@ def _synthetic_source_url(*, vision_slug: str, as_of: datetime) -> str:
     return f"internal://digest/{vision_slug}/{day}"
 
 
+async def _pick_binding_anchor(
+    *,
+    capabilities: list[CapabilityHandle],
+    signal_repo: SignalRepository,
+) -> CapabilityHandle:
+    """Return the capability with the lowest Liebig composite — the
+    minimum of (technical, economic, regulatory, supply) — across the
+    vision. That's the rate-limiting capability under Liebig's law of
+    the minimum, which matches how the vision aggregator computes
+    feasibility. Un-scored or partially-scored capabilities sort
+    after fully-scored ones so the digest doesn't keep re-anchoring
+    on cold-start caps. If every capability is un-scored, falls back
+    to capabilities[0].
+
+    Caller has already guaranteed `capabilities` is non-empty.
+    """
+    # Issue per-cap score reads in parallel. N is typically ≤10 for a
+    # well-formed vision so the fan-out cost is negligible vs the
+    # subsequent DR + extractor calls.
+    import asyncio  # noqa: PLC0415 — local to keep the module import light
+
+    scores = await asyncio.gather(
+        *(signal_repo.get_current_capability_score(c.id) for c in capabilities)
+    )
+
+    def _liebig_min(s) -> float | None:  # noqa: ANN001 — duck-typed
+        if s is None:
+            return None
+        dims = [s.technical, s.economic, s.regulatory, s.supply]
+        present = [d for d in dims if d is not None]
+        if not present:
+            return None
+        return min(present)
+
+    def _sort_key(idx: int) -> tuple[bool, float, int]:
+        m = _liebig_min(scores[idx])
+        # (m-is-None, m, original-index) — None sorts after numeric,
+        # smaller min sorts first, ties broken by source-list order.
+        return (m is None, m if m is not None else 0.0, idx)
+
+    ranked = sorted(range(len(capabilities)), key=_sort_key)
+    return capabilities[ranked[0]]
+
+
 def _first_sentence(text: str) -> str:
     for end in (".", "?", "!", "\n"):
         idx = text.find(end)
@@ -126,11 +170,12 @@ async def run_deep_research_digest(
     )
     await runs_repo.mark_running(run.id)
 
-    # 1. Pick an anchor capability. Composite-lowest selection (the
-    # binding capability) would be more principled, but requires
-    # joining current_capability_scores; for the initial cut, take the
-    # first capability the vision has. Refinement to composite-lowest
-    # is a follow-up once the digest is in steady use.
+    # 1. Pick the binding-capability anchor — the capability whose
+    # current composite score is lowest is the rate-limiter on the
+    # whole vision's feasibility, so attributing the digest there
+    # puts the rollup's worst dimension under the most signal
+    # pressure. Cold-start visions (every capability un-scored) fall
+    # back to the first listed capability so the digest still runs.
     capabilities = await signal_repo.list_vision_capabilities(request.vision_slug)
     if not capabilities:
         await runs_repo.mark_complete(
@@ -153,7 +198,9 @@ async def run_deep_research_digest(
             run=fresh,
         )
 
-    anchor = capabilities[0]
+    anchor = await _pick_binding_anchor(
+        capabilities=capabilities, signal_repo=signal_repo
+    )
     prompt = (request.prompt or _DEFAULT_PROMPT).format(
         vision_slug=request.vision_slug,
         capability_name=anchor.name,

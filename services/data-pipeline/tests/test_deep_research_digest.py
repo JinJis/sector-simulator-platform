@@ -28,7 +28,11 @@ from data_pipeline.deep_research.digest import (
     run_deep_research_digest,
 )
 from data_pipeline.main import create_app
-from data_pipeline.signal_repo import ActorHandle, CapabilityHandle
+from data_pipeline.signal_repo import (
+    ActorHandle,
+    CapabilityHandle,
+    CurrentCapabilityScore,
+)
 from fastapi.testclient import TestClient
 
 # --------------------------------------------------------------------------
@@ -139,12 +143,32 @@ class _InMemorySignalRepo:
     """Implements only the SignalRepository methods digest needs."""
 
     capabilities_by_vision: dict[str, list[CapabilityHandle]] = field(default_factory=dict)
+    # Capability id → min-dim score. The fake stamps that number on
+    # all 4 dims so the digest's Liebig-min anchor picker sees it as
+    # the binding composite. Missing entries return None → digest
+    # treats as un-scored (sorts last when ranking).
+    scores_by_capability_id: dict[str, float] = field(default_factory=dict)
 
     async def list_vision_capabilities(self, sector_slug: str) -> list[CapabilityHandle]:
         return self.capabilities_by_vision.get(sector_slug, [])
 
     async def list_vision_actors(self, sector_slug: str) -> list[ActorHandle]:
         return []
+
+    async def get_current_capability_score(
+        self, capability_id: str
+    ) -> CurrentCapabilityScore | None:
+        if capability_id not in self.scores_by_capability_id:
+            return None
+        v = self.scores_by_capability_id[capability_id]
+        return CurrentCapabilityScore(
+            capability_id=capability_id,
+            capability_key="",
+            technical=v,
+            economic=v,
+            regulatory=v,
+            supply=v,
+        )
 
 
 @dataclass
@@ -288,6 +312,62 @@ async def test_digest_writes_signal_anchored_on_first_capability() -> None:
     assert w.source_url.startswith("internal://digest/space-data-center/")
     assert w.delta_technical == 2.0  # confidence 0.81 ≥ 0.5
     assert w.is_highlight is True
+
+
+@pytest.mark.asyncio
+async def test_digest_anchors_on_lowest_liebig_min_capability() -> None:
+    """Two scored capabilities — the one with the lower min dim is
+    the binding constraint and should win the anchor selection
+    regardless of its position in the list."""
+    runs = _InMemoryRunsRepo()
+    sig_repo = _seed_signal_repo()  # rad-hard-compute first, thermal second
+    # Thermal is binding (lower min) — should win even though it's
+    # listed second.
+    sig_repo.scores_by_capability_id["cap_radhard_1"] = 65.0
+    sig_repo.scores_by_capability_id["cap_thermal_1"] = 30.0
+    writer = _InMemorySignalWriter()
+    dr = _build_deep_research()
+    agent = _FakeAgentClient()
+
+    result = await run_deep_research_digest(
+        DigestRequest(vision_slug="space-data-center"),
+        runs_repo=runs,
+        signal_repo=sig_repo,
+        signal_writer=writer,
+        deep_research=dr,
+        agent_client=agent,
+    )
+    assert result.run.status == "ok"
+    assert result.anchor_capability is not None
+    assert result.anchor_capability.key == "thermal-management"
+    # Signal got written to the thermal capability id.
+    assert writer.rows[0].capability_id == "cap_thermal_1"
+    # Extractor saw the binding capability's context.
+    assert agent.calls[0].capability_key == "thermal-management"
+
+
+@pytest.mark.asyncio
+async def test_digest_cold_start_falls_back_to_first_capability() -> None:
+    """All capabilities un-scored (cold-start vision) — digest anchors
+    on the first listed capability so it doesn't bail out."""
+    runs = _InMemoryRunsRepo()
+    sig_repo = _seed_signal_repo()  # no scores set
+    writer = _InMemorySignalWriter()
+    dr = _build_deep_research()
+    agent = _FakeAgentClient()
+
+    result = await run_deep_research_digest(
+        DigestRequest(vision_slug="space-data-center"),
+        runs_repo=runs,
+        signal_repo=sig_repo,
+        signal_writer=writer,
+        deep_research=dr,
+        agent_client=agent,
+    )
+    assert result.run.status == "ok"
+    # rad-hard-compute is first in _seed_signal_repo.
+    assert result.anchor_capability is not None
+    assert result.anchor_capability.key == "rad-hard-compute"
 
 
 @pytest.mark.asyncio

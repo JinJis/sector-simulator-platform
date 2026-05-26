@@ -124,6 +124,14 @@ const DiscoveryRunOut = z.object({
 const CrawlerHealth = z.object({
   status: z.string(),
   now: z.string(),
+  // Scheduler arming + per-job next_run timestamp (ISO string, or
+  // null for jobs APScheduler hasn't computed yet). The map keys are
+  // APScheduler job ids — `news_ingest_5min`,
+  // `research_ingest_hourly`, `recompute_feasibility_hourly`,
+  // `digest_daily`, `orchestrator_tick_15min`,
+  // `refresh_quotes_daily`, `resolve_predictions_v2_hourly`.
+  scheduler_armed: z.boolean().optional(),
+  next_runs: z.record(z.string().nullable()).optional(),
   ready: z.object({
     repo: z.boolean(),
     deep_research: z.boolean(),

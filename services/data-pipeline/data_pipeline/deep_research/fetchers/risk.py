@@ -384,6 +384,9 @@ def _summarize(
         "dr_cached": dr.cached,
         "dr_elapsed_seconds": round(dr.elapsed_seconds, 3),
         "output_preview": dr.output_text[:280],
+        "citations": [
+            {"url": c.url, "title": c.title} for c in dr.citations
+        ],
     }
     if scoring is not None:
         out["scoring"] = {
