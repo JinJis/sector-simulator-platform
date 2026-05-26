@@ -1,5 +1,7 @@
 import type { CSSProperties } from "react";
 
+import { SourceChip } from "./source-chip";
+
 export type SignalKind =
   | "paper"
   | "patent"
@@ -145,6 +147,17 @@ export function SignalRow({
             >
               {title}
             </span>
+          )}
+          {sourceUrl && (
+            <SourceChip
+              source={{
+                url: sourceUrl,
+                title,
+                kind,
+                published_at: publishedAt,
+              }}
+              className="shrink-0"
+            />
           )}
         </div>
         {showSummary && summary && (

@@ -19,6 +19,8 @@
     "db:migrate:deploy": "pnpm --filter @platform/db migrate:deploy",
     "db:migrate:reset": "pnpm --filter @platform/db migrate:reset",
     "db:seed": "pnpm --filter @platform/db seed",
+    "db:seed:all": "pnpm db:seed && pnpm --filter @platform/db seed:visions && pnpm --filter @platform/db seed:actors && pnpm --filter @platform/db seed:signals",
+    "db:seed:signals": "pnpm --filter @platform/db seed:signals",
     "db:seed:equities": "pnpm --filter @platform/db seed:equities",
     "db:seed:equity-quotes": "pnpm --filter @platform/db seed:equity-quotes",
     "db:seed:equity-financials": "pnpm --filter @platform/db seed:equity-financials",

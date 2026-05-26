@@ -194,7 +194,10 @@ docs/{adr,architecture,tasks,archive}/   + agent-capabilities.md
 pnpm install
 cp .env.example .env                     # see infra/secrets/README.md
 pnpm db:migrate dev                      # Prisma migrations
-pnpm seed                                # 3 seed sectors (+ capabilities / risks / actors / feasibility on full chain)
+pnpm db:seed:all                         # sectors → visions → actors → signals (full demo chain)
+# or piecemeal:
+pnpm db:seed                             # sectors only
+pnpm db:seed:signals                     # ~80 source-grounded signals (real arxiv / press / SEC URLs)
 
 # Dev
 pnpm dev                                 # all services (turbo)

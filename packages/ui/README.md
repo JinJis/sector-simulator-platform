@@ -37,6 +37,18 @@ quirks get pushed back to the app.
 | `SubNav` | Horizontal pill row that auto-highlights the active route via `usePathname()`. Used for the `/visions/[slug]/*` sub-tabs |
 | `Sparkline` | Tiny inline chart for headline numbers (capability score history, equity price history, etc.) |
 
+### Source-grounding primitives (MP1)
+
+| Component | Use |
+|---|---|
+| `SourceChip` | Small inline 🔗 chip for one source. Hover shows `kind · title · published_at`; click opens `url` in a new tab. Color is derived from `source_kind` so users learn the taxonomy by sight. |
+| `SourceList` | Same chip shape with a count badge for ≥2 sources backing one claim. Hover reveals a list, each row a clickable anchor. Degrades to `SourceChip` automatically when given exactly one source. |
+
+Both are used by `SignalRow` today (MP1) and will be reused by MP2
+thesis bullets, MP3 actor rationale, MP4 risk rows, and MP5 economics
+datapoints — one design language for every "where did this number come
+from?" answer.
+
 Each component exports one named symbol + its `Props` type. The barrel
 at `src/index.ts` re-exports them all so `import { X } from "@platform/ui"`
 works; the per-component subpath (`@platform/ui/feasibility-gauge`) is

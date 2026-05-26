@@ -16,6 +16,7 @@
     "./feasibility-gauge": "./src/feasibility-gauge.tsx",
     "./risk-row": "./src/risk-row.tsx",
     "./signal-row": "./src/signal-row.tsx",
+    "./source-chip": "./src/source-chip.tsx",
     "./sparkline": "./src/sparkline.tsx",
     "./sub-nav": "./src/sub-nav.tsx",
     "./trajectory-sparkline": "./src/trajectory-sparkline.tsx",

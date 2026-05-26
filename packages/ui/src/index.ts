@@ -28,6 +28,14 @@ export {
 } from "./risk-row";
 export { SignalRow, type SignalKind, type SignalRowProps } from "./signal-row";
 export {
+  SourceChip,
+  SourceList,
+  type SourceChipProps,
+  type SourceKind,
+  type SourceListProps,
+  type SourceRef,
+} from "./source-chip";
+export {
   TrajectorySparkline,
   type TrajectoryPoint,
   type TrajectorySparklineProps,
