@@ -10,6 +10,7 @@
     "./actor-pill": "./src/actor-pill.tsx",
     "./breadcrumbs": "./src/breadcrumbs.tsx",
     "./capability-card": "./src/capability-card.tsx",
+    "./capability-heatmap": "./src/capability-heatmap.tsx",
     "./dimension-bars": "./src/dimension-bars.tsx",
     "./economics-curve-chart": "./src/economics-curve-chart.tsx",
     "./eta-window": "./src/eta-window.tsx",

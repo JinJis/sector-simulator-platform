@@ -51,6 +51,10 @@ const SignalOut = z.object({
 const ListInput = z.object({
   sector_slug: z.string().min(1),
   capability_key: z.string().min(1).optional(),
+  /** Optional global Actor.key — restricts to signals tagged with this
+   *  actor_id. Used by MP3 actor detail "Recent signals about this
+   *  actor" feed. Missing actor → NOT_FOUND. */
+  actor_key: z.string().min(1).optional(),
   source_kind: SignalKind.optional(),
   highlight_only: z.boolean().default(false),
   cursor: z.string().optional(), // ISO datetime of last seen published_at
@@ -87,9 +91,26 @@ export const signalRouter = router({
         capabilityIdFilter = cap.id;
       }
 
+      // Resolve actor filter to id if provided (MP3).
+      let actorIdFilter: string | undefined;
+      if (input.actor_key) {
+        const actor = await ctx.prisma.actor.findUnique({
+          where: { key: input.actor_key },
+          select: { id: true },
+        });
+        if (!actor) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `actor ${input.actor_key}`,
+          });
+        }
+        actorIdFilter = actor.id;
+      }
+
       const where = {
         sector_slug: input.sector_slug,
         ...(capabilityIdFilter ? { capability_id: capabilityIdFilter } : {}),
+        ...(actorIdFilter ? { actor_id: actorIdFilter } : {}),
         ...(input.source_kind ? { source_kind: input.source_kind } : {}),
         ...(input.highlight_only ? { is_highlight: true } : {}),
         ...(input.cursor ? { published_at: { lt: new Date(input.cursor) } } : {}),

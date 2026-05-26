@@ -43,7 +43,7 @@ Six product-level outcomes Phase 4 ships:
 ## Milestones
 
 ```
-M48 ──► M49a ──► M49b ──► [MP1✅ ─► MP2✅ ─► MP3 ─► MP4 ─► MP5 ─► MP6 ─► MP7]
+M48 ──► M49a ──► M49b ──► [MP1✅ ─► MP2✅ ─► MP3✅ ─► MP4 ─► MP5 ─► MP6 ─► MP7]
  │        │        │       │
  │        │        │       └─► M49c ─► M49d ─► M49f ─► M50 ─► M52 ─► M53 ─► M54
  │        │        │
@@ -189,7 +189,17 @@ control (Latest · 1m · 3m · 6m · 1y) and refresh button wired to
 source → real page opens; switch Catalysts filter to "1m" → only
 events within ±1 month visible.
 
-### MP3 — Actor detail: signal feed + visuals + sources  (3d)
+### MP3 — Actor detail: signal feed + visuals + sources  (3d) ✅
+
+Shipped 2026-05-26: `signal.list` accepts optional `actor_key` and
+resolves it to `actor_id` (mirrors the `capability_key` path). The
+actor detail page now composes `vision.getOverview` + `actor.get` +
+`signal.list({actor_key})` so it surfaces logo / name_local / website
++ a Recent Signals feed with `SourceChip` per row + a new
+`CapabilityHeatmap` (in `@platform/ui`) bucketing those signals by
+binding capability with role-tinted bars. "Why this actor matters
+here" gets a `SourceList` chip wired to the top 3 most-recent
+tagged signals.
 
 - New tRPC `signal.listForActor(sector_slug, actor_key, limit?, cursor?)`
   on `services/sector-service/src/trpc/signal.ts`. Same shape as

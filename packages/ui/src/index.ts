@@ -12,6 +12,12 @@ export {
 } from "./actor-card";
 export { ActorPill, type ActorPillProps } from "./actor-pill";
 export { CapabilityCard, type CapabilityCardProps } from "./capability-card";
+export {
+  CapabilityHeatmap,
+  type CapabilityHeatmapItem,
+  type CapabilityHeatmapProps,
+  type CapabilityHeatmapRole,
+} from "./capability-heatmap";
 export { DimensionBars, type DimensionBarsProps } from "./dimension-bars";
 export {
   EconomicsCurveChart,
