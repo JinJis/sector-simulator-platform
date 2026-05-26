@@ -6,12 +6,22 @@ Endpoints:
 - GET  /jobs/refresh-quotes/last
 - POST /jobs/refresh-quote-history        → daily-bar window refresh
 - GET  /jobs/refresh-quote-history/last
-- POST /jobs/refresh-financials           → quarterly fundamentals refresh
-- GET  /jobs/refresh-financials/last
+- POST /jobs/signal-ingest                → manual full M39 sweep
+- POST /jobs/signal-ingest/scope          → scoped to one vision × cap
+- POST /jobs/recompute-feasibility        → ScoreUpdater per capability
+- POST /jobs/resolve-predictions-v2       → M46b resolver
+- POST /fetchers/{capability,actor,risk,signal,hello-world}/run
+- POST /jobs/orchestrator/tick            → M49f opportunistic picker
+- POST /jobs/discovery/run                → M50 bot proposal sweep
+- GET  /jobs/runs[/{id}]                  → CrawlRun history
 
 Scheduler (APScheduler AsyncIOScheduler, UTC):
-  refresh_quotes        — `INGEST_CRON_QUOTES` (default `30 8 * * *`)
-  refresh_financials    — `REFRESH_FINANCIALS_CRON` (default `0 4 * * 0`, weekly)
+  refresh_quotes_daily             — `INGEST_CRON_QUOTES` (08:30 UTC default)
+  resolve_predictions_v2_hourly    — `RESOLVE_PREDICTIONS_V2_CRON` (5 * * * *)
+  news_ingest_5min                 — every 5 min; armed when NEWSAPI_KEY set
+  research_ingest_hourly           — arXiv + USPTO sweep at :07 past
+  recompute_feasibility_hourly     — ScoreUpdater rollup at :25 past
+  orchestrator_tick_15min          — M49f picker; gated `ORCHESTRATOR_SCHEDULE`
   Disabled entirely when `INGEST_SCHEDULE=off`.
 
 Configuration (env):
@@ -20,10 +30,11 @@ Configuration (env):
   INGEST_THROTTLE_MS            — between-symbol sleep (default 200)
   INGEST_CRON_QUOTES            — quote-refresh cron
   INGEST_SCHEDULE               — set to `off` to disable the scheduler
-  REFRESH_FINANCIALS_CRON       — financials-refresh cron
-  REFRESH_FINANCIALS_QUARTERS   — how many quarters to fetch per equity
-  EDGAR_USER_AGENT              — SEC fair-access policy contact string
-  DART_API_KEY                  — OPEN DART (KR) — required for KR refresh
+  NEWSAPI_KEY                   — arms news_ingest_5min when present
+  NEWS_INGEST_SCHEDULE          — `on` (default when key set) / `off`
+  RESEARCH_INGEST_SCHEDULE      — `on` (default) / `off`
+  ORCHESTRATOR_SCHEDULE         — `off` (default); accepts CRAWLER_SCHEDULE alias
+  RESOLVE_PREDICTIONS_V2_CRON   — defaults to hourly
   LOG_LEVEL                     — default INFO
 """
 
@@ -44,12 +55,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from data_pipeline.adapters.base import DataSource
-from data_pipeline.adapters.dart_source import DartSource
-from data_pipeline.adapters.edgar_source import EdgarSource
 from data_pipeline.adapters.fake import FakeSource
-from data_pipeline.adapters.fake_financials import FakeFinancialsSource
-from data_pipeline.adapters.financials_base import FinancialsSource
-from data_pipeline.adapters.frankfurter_fx import FrankfurterFx
 from data_pipeline.adapters.yfinance_source import YFinanceSource
 from data_pipeline.agents import (
     AgentClient,
@@ -96,77 +102,31 @@ from data_pipeline.deep_research.fetchers.signal import (
     run_signal_fetcher,
 )
 from data_pipeline.deep_research.orchestrator import pick_for_tick
-from data_pipeline.jobs.refresh_financials import (
-    RefreshFinancialsResult,
-    refresh_financials,
-)
-from data_pipeline.jobs.signal_ingest import IngestStats, run_signal_ingest
 from data_pipeline.jobs.refresh_quote_history import (
     RefreshHistoryResult,
     refresh_quote_history,
 )
 from data_pipeline.jobs.refresh_quotes import RefreshQuotesResult, refresh_quotes
-from data_pipeline.jobs.resolve_predictions import (
-    ResolvePredictionsResult,
-    resolve_due_predictions,
-)
 from data_pipeline.jobs.resolve_predictions_v2 import (
     ResolvePredictionsV2Result,
     resolve_due_predictions_v2,
 )
-from data_pipeline.prediction_repo import (
-    PredictionResolverRepository,
-    build_resolver_repository,
-)
+from data_pipeline.jobs.signal_ingest import IngestStats, run_signal_ingest
 from data_pipeline.prediction2_repo import (
     PredictionV2ResolverRepository,
     build_resolver_v2_repository,
 )
 from data_pipeline.repo import EquityRepository, build_repository
+from data_pipeline.signals import ArxivSource, NewsApiSource, UsptoSource
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 log = logging.getLogger("data_pipeline")
 
 _DEFAULT_CRON = "30 8 * * *"  # 08:30 UTC = 17:30 KST
-# Default financials cron: weekly Sun 04:00 UTC. Quarterly cadence
-# upstream means daily would burn rate limits with no value.
-_DEFAULT_FINANCIALS_CRON = "0 4 * * 0"
-_DEFAULT_FINANCIALS_QUARTERS = 8
-# Default prediction-resolve cron: 09:00 UTC daily. 30 min after the
-# 08:30 UTC quote refresh so the resolver sees today's freshly-ingested
-# closes when target_date is yesterday. (M33b)
-_DEFAULT_RESOLVE_PREDICTIONS_CRON = "0 9 * * *"
-
-
-def _legacy_investment_enabled() -> bool:
-    """M43 — gate legacy investment-frame crons behind a single flag.
-
-    Default `false` means the data-pipeline doesn't run the financials
-    refresh (EDGAR/DART) or the legacy v1 prediction resolver — those
-    surfaces are archived. PredictionV2 resolver + quote refresh
-    (used by V2's anchor + vol calc) stay on regardless.
-
-    Flip `ENABLE_LEGACY_INVESTMENT_FEATURES=true` to revive the legacy
-    crons for backtest / migration / debugging.
-    """
-    return os.environ.get(
-        "ENABLE_LEGACY_INVESTMENT_FEATURES", "false"
-    ).lower() in {"1", "true", "yes", "on"}
-# M46b — PredictionV2 resolver runs hourly so a 1-day prediction
-# placed at 10:00 UTC resolves the morning after the next-day close
-# lands in equity_quotes, instead of waiting until the next 09:00 UTC
-# tick.
+# M46b — PredictionV2 resolver runs hourly so a 1-day prediction placed
+# at 10:00 UTC resolves the morning after the next-day close lands in
+# equity_quotes.
 _DEFAULT_RESOLVE_PREDICTIONS_V2_CRON = "5 * * * *"
-
-# M39c — signal ingest cron. 09:00 UTC = 18:00 KST daily (after KOSPI
-# close / few hours after US news cycle). Separate env so it can be
-# scheduled independently of the legacy equity cron family.
-_DEFAULT_SIGNAL_INGEST_CRON = "0 9 * * *"
-
-# M40b — recompute_feasibility cron. 09:30 UTC = 30 min after signal
-# ingest so the freshly-written signals have time to settle before the
-# score updater reads them.
-_DEFAULT_FEASIBILITY_RECOMPUTE_CRON = "30 9 * * *"
 
 
 def _build_source() -> DataSource:
@@ -177,58 +137,17 @@ def _build_source() -> DataSource:
     return YFinanceSource()
 
 
-def _build_financials_sources(
-    *, fx: FrankfurterFx | None = None
-) -> tuple[FinancialsSource, FinancialsSource | None]:
-    """Return (us_source, kr_source). KR is optional — without DART_API_KEY
-    we skip KR equities at refresh time. INGEST_SOURCE=fake routes both
-    countries through FakeFinancialsSource for smoke tests.
-
-    M10c: when a `FrankfurterFx` instance is provided, the DART adapter
-    uses it for per-quarter historical FX. Without it the adapter
-    falls back to the constructor's `DEFAULT_KRW_PER_USD`.
-    """
-    name = os.environ.get("INGEST_SOURCE", "yfinance").lower()
-    if name == "fake":
-        log.warning("data-pipeline: using FakeFinancialsSource — only smoke-test data!")
-        fake = FakeFinancialsSource()
-        return fake, fake
-
-    edgar_ua = os.environ.get(
-        "EDGAR_USER_AGENT",
-        "sector-simulator-platform info@example.com",
-    )
-    edgar = EdgarSource(user_agent=edgar_ua)
-
-    dart_key = os.environ.get("DART_API_KEY", "").strip()
-    kr_source: FinancialsSource | None = None
-    if dart_key:
-        fx_for = fx.krw_per_usd if fx is not None else None
-        kr_source = DartSource(api_key=dart_key, fx_for=fx_for)
-    else:
-        log.warning(
-            "data-pipeline: DART_API_KEY unset — KR equities will be skipped on financials refresh.",
-        )
-    return edgar, kr_source
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ANN201
     # Allow tests to pre-wire these.
     if not hasattr(app.state, "repo"):
         repo = await build_repository(os.environ.get("DATABASE_URL"))
         app.state.repo = repo
-    if not hasattr(app.state, "resolver_repo"):
-        # Separate pool from `repo` so a long-running refresh-quotes job
-        # doesn't starve the resolver and vice versa. Tests pre-set
-        # `app.state.resolver_repo` to swap in an in-memory backing.
-        app.state.resolver_repo = await build_resolver_repository(
-            os.environ.get("DATABASE_URL")
-        )
     if not hasattr(app.state, "resolver_v2_repo"):
-        # M46b — PredictionV2 resolver. Same DATABASE_URL but separate
-        # pool to isolate from the legacy resolver. Tests pre-set
-        # `app.state.resolver_v2_repo` to inject an in-memory backing.
+        # M46b — PredictionV2 resolver. Separate pool from `repo` so a
+        # long-running refresh-quotes job doesn't starve the resolver.
+        # Tests pre-set `app.state.resolver_v2_repo` to inject an
+        # in-memory backing.
         try:
             app.state.resolver_v2_repo = await build_resolver_v2_repository(
                 os.environ.get("DATABASE_URL")
@@ -242,18 +161,8 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         app.state.last_resolve_v2_result = None
     if not hasattr(app.state, "source"):
         app.state.source = _build_source()
-    if not hasattr(app.state, "fx"):
-        app.state.fx = FrankfurterFx()
-    if not hasattr(app.state, "us_financials") or not hasattr(app.state, "kr_financials"):
-        us_fs, kr_fs = _build_financials_sources(fx=app.state.fx)
-        app.state.us_financials = us_fs
-        app.state.kr_financials = kr_fs
     if not hasattr(app.state, "last_result"):
         app.state.last_result = None
-    if not hasattr(app.state, "last_financials_result"):
-        app.state.last_financials_result = None
-    if not hasattr(app.state, "last_resolve_result"):
-        app.state.last_resolve_result = None
     if not hasattr(app.state, "last_signal_ingest_result"):
         app.state.last_signal_ingest_result = None
     if not hasattr(app.state, "last_feasibility_recompute_result"):
@@ -291,9 +200,6 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
                 "sofc",
             ]
     app.state.throttle_ms = int(os.environ.get("INGEST_THROTTLE_MS", "200"))
-    app.state.financials_quarters = int(
-        os.environ.get("REFRESH_FINANCIALS_QUARTERS", str(_DEFAULT_FINANCIALS_QUARTERS))
-    )
 
     # ------------------------------------------------------------------
     # Crawler-side bootstrap (merged from crawler/main.py in commit 3/6).
@@ -419,59 +325,6 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
             )
             log.info("data-pipeline: quote-refresh armed (cron=%r UTC)", cron)
 
-        # M43 — Weekly financials refresh (M10c) gated behind the legacy
-        # investment flag. EDGAR/DART pull is investment-frame; PredictionV2
-        # doesn't use it.
-        if _legacy_investment_enabled():
-            fin_cron = os.environ.get("REFRESH_FINANCIALS_CRON", _DEFAULT_FINANCIALS_CRON)
-            try:
-                fin_trigger = CronTrigger.from_crontab(fin_cron, timezone="UTC")
-            except ValueError as e:
-                log.error("data-pipeline: bad REFRESH_FINANCIALS_CRON=%r (%s)", fin_cron, e)
-            else:
-                scheduler.add_job(
-                    _run_refresh_financials_job,
-                    trigger=fin_trigger,
-                    kwargs={"app": app},
-                    id="refresh_financials_weekly",
-                    replace_existing=True,
-                )
-                log.info("data-pipeline: financials-refresh armed (cron=%r UTC)", fin_cron)
-        else:
-            log.info(
-                "data-pipeline: financials-refresh SKIPPED "
-                "(ENABLE_LEGACY_INVESTMENT_FEATURES=false)"
-            )
-
-        # M43 — Legacy v1 prediction resolver (M33b) also gated. PredictionV2
-        # resolver (below, M46b) is the active one.
-        if _legacy_investment_enabled():
-            resolve_cron = os.environ.get(
-                "RESOLVE_PREDICTIONS_CRON", _DEFAULT_RESOLVE_PREDICTIONS_CRON
-            )
-            try:
-                resolve_trigger = CronTrigger.from_crontab(resolve_cron, timezone="UTC")
-            except ValueError as e:
-                log.error(
-                    "data-pipeline: bad RESOLVE_PREDICTIONS_CRON=%r (%s)", resolve_cron, e
-                )
-            else:
-                scheduler.add_job(
-                    _run_resolve_predictions_job,
-                    trigger=resolve_trigger,
-                    kwargs={"app": app},
-                    id="resolve_predictions_daily",
-                    replace_existing=True,
-                )
-                log.info(
-                    "data-pipeline: predictions-resolve armed (cron=%r UTC)", resolve_cron
-                )
-        else:
-            log.info(
-                "data-pipeline: legacy predictions-resolve SKIPPED "
-                "(ENABLE_LEGACY_INVESTMENT_FEATURES=false). PredictionV2 still runs."
-            )
-
         # M46b — hourly PredictionV2 resolver. Skipped when DATABASE_URL
         # is absent (`resolver_v2_repo is None`) so dev compose without
         # a DB doesn't error-loop.
@@ -503,59 +356,71 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
                     resolve_v2_cron,
                 )
 
-        # M39c — signal ingest cron. Skip if signal_repo couldn't connect
-        # (DATABASE_URL missing → app.state.signal_repo is None).
-        if (
-            app.state.signal_repo is not None
-            and os.environ.get("SIGNAL_INGEST_SCHEDULE", "on").lower() != "off"
-        ):
-            sig_cron = os.environ.get(
-                "SIGNAL_INGEST_CRON_DAILY", _DEFAULT_SIGNAL_INGEST_CRON
+        # Tiered signal ingest (commit 4/6 — merger). Replaces the prior
+        # single signal_ingest_daily cron with three independently-gated
+        # jobs so news rotates quickly while research papers / patents
+        # run on a slower cadence that matches their publication rate.
+        if app.state.signal_repo is not None:
+            # ── news_ingest_5min: NewsAPI sweep every 5 min.
+            # Armed only when NEWSAPI_KEY is set (NewsApiSource is a
+            # no-op without it; arming the cron anyway would noise the
+            # log + burn the per-vision keyword iteration for nothing).
+            news_armed = (
+                bool((os.environ.get("NEWSAPI_KEY") or "").strip())
+                and os.environ.get("NEWS_INGEST_SCHEDULE", "on").lower() != "off"
             )
-            try:
-                sig_trigger = CronTrigger.from_crontab(sig_cron, timezone="UTC")
-            except ValueError as e:
-                log.error(
-                    "data-pipeline: bad SIGNAL_INGEST_CRON_DAILY=%r (%s)",
-                    sig_cron,
-                    e,
-                )
-            else:
+            if news_armed:
                 scheduler.add_job(
-                    _run_signal_ingest_job,
-                    trigger=sig_trigger,
+                    _run_news_ingest_5min,
+                    trigger=IntervalTrigger(minutes=5),
                     kwargs={"app": app},
-                    id="signal_ingest_daily",
+                    id="news_ingest_5min",
                     replace_existing=True,
+                    max_instances=1,
+                    coalesce=True,
                 )
+                log.info("data-pipeline: news_ingest_5min armed (every 5 min)")
+            else:
                 log.info(
-                    "data-pipeline: signal-ingest armed (cron=%r UTC)", sig_cron
+                    "data-pipeline: news_ingest_5min disabled "
+                    "(NEWSAPI_KEY unset or NEWS_INGEST_SCHEDULE=off)"
                 )
 
-            # M40b — recompute_feasibility, runs 30 min after signal-ingest.
-            rf_cron = os.environ.get(
-                "FEASIBILITY_RECOMPUTE_CRON", _DEFAULT_FEASIBILITY_RECOMPUTE_CRON
-            )
-            try:
-                rf_trigger = CronTrigger.from_crontab(rf_cron, timezone="UTC")
-            except ValueError as e:
-                log.error(
-                    "data-pipeline: bad FEASIBILITY_RECOMPUTE_CRON=%r (%s)",
-                    rf_cron,
-                    e,
-                )
-            else:
+            # ── research_ingest_hourly: arXiv + USPTO at :07 past.
+            # 7-min offset spreads load away from `:00` where most
+            # crons cluster.
+            if os.environ.get("RESEARCH_INGEST_SCHEDULE", "on").lower() != "off":
                 scheduler.add_job(
-                    _run_recompute_feasibility_job,
-                    trigger=rf_trigger,
+                    _run_research_ingest_hourly,
+                    trigger=CronTrigger.from_crontab("7 * * * *", timezone="UTC"),
                     kwargs={"app": app},
-                    id="recompute_feasibility_daily",
+                    id="research_ingest_hourly",
                     replace_existing=True,
+                    max_instances=1,
+                    coalesce=True,
                 )
+                log.info("data-pipeline: research_ingest_hourly armed (cron='7 * * * *' UTC)")
+            else:
                 log.info(
-                    "data-pipeline: feasibility-recompute armed (cron=%r UTC)",
-                    rf_cron,
+                    "data-pipeline: research_ingest_hourly disabled "
+                    "(RESEARCH_INGEST_SCHEDULE=off)"
                 )
+
+            # ── recompute_feasibility_hourly: 18 min after the research
+            # sweep so freshly-written signals have time to settle
+            # before ScoreUpdater reads them.
+            scheduler.add_job(
+                _run_recompute_feasibility_job,
+                trigger=CronTrigger.from_crontab("25 * * * *", timezone="UTC"),
+                kwargs={"app": app},
+                id="recompute_feasibility_hourly",
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+            )
+            log.info(
+                "data-pipeline: recompute_feasibility_hourly armed (cron='25 * * * *' UTC)"
+            )
 
         # M49f — orchestrator opportunistic picker. 15-min interval.
         # ORCHESTRATOR_SCHEDULE (new) or CRAWLER_SCHEDULE (legacy
@@ -603,9 +468,6 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         repo = getattr(app.state, "repo", None)
         if repo is not None:
             await repo.close()
-        resolver_repo = getattr(app.state, "resolver_repo", None)
-        if resolver_repo is not None:
-            await resolver_repo.close()
         resolver_v2_repo = getattr(app.state, "resolver_v2_repo", None)
         if resolver_v2_repo is not None:
             await resolver_v2_repo.close()
@@ -623,13 +485,6 @@ async def _run_refresh_job(*, app: FastAPI) -> RefreshQuotesResult:
     return result
 
 
-async def _run_resolve_predictions_job(*, app: FastAPI) -> ResolvePredictionsResult:
-    repo: PredictionResolverRepository = app.state.resolver_repo
-    result = await resolve_due_predictions(repo=repo)
-    app.state.last_resolve_result = result
-    return result
-
-
 async def _run_resolve_predictions_v2_job(
     *, app: FastAPI
 ) -> ResolvePredictionsV2Result | None:
@@ -641,23 +496,6 @@ async def _run_resolve_predictions_v2_job(
         return None
     result = await resolve_due_predictions_v2(repo=repo)
     app.state.last_resolve_v2_result = result
-    return result
-
-
-async def _run_refresh_financials_job(*, app: FastAPI) -> RefreshFinancialsResult:
-    repo: EquityRepository = app.state.repo
-    us: FinancialsSource = app.state.us_financials
-    kr: FinancialsSource | None = app.state.kr_financials
-    throttle = int(app.state.throttle_ms)
-    quarters = int(app.state.financials_quarters)
-    result = await refresh_financials(
-        us_source=us,
-        kr_source=kr,
-        repo=repo,
-        quarters=quarters,
-        throttle_ms=throttle,
-    )
-    app.state.last_financials_result = result
     return result
 
 
@@ -679,12 +517,10 @@ class SignalIngestScopeRequest(BaseModel):
 
 
 async def _run_signal_ingest_job(*, app: FastAPI):  # noqa: ANN201
-    """M39c — daily signal ingest. Drives arXiv (+ M39d NewsAPI + M39e
-    USPTO when those ship) through the SignalExtractor agent, writing
-    rows to signals.
-    """
-    from data_pipeline.jobs.signal_ingest import run_signal_ingest
-
+    """Manual / full-sweep signal ingest. All 3 M39 sources across every
+    vision. POST /jobs/signal-ingest invokes this; the tiered crons
+    below use `_run_news_ingest_5min` + `_run_research_ingest_hourly`
+    instead so news rotates fast and research stays hourly."""
     repo = app.state.signal_repo
     if repo is None:
         log.warning("signal-ingest: repo not configured — skipping")
@@ -695,9 +531,53 @@ async def _run_signal_ingest_job(*, app: FastAPI):  # noqa: ANN201
     return stats
 
 
+async def _run_news_ingest_5min(*, app: FastAPI):  # noqa: ANN201
+    """Tier 1 — fast-rotation news sweep (commit 4/6). NewsAPI-only,
+    every 5 minutes per vision. Skipped when NEWSAPI_KEY is unset
+    (NewsApiSource self-skips → wasted iteration)."""
+    repo = app.state.signal_repo
+    if repo is None:
+        return None
+    visions: list[str] = app.state.signal_ingest_visions
+    stats = await run_signal_ingest(
+        sector_slugs=visions,
+        repo=repo,
+        sources=[NewsApiSource()],
+        # Tight lookback — we're rotating every 5 min, no need to look
+        # back days.
+        lookback_days=1,
+        per_capability_limit=10,
+    )
+    app.state.last_signal_ingest_result = stats
+    return stats
+
+
+async def _run_research_ingest_hourly(*, app: FastAPI):  # noqa: ANN201
+    """Tier 2 — hourly research sweep (commit 4/6). arXiv + USPTO
+    across every vision. Publication cadence on those sources is
+    measured in days, so 1 hour is generous; offset to :07 past keeps
+    load away from `:00` where most crons cluster."""
+    repo = app.state.signal_repo
+    if repo is None:
+        return None
+    visions: list[str] = app.state.signal_ingest_visions
+    stats = await run_signal_ingest(
+        sector_slugs=visions,
+        repo=repo,
+        sources=[ArxivSource(), UsptoSource()],
+        lookback_days=3,
+        per_capability_limit=10,
+    )
+    app.state.last_signal_ingest_result = stats
+    return stats
+
+
 async def _run_recompute_feasibility_job(*, app: FastAPI):  # noqa: ANN201
-    """M40b — daily feasibility recompute. Calls ScoreUpdater agent per
-    capability, then triggers sim-service vision-level aggregation."""
+    """Hourly feasibility recompute (commit 4/6). Calls ScoreUpdater
+    agent per capability, then triggers sim-service vision-level
+    aggregation. Was daily before the merger — moves to hourly so the
+    5-min news + hourly research signals roll into FeasibilityIndex
+    within the hour."""
     from data_pipeline.jobs.recompute_feasibility import run_recompute_feasibility
 
     repo = app.state.signal_repo
@@ -983,9 +863,6 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def health() -> dict[str, Any]:
         last: RefreshQuotesResult | None = getattr(app.state, "last_result", None)
-        last_fin: RefreshFinancialsResult | None = getattr(
-            app.state, "last_financials_result", None
-        )
         scheduler: AsyncIOScheduler | None = getattr(app.state, "scheduler", None)
         next_runs: dict[str, str | None] = {}
         if scheduler is not None:
@@ -993,19 +870,12 @@ def create_app() -> FastAPI:
                 next_runs[job.id] = (
                     job.next_run_time.isoformat() if job.next_run_time else None
                 )
-        last_resolve: ResolvePredictionsResult | None = getattr(
-            app.state, "last_resolve_result", None
-        )
         return {
             "status": "ok",
             "now": datetime.now(UTC).isoformat(),
             "scheduler_armed": scheduler is not None,
             "next_runs": next_runs,
             "last_refresh": last.model_dump(mode="json") if last is not None else None,
-            "last_financials_refresh": last_fin.model_dump(mode="json") if last_fin is not None else None,
-            "last_resolve_predictions": last_resolve.model_dump(mode="json")
-            if last_resolve is not None
-            else None,
             # Merged crawler readiness flags (commit 3/6). Cockpit chips
             # at /admin/crawler read this same shape.
             "ready": {
@@ -1060,69 +930,6 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status_code=404,
                 detail="no quote-history refresh has run since the process started",
-            )
-        return last
-
-    @app.post(
-        "/jobs/refresh-financials",
-        response_model=RefreshFinancialsResult,
-    )
-    async def trigger_refresh_financials(quarters: int = _DEFAULT_FINANCIALS_QUARTERS) -> RefreshFinancialsResult:
-        log.info(
-            "data-pipeline: manual /jobs/refresh-financials triggered (quarters=%d)",
-            quarters,
-        )
-        # Allow per-call override of the configured quarters via query
-        # string; routing + sources still come from app.state.
-        repo: EquityRepository = app.state.repo
-        us: FinancialsSource = app.state.us_financials
-        kr: FinancialsSource | None = app.state.kr_financials
-        throttle = int(app.state.throttle_ms)
-        result = await refresh_financials(
-            us_source=us,
-            kr_source=kr,
-            repo=repo,
-            quarters=quarters,
-            throttle_ms=throttle,
-        )
-        app.state.last_financials_result = result
-        return result
-
-    @app.get(
-        "/jobs/refresh-financials/last",
-        response_model=RefreshFinancialsResult,
-    )
-    async def last_financials_refresh() -> RefreshFinancialsResult:
-        last: RefreshFinancialsResult | None = getattr(
-            app.state, "last_financials_result", None
-        )
-        if last is None:
-            raise HTTPException(
-                status_code=404,
-                detail="no financials refresh has run since the process started",
-            )
-        return last
-
-    @app.post(
-        "/jobs/resolve-predictions",
-        response_model=ResolvePredictionsResult,
-    )
-    async def trigger_resolve_predictions() -> ResolvePredictionsResult:
-        log.info("data-pipeline: manual /jobs/resolve-predictions triggered")
-        return await _run_resolve_predictions_job(app=app)
-
-    @app.get(
-        "/jobs/resolve-predictions/last",
-        response_model=ResolvePredictionsResult,
-    )
-    async def last_resolve_predictions() -> ResolvePredictionsResult:
-        last: ResolvePredictionsResult | None = getattr(
-            app.state, "last_resolve_result", None
-        )
-        if last is None:
-            raise HTTPException(
-                status_code=404,
-                detail="no prediction-resolve has run since the process started",
             )
         return last
 

@@ -54,9 +54,11 @@ services:
       - sh
       - -c
       # M38 (pivot): seed:visions adds capabilities + risks + feasibility
-      # snapshots for the 3 reference visions. seed:equities and friends
-      # are kept in the chain through M43; M43 default-flips
-      # ENABLE_LEGACY_INVESTMENT_FEATURES to false and we drop them.
+      # snapshots for the 3 reference visions. seed:equities + seed:equity-
+      # quotes are load-bearing for PredictionV2 (price anchor + vol calc).
+      # seed:equity-financials seeds the EquityFinancial table; the cron
+      # that refreshed it was removed in the data-pipeline merger
+      # (commit 4/6) but the seed stays as test fixture.
       - "pnpm --filter @platform/db migrate:deploy && pnpm --filter @platform/db seed && pnpm --filter @platform/db seed:visions && pnpm --filter @platform/db seed:actors && pnpm --filter @platform/db seed:equities && pnpm --filter @platform/db seed:equity-quotes && pnpm --filter @platform/db seed:equity-financials"
     working_dir: /repo
     environment:
