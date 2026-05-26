@@ -39,6 +39,24 @@ RUN --mount=type=cache,target=/root/.cache/uv \
       uv sync --package data-pipeline; \
     fi
 
+# crawl4ai (added in commit D — Yahoo / Naver / Finviz news adapters)
+# uses Playwright to render JS-heavy news list pages (Yahoo Finance
+# especially). The Python package was installed above via uv; the
+# CLI now needs to download the chromium binary + install the system
+# libs it links against. `--with-deps` runs `apt-get install` for
+# them, which requires root — so this MUST happen before any USER
+# switch in downstream stages.
+#
+# Skip with `PLAYWRIGHT_SKIP_INSTALL=1` at build time to avoid the
+# ~250MB chromium download in CI smoke builds that only exercise the
+# non-crawl4ai code paths.
+ARG PLAYWRIGHT_SKIP_INSTALL=
+RUN if [ -z "$PLAYWRIGHT_SKIP_INSTALL" ]; then \
+      python -m playwright install --with-deps chromium; \
+    else \
+      echo "data-pipeline: skipping playwright install (PLAYWRIGHT_SKIP_INSTALL=1)"; \
+    fi
+
 FROM deps AS dev
 ENV PYTHONPATH=/repo/services/data-pipeline:/repo/packages/agent-tools
 WORKDIR /repo/services/data-pipeline
