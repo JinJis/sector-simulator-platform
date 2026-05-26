@@ -122,7 +122,13 @@ from data_pipeline.prediction2_repo import (
     build_resolver_v2_repository,
 )
 from data_pipeline.repo import EquityRepository, build_repository
-from data_pipeline.signals import ArxivSource, NewsApiSource, UsptoSource
+from data_pipeline.signals import (
+    ArxivSource,
+    Crawl4aiFinvizSource,
+    Crawl4aiNaverSource,
+    Crawl4aiYahooSource,
+    UsptoSource,
+)
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 log = logging.getLogger("data_pipeline")
@@ -366,13 +372,13 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         # jobs so news rotates quickly while research papers / patents
         # run on a slower cadence that matches their publication rate.
         if app.state.signal_repo is not None:
-            # ── news_ingest_5min: NewsAPI sweep every 5 min.
-            # Armed only when NEWSAPI_KEY is set (NewsApiSource is a
-            # no-op without it; arming the cron anyway would noise the
-            # log + burn the per-vision keyword iteration for nothing).
+            # ── news_ingest_5min: crawl4ai Yahoo + Naver + Finviz news
+            # sweep every 5 min. Per-vision ticker map in
+            # data_pipeline/signals/tickers.py controls which symbols
+            # each vision pulls; crawl4ai handles JS-rendered lists.
+            # NEWS_INGEST_SCHEDULE=off disables.
             news_armed = (
-                bool((os.environ.get("NEWSAPI_KEY") or "").strip())
-                and os.environ.get("NEWS_INGEST_SCHEDULE", "on").lower() != "off"
+                os.environ.get("NEWS_INGEST_SCHEDULE", "on").lower() != "off"
             )
             if news_armed:
                 scheduler.add_job(
@@ -537,9 +543,10 @@ async def _run_signal_ingest_job(*, app: FastAPI):  # noqa: ANN201
 
 
 async def _run_news_ingest_5min(*, app: FastAPI):  # noqa: ANN201
-    """Tier 1 — fast-rotation news sweep (commit 4/6). NewsAPI-only,
-    every 5 minutes per vision. Skipped when NEWSAPI_KEY is unset
-    (NewsApiSource self-skips → wasted iteration)."""
+    """Tier 1 — fast-rotation news sweep. crawl4ai over Yahoo Finance
+    + Naver Finance + Finviz, every 5 minutes per vision. Per-vision
+    tickers in data_pipeline/signals/tickers.py drive which symbols
+    each adapter pulls; a vision with zero tickers is a clean no-op."""
     repo = app.state.signal_repo
     if repo is None:
         return None
@@ -547,7 +554,11 @@ async def _run_news_ingest_5min(*, app: FastAPI):  # noqa: ANN201
     stats = await run_signal_ingest(
         sector_slugs=visions,
         repo=repo,
-        sources=[NewsApiSource()],
+        sources=[
+            Crawl4aiYahooSource(),
+            Crawl4aiFinvizSource(),
+            Crawl4aiNaverSource(),
+        ],
         # Tight lookback — we're rotating every 5 min, no need to look
         # back days.
         lookback_days=1,

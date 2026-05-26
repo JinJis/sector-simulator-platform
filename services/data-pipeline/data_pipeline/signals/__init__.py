@@ -12,11 +12,19 @@ See docs/PIVOT.md §5 M39 + docs/REFACTOR.md §5 for the full plan.
 
 from .arxiv import ArxivSource
 from .base import RawSignal, SignalSource
-from .newsapi import NewsApiSource
+from .crawl4ai_news import (
+    Crawl4aiFinvizSource,
+    Crawl4aiNaverSource,
+    Crawl4aiYahooSource,
+)
+from .newsapi import NewsApiSource  # legacy — kept for explicit imports only
 from .uspto import UsptoSource
 
 __all__ = [
     "ArxivSource",
+    "Crawl4aiFinvizSource",
+    "Crawl4aiNaverSource",
+    "Crawl4aiYahooSource",
     "NewsApiSource",
     "RawSignal",
     "SignalSource",

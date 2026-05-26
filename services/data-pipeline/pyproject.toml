@@ -15,9 +15,15 @@ dependencies = [
   # httpx for async HTTP (DART + EDGAR adapters in M10b).
   "httpx>=0.27.0",
   # M48→data-pipeline merger: deep_research/* fetchers + agents.py call
-  # DeepResearchClient + agent SignalExtractor. agent-tools also pulls
+  # GroundedResearchClient + agent SignalExtractor. agent-tools also pulls
   # google-genai + anthropic[vertex] used by those modules.
   "agent-tools",
+  # crawl4ai powers the news_ingest_5min tier (Yahoo/Naver/Finviz). It
+  # pulls in playwright at runtime for JS-rendered pages; operators need
+  # to run `playwright install chromium` once on the host (or inside the
+  # data-pipeline container) to enable the JS path. Markdown-only sites
+  # work without playwright.
+  "crawl4ai>=0.4.0",
 ]
 
 [build-system]

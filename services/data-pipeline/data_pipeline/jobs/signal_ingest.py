@@ -31,7 +31,11 @@ from data_pipeline.signal_repo import (
 )
 from data_pipeline.signals.arxiv import ArxivSource
 from data_pipeline.signals.base import RawSignal, SignalSource
-from data_pipeline.signals.newsapi import NewsApiSource
+from data_pipeline.signals.crawl4ai_news import (
+    Crawl4aiFinvizSource,
+    Crawl4aiNaverSource,
+    Crawl4aiYahooSource,
+)
 from data_pipeline.signals.uspto import UsptoSource
 
 log = logging.getLogger(__name__)
@@ -165,11 +169,19 @@ async def run_signal_ingest(
         set(capability_keys) if capability_keys is not None else None
     )
     if sources is None:
-        # Default lineup: arXiv (always available, no key), NewsAPI (no-op
-        # when NEWSAPI_KEY unset), USPTO (no-op when USPTO_API_KEY unset).
-        # Adapters self-skip via env so dev/preview without keys still
-        # works for the arXiv-only path.
-        sources = [ArxivSource(), NewsApiSource(), UsptoSource()]
+        # Default lineup for the manual /jobs/signal-ingest sweep:
+        # arXiv + USPTO + the three crawl4ai news adapters. NewsAPI was
+        # dropped from the default in the grounded-research overhaul —
+        # crawl4ai over Yahoo/Naver/Finviz covers the news surface
+        # without needing an API key. Each adapter self-skips when its
+        # prerequisites are missing (USPTO env, crawl4ai package, etc.).
+        sources = [
+            ArxivSource(),
+            UsptoSource(),
+            Crawl4aiYahooSource(),
+            Crawl4aiFinvizSource(),
+            Crawl4aiNaverSource(),
+        ]
     if agent_url is None:
         agent_url = os.environ.get("AGENT_ORCHESTRATION_URL", _DEFAULT_AGENT_URL)
 
