@@ -1,9 +1,47 @@
 # Current task — Phase 4: Real-time Intelligence (M48+)
 
-**Last updated**: 2026-05-25. Phase 4 starts now. Phase 3 (the pivot
-from Sector Simulator → Vision Feasibility Monitor) is shipped; the
-data-model + scoring-engine + community-proposal foundations it left
-behind are what Phase 4 builds on. Phase 3 history lives in git log.
+**Last updated**: 2026-05-26. Phase 4 is in steady state; recent work
+landed two architectural refactors on top of the original M48-M54
+milestone chain:
+
+1. **Crawler ↔ data-pipeline merger** (6 commits, 2026-05-26): the
+   standalone `services/crawler/` container was absorbed into
+   `services/data-pipeline/` — one FastAPI on :8003 hosting tiered
+   ingest crons + every former crawler endpoint + the daily DR
+   digest. `crawler.*` tRPC paths preserved.
+2. **Grounded Gemini swap** (commits A-F, 2026-05-26): Vertex Deep
+   Research preview API + `deep-research-*` models replaced with
+   `gemini-2.5-flash` (fast) + `gemini-3.1-pro-preview` (deep) via
+   `models.generate_content` + `Tool(google_search=GoogleSearch())`.
+   Model names env-driven (`GROUNDED_MODEL_FAST/DEEP`,
+   `LLM_{OPUS,SONNET,HAIKU}_MODEL`). NewsAPI source replaced by
+   crawl4ai Yahoo + Naver + Finviz adapters.
+
+Phase 3 (the pivot from Sector Simulator → Vision Feasibility
+Monitor) is shipped; the data-model + scoring-engine + community-
+proposal foundations it left behind are what Phase 4 builds on.
+Phase 3 history lives in git log.
+
+## Pipeline shape (current)
+
+```
+APScheduler crons (one process, single AsyncIOScheduler):
+
+  refresh_quotes_daily             08:30 UTC  →  yfinance quotes
+  resolve_predictions_v2_hourly    :05 * * *  →  PredictionV2 resolver
+  news_ingest_5min                 every 5m   →  crawl4ai Yahoo+Naver+Finviz
+  research_ingest_hourly           :07 * * *  →  arXiv + USPTO
+  recompute_feasibility_hourly     :25 * * *  →  ScoreUpdater per cap
+  orchestrator_tick_15min          every 15m  →  M49f picker (gated off)
+  digest_daily                     06:00 UTC  →  grounded gemini per vision (gated off)
+
+Manual triggers (admin cockpit):
+
+  /fetchers/{capability,actor,signal,risk,hello-world}/run
+  /jobs/deep-research-digest/run
+  /jobs/orchestrator/tick (dry-run by default)
+  /jobs/discovery/run (M50 bot proposals)
+```
 
 Design ground-truth for this phase:
 [docs/architecture/composition.md](../architecture/composition.md).

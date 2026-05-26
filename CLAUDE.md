@@ -135,29 +135,41 @@ Phase 4 milestones (자세한 sequence는
 | Observability | LangSmith / Helicone (LLM cost + trace); Sentry; Grafana/Datadog (planned) |
 | i18n / theme (web) | Cookie-backed `tssp_locale` (ko default, en parity) + `tssp_theme` (dark default, light + system). Server reads via `getT()`; client via `useT()` / `useTheme()`. Inline boot script avoids FOUC. User table mirrors both columns for cross-device sync. |
 
-### LLM auth + tier routing (M35)
+### LLM auth + tier routing (M35 + grounded-research overhaul)
 
 - **Vertex AI** both providers, same service-account JSON at
   `infra/secrets/vertex-ai-sa.json`. Compose auto-injects env:
   `GOOGLE_GENAI_USE_VERTEXAI=true`,
   `GOOGLE_CLOUD_LOCATION=global` (default),
   `GOOGLE_APPLICATION_CREDENTIALS=/secrets/vertex-ai-sa.json`.
-- Dev fallback (no GCP): `GEMINI_API_KEY` (AI Studio). opus calls fail in
-  this mode.
-- Tier map (`packages/agent-tools/llm_client.py`):
+- AI Studio fallback: `GEMINI_API_KEY`. Works for both the gemini-*
+  agents AND grounded research; opus-tier (Claude) calls still need
+  Vertex.
+- **Agent tier map** (`packages/agent-tools/llm_client.py`) — env-overridable
+  via `LLM_{OPUS,SONNET,HAIKU}_MODEL`:
   - `opus` → `claude-opus-4-7` (critical reasoning — VisionDecomposition /
     CapabilityDependencies / CapabilityScoringCode / CodeReview)
   - `sonnet` → `gemini-3.5-flash` (balanced — VisionResearch /
     DataSourceSelector / ScoreUpdater / prediction.analyzeRationale)
   - `haiku` → `gemini-3.5-flash-lite` (extraction / routing /
     SignalExtractor / PromptValidator)
+- **Grounded research tier map**
+  (`packages/agent-tools/grounded_research.py`) — replaces the deprecated
+  Vertex Deep Research preview models. `models.generate_content` +
+  `Tool(google_search=GoogleSearch())` for grounding + citations. Env
+  override via `GROUNDED_MODEL_{FAST,DEEP}`:
+  - `fast` → `gemini-2.5-flash` (capability / actor / risk / signal
+    fetchers — low ThinkingConfig)
+  - `deep` → `gemini-3.1-pro-preview` (daily digest — HIGH ThinkingConfig)
+  - `max` is accepted as a back-compat alias for `deep`.
 - All agent output validated via Pydantic schema. Gemini uses native
   `response_schema`; Claude uses tool-use trick (forced `tool_choice`).
 - `adaptive_thinking=True`:
   - Gemini: dynamic thinking budget (`-1`)
   - Claude: extended thinking; auto-dropped when `response_model` forces
     tool_choice (API constraint)
-- Always call via `packages/agent-tools/llm-client` (cost meter built in).
+- Always call via `packages/agent-tools/llm-client` (agent tiers) or
+  `GroundedResearchClient` (research tiers). Both share `CostMeter`.
 
 ---
 
@@ -170,7 +182,7 @@ apps/
 services/
 ├── sector-service/               Fastify + tRPC entry point
 ├── simulation-service/           Python sim runner + feasibility engine
-├── data-pipeline/                Signal ingest (arXiv / USPTO / NewsAPI) + crons
+├── data-pipeline/                Signal ingest (arXiv / USPTO / crawl4ai Yahoo+Naver+Finviz) + crons + grounded research
 └── agent-orchestration/          Vision Builder Conductor + extractor / updater agents
 packages/
 ├── sdk-python/                   SimulationBase, Driver, Output
