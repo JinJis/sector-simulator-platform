@@ -37,12 +37,23 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Any, ClassVar
+from typing import Any, Awaitable, Callable, ClassVar
 
 from data_pipeline.signals.base import RawSignal
 from data_pipeline.signals.tickers import VisionTickers, tickers_for
 
 log = logging.getLogger(__name__)
+
+
+# Injected per-vision ticker lookup. Default uses the static map in
+# `tickers.py` (keeps tests + zero-config dev working); production
+# wires a closure over `SignalRepository.list_vision_tickers` so the
+# DB is the source of truth.
+TickerProvider = Callable[[str], Awaitable[VisionTickers]]
+
+
+async def _static_ticker_provider(sector_slug: str) -> VisionTickers:
+    return tickers_for(sector_slug)
 
 
 def _matches_any(text: str, keywords: list[str]) -> bool:
@@ -76,10 +87,20 @@ class _Crawl4aiBase:
     Subclasses define `source_kind`, `name`, and `_per_vision_urls`
     (build the list-page URLs for a vision). The base orchestrates
     list-scrape → keyword filter → body-scrape → RawSignal emission.
+
+    `ticker_provider` decides where the per-vision ticker lineup
+    comes from. Default = the static map in tickers.py (zero-config
+    fallback); production passes a closure over
+    `SignalRepository.list_vision_tickers` to read from the actors
+    table. The closure layer also lets tests inject canned tickers
+    without touching the static module.
     """
 
     source_kind: ClassVar[str] = "news"
     name: ClassVar[str] = "crawl4ai"
+
+    def __init__(self, *, ticker_provider: TickerProvider | None = None) -> None:
+        self._ticker_provider = ticker_provider or _static_ticker_provider
 
     def _per_vision_urls(self, tickers: VisionTickers) -> list[str]:
         raise NotImplementedError
@@ -97,7 +118,18 @@ class _Crawl4aiBase:
         since: datetime,
         max_results: int = 20,
     ) -> list[RawSignal]:
-        tickers = tickers_for(sector_slug)
+        try:
+            tickers = await self._ticker_provider(sector_slug)
+        except Exception as exc:  # noqa: BLE001
+            # DB-backed provider could fail (missing column, connection
+            # drop). Fall back to the static map so news_ingest doesn't
+            # silently stop returning signals.
+            log.warning(
+                "%s: ticker_provider raised %s — falling back to static map",
+                self.name,
+                exc,
+            )
+            tickers = tickers_for(sector_slug)
         list_urls = self._per_vision_urls(tickers)
         if not list_urls:
             return []

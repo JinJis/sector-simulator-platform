@@ -581,19 +581,33 @@ async def _run_signal_ingest_job(*, app: FastAPI):  # noqa: ANN201
 async def _run_news_ingest_5min(*, app: FastAPI):  # noqa: ANN201
     """Tier 1 — fast-rotation news sweep. crawl4ai over Yahoo Finance
     + Naver Finance + Finviz, every 5 minutes per vision. Per-vision
-    tickers in data_pipeline/signals/tickers.py drive which symbols
-    each adapter pulls; a vision with zero tickers is a clean no-op."""
+    tickers come from the `actors` table via signal_repo (joined on
+    VisionActor.sector_slug) — the static map in tickers.py is the
+    fallback when the DB query returns empty (cold-start vision with
+    no actors seeded yet)."""
     repo = app.state.signal_repo
     if repo is None:
         return None
     visions: list[str] = app.state.signal_ingest_visions
+
+    async def db_ticker_provider(sector_slug: str):  # noqa: ANN202
+        from data_pipeline.signals.tickers import (  # noqa: PLC0415
+            tickers_for,
+        )
+
+        db_tickers = await repo.list_vision_tickers(sector_slug)
+        if db_tickers.us or db_tickers.kr:
+            return db_tickers
+        # Cold-start fallback: static seed in tickers.py.
+        return tickers_for(sector_slug)
+
     stats = await run_signal_ingest(
         sector_slugs=visions,
         repo=repo,
         sources=[
-            Crawl4aiYahooSource(),
-            Crawl4aiFinvizSource(),
-            Crawl4aiNaverSource(),
+            Crawl4aiYahooSource(ticker_provider=db_ticker_provider),
+            Crawl4aiFinvizSource(ticker_provider=db_ticker_provider),
+            Crawl4aiNaverSource(ticker_provider=db_ticker_provider),
         ],
         # Tight lookback — we're rotating every 5 min, no need to look
         # back days.

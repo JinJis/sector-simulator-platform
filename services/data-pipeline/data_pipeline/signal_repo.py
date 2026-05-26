@@ -13,6 +13,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
+# VisionTickers lives in data_pipeline.signals.tickers so the crawl4ai
+# news adapters (which need it for URL construction) and this repo
+# (which produces it from the actors table) reference the same shape.
+from data_pipeline.signals.tickers import VisionTickers
+
 
 @dataclass(frozen=True, slots=True)
 class CapabilityHandle:
@@ -116,6 +121,10 @@ class SignalRepository(Protocol):
 
     async def list_vision_actors(self, sector_slug: str) -> list[ActorHandle]: ...
 
+    async def list_vision_tickers(
+        self, sector_slug: str
+    ) -> VisionTickers: ...
+
     async def upsert_signal(self, signal: SignalInsert) -> str: ...
 
     # M40b — recompute support
@@ -158,6 +167,16 @@ class InMemorySignalRepository:
 
     async def list_vision_actors(self, sector_slug: str) -> list[ActorHandle]:
         return self._actors.get(sector_slug, [])
+
+    async def list_vision_tickers(self, sector_slug: str) -> VisionTickers:
+        # InMemory shim — tests that exercise the crawl4ai source
+        # inject a ticker provider directly, so this is rarely hit.
+        # Return empty tuples by default; tests can preset
+        # `self._tickers[sector_slug] = VisionTickers(...)` to
+        # override.
+        return getattr(self, "_tickers", {}).get(
+            sector_slug, VisionTickers(us=(), kr=())
+        )
 
     async def upsert_signal(self, signal: SignalInsert) -> str:
         key = (signal.source_url, signal.capability_id)
@@ -218,6 +237,18 @@ JOIN vision_actors va ON va.actor_id = a.id
 WHERE va.sector_slug = $1
 ORDER BY va.relevance DESC NULLS LAST, va.display_order ASC
 LIMIT 25
+"""
+
+# Ticker list for the crawl4ai news adapters. Pulls every actor in
+# the vision that has a ticker; the source code partitions US vs KR
+# by iso_country (most reliable signal — exchange field is sparse).
+_LIST_VISION_TICKERS_SQL = """
+SELECT a.ticker, a.iso_country
+FROM actors a
+JOIN vision_actors va ON va.actor_id = a.id
+WHERE va.sector_slug = $1 AND a.ticker IS NOT NULL AND a.ticker <> ''
+ORDER BY va.relevance DESC NULLS LAST, va.display_order ASC
+LIMIT 50
 """
 
 _GET_CURRENT_CAP_SCORE_SQL = """
@@ -330,6 +361,27 @@ class PostgresSignalRepository:
             )
             for r in rows
         ]
+
+    async def list_vision_tickers(self, sector_slug: str) -> VisionTickers:
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(_LIST_VISION_TICKERS_SQL, sector_slug)
+        us: list[str] = []
+        kr: list[str] = []
+        for r in rows:
+            raw = (r["ticker"] or "").strip()
+            if not raw:
+                continue
+            country = (r["iso_country"] or "").upper()
+            if country == "KR":
+                # Naver URLs take the bare 6-digit code — strip any
+                # exchange suffix Yahoo/yfinance leaves behind
+                # (".KS"/".KQ").
+                bare = raw.split(".", 1)[0]
+                if bare:
+                    kr.append(bare)
+            else:
+                us.append(raw)
+        return VisionTickers(us=tuple(us), kr=tuple(kr))
 
     async def upsert_signal(self, signal: SignalInsert) -> str:
         async with self._pool.acquire() as conn:
