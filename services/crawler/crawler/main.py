@@ -7,6 +7,7 @@ Endpoints:
 - POST /fetchers/actor/run                      → ActorFetcher (M49b)
 - POST /fetchers/signal/run                     → SignalFetcher (M49c)
 - POST /fetchers/risk/run                       → RiskFetcher (M49d)
+- POST /jobs/orchestrator/tick?dry_run=         → Orchestrator (M49f)
 - GET  /jobs/runs?vision=&fetcher=&status=&limit=   → recent CrawlRuns
 - GET  /jobs/runs/{run_id}                      → single CrawlRun
 
@@ -56,11 +57,16 @@ from crawler.db.capability_reader import (
     CapabilityReader,
     PostgresCapabilityReader,
 )
+from crawler.db.orchestrator_repo import (
+    OrchestratorReader,
+    PostgresOrchestratorReader,
+)
 from crawler.db.risk_reader import (
     PostgresRiskReader,
     RiskReader,
 )
 from crawler.db.signal_writer import PostgresSignalWriter, SignalWriter
+from crawler.dispatcher import DispatcherClients, dispatch_tick
 from crawler.fetchers.actor import (
     ActorFetcherError,
     ActorFetchRequest,
@@ -85,6 +91,7 @@ from crawler.fetchers.signal import (
     SignalFetchRequest,
     run_signal_fetcher,
 )
+from crawler.orchestrator import pick_for_tick
 from crawler.repo import (
     CrawlRunRepository,
     CrawlRunRow,
@@ -201,6 +208,30 @@ class RiskTriggerOut(BaseModel):
     risk_likelihood: str
 
 
+class OrchestratorCandidateOut(BaseModel):
+    vision_slug: str
+    fetcher_kind: str
+    key: str
+    anchor_composite: float | None
+    stale_hours: float
+    estimated_cost_usd: float
+    ranking_score: float
+
+
+class OrchestratorTickBody(BaseModel):
+    pinned_visions: list[str] | None = Field(default=None, max_length=50)
+
+
+class OrchestratorTickOut(BaseModel):
+    dry_run: bool
+    total_candidates: int
+    over_budget_skipped: int
+    picked: list[OrchestratorCandidateOut]
+    per_vision_remaining_usd: dict[str, float]
+    # Populated only on dry_run=false.
+    dispatch_summary: dict[str, Any] | None = None
+
+
 # --------------------------------------------------------------------------
 # Bootstrap helpers (separated so tests can inject)
 # --------------------------------------------------------------------------
@@ -313,6 +344,14 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         else:
             app.state.risk_reader = None
 
+    # M49f — orchestrator reader; same shared pool.
+    if not hasattr(app.state, "orchestrator_reader"):
+        repo = getattr(app.state, "repo", None)
+        if isinstance(repo, PostgresCrawlRunRepository):
+            app.state.orchestrator_reader = PostgresOrchestratorReader(repo.pool)
+        else:
+            app.state.orchestrator_reader = None
+
     if not hasattr(app.state, "agent_client"):
         base = default_agent_orchestration_url()
         if base:
@@ -342,12 +381,114 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         "on" if getattr(app.state, "deep_research", None) is not None else "off",
         "on" if getattr(app.state, "agent_client", None) is not None else "off",
     )
+
+    # M49f — 15-minute orchestrator cron, gated on CRAWLER_SCHEDULE
+    # env. Default "off" so dev / tests / CI don't auto-burn LLM
+    # budget. Set CRAWLER_SCHEDULE=on (or any non-"off" value) in
+    # prod to enable; per-vision $/day cap inside the picker keeps
+    # cost bounded.
+    schedule_mode = os.environ.get("CRAWLER_SCHEDULE", "off").lower()
+    if schedule_mode != "off" and not hasattr(app.state, "scheduler"):
+        try:
+            from apscheduler.schedulers.asyncio import (  # noqa: PLC0415
+                AsyncIOScheduler,
+            )
+            from apscheduler.triggers.interval import (  # noqa: PLC0415
+                IntervalTrigger,
+            )
+
+            scheduler = AsyncIOScheduler()
+            scheduler.add_job(
+                _run_orchestrator_tick_job,
+                trigger=IntervalTrigger(minutes=15),
+                kwargs={"app": app},
+                id="orchestrator_tick_15min",
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+            )
+            scheduler.start()
+            app.state.scheduler = scheduler
+            log.info(
+                "crawler: orchestrator cron armed (every 15min) — "
+                "CRAWLER_SCHEDULE=%s",
+                schedule_mode,
+            )
+        except Exception as exc:  # noqa: BLE001 — APScheduler may be missing
+            log.error("crawler: failed to start orchestrator cron: %s", exc)
+            app.state.scheduler = None
+    else:
+        app.state.scheduler = getattr(app.state, "scheduler", None)
+        if schedule_mode == "off":
+            log.info(
+                "crawler: orchestrator cron disabled (CRAWLER_SCHEDULE=off) — "
+                "use POST /jobs/orchestrator/tick for manual runs"
+            )
+
     try:
         yield
     finally:
+        scheduler = getattr(app.state, "scheduler", None)
+        if scheduler is not None:
+            try:
+                scheduler.shutdown(wait=False)
+            except Exception:  # noqa: BLE001
+                pass
         repo = getattr(app.state, "repo", None)
         if repo is not None and isinstance(repo, PostgresCrawlRunRepository):
             await repo.close()
+
+
+async def _run_orchestrator_tick_job(*, app: FastAPI) -> None:
+    """Cron entrypoint — wraps `pick_for_tick` + `dispatch_tick` with
+    full client wiring from app.state. Logs + swallows errors so a bad
+    tick doesn't kill the scheduler."""
+    reader = getattr(app.state, "orchestrator_reader", None)
+    if reader is None:
+        log.warning("crawler cron: orchestrator_reader unset — skipping tick")
+        return
+    try:
+        pick = await pick_for_tick(reader=reader)
+        if not pick.picked:
+            log.info(
+                "crawler cron: tick picked 0/%d candidates (over_budget_skipped=%d)",
+                pick.total_candidates,
+                pick.over_budget_skipped,
+            )
+            return
+        # Best-effort: only dispatch if every client is wired. If any
+        # is missing we log + skip rather than partial-execute.
+        deps = [
+            getattr(app.state, "repo", None),
+            getattr(app.state, "deep_research", None),
+            getattr(app.state, "agent_client", None),
+            getattr(app.state, "capability_reader", None),
+            getattr(app.state, "actor_reader", None),
+            getattr(app.state, "risk_reader", None),
+            getattr(app.state, "signal_writer", None),
+            getattr(app.state, "data_pipeline_client", None),
+        ]
+        if any(d is None for d in deps):
+            log.warning(
+                "crawler cron: missing client(s) — skipping dispatch "
+                "(repo=%s dr=%s agent=%s cap=%s actor=%s risk=%s writer=%s pipeline=%s)",
+                *["on" if d is not None else "off" for d in deps],
+            )
+            return
+        clients = DispatcherClients(
+            runs_repo=deps[0],
+            capability_reader=deps[3],
+            actor_reader=deps[4],
+            risk_reader=deps[5],
+            signal_writer=deps[6],
+            deep_research=deps[1],
+            agent_client=deps[2],
+            data_pipeline=deps[7],
+        )
+        summary = await dispatch_tick(pick=pick, clients=clients)
+        app.state.last_orchestrator_tick = summary.to_summary_dict()
+    except Exception as exc:  # noqa: BLE001
+        log.error("crawler cron: orchestrator tick failed: %s", exc)
 
 
 def create_app() -> FastAPI:
@@ -419,6 +560,18 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status_code=503,
                 detail="crawler unavailable — risk_reader not configured (needs DATABASE_URL)",
+            )
+        return reader
+
+    def _require_orchestrator_reader() -> OrchestratorReader:
+        reader = getattr(app.state, "orchestrator_reader", None)
+        if reader is None:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "crawler unavailable — orchestrator_reader not configured "
+                    "(needs DATABASE_URL)"
+                ),
             )
         return reader
 
@@ -503,6 +656,79 @@ def create_app() -> FastAPI:
             scoring_confidence=out.scoring.scoring.confidence
             if out.scoring is not None
             else None,
+        )
+
+    @app.post("/jobs/orchestrator/tick", response_model=OrchestratorTickOut)
+    async def orchestrator_tick(
+        body: OrchestratorTickBody | None = None,
+        dry_run: bool = True,
+    ) -> OrchestratorTickOut:
+        """Pick the next batch of (vision × fetcher × key) to run.
+
+        `dry_run=true` (default) returns what *would* run without
+        executing — cheap, no LLM cost. `dry_run=false` dispatches
+        each picked candidate through the matching fetcher and
+        returns a per-outcome summary.
+        """
+        reader = _require_orchestrator_reader()
+        pinned = set(body.pinned_visions) if body and body.pinned_visions else set()
+        pick = await pick_for_tick(reader=reader, pinned_visions=pinned)
+
+        picked_out = [
+            OrchestratorCandidateOut(
+                vision_slug=c.vision_slug,
+                fetcher_kind=c.fetcher_kind,
+                key=c.key,
+                anchor_composite=c.anchor_composite,
+                stale_hours=round(c.stale_hours, 2),
+                estimated_cost_usd=round(c.estimated_cost_usd, 4),
+                ranking_score=round(c.ranking_score, 2),
+            )
+            for c in pick.picked
+        ]
+
+        if dry_run:
+            return OrchestratorTickOut(
+                dry_run=True,
+                total_candidates=pick.total_candidates,
+                over_budget_skipped=pick.over_budget_skipped,
+                picked=picked_out,
+                per_vision_remaining_usd={
+                    k: round(v, 4)
+                    for k, v in pick.per_vision_remaining_usd.items()
+                },
+                dispatch_summary=None,
+            )
+
+        # Execute. All per-fetcher clients must be wired or we 503.
+        repo = _require_repo()
+        dr = _require_deep_research()
+        agent = _require_agent_client()
+        cap_reader = _require_capability_reader()
+        actor_reader = _require_actor_reader()
+        risk_reader = _require_risk_reader()
+        writer = _require_signal_writer()
+        pipeline = _require_data_pipeline_client()
+        clients = DispatcherClients(
+            runs_repo=repo,
+            capability_reader=cap_reader,
+            actor_reader=actor_reader,
+            risk_reader=risk_reader,
+            signal_writer=writer,
+            deep_research=dr,
+            agent_client=agent,
+            data_pipeline=pipeline,
+        )
+        summary = await dispatch_tick(pick=pick, clients=clients)
+        return OrchestratorTickOut(
+            dry_run=False,
+            total_candidates=pick.total_candidates,
+            over_budget_skipped=pick.over_budget_skipped,
+            picked=picked_out,
+            per_vision_remaining_usd={
+                k: round(v, 4) for k, v in pick.per_vision_remaining_usd.items()
+            },
+            dispatch_summary=summary.to_summary_dict(),
         )
 
     @app.post("/fetchers/risk/run", response_model=RiskTriggerOut)

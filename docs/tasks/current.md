@@ -43,9 +43,9 @@ Six product-level outcomes Phase 4 ships:
 ## Milestones
 
 ```
-M48 ──► M49a ──► M49b ──► [MP1✅ ─► MP2✅ ─► MP3✅ ─► MP4✅ ─► MP5✅ ─► MP6✅ ─► MP7✅]
- │        │        │       │
- │        │        │       └─► M49c ─► M49d ─► M49f ─► M50 ─► M52 ─► M53 ─► M54
+M48 ──► M49a ──► M49b ──► [MP1✅…MP7✅] ──► M49c✅ ─► M49d✅ ─► M49f✅
+                                                                  │
+                                                                  └─► M50 ─► M52 ─► M53 ─► M54
  │        │        │
  │        │        └─ ActorFetcher (per-actor 90-day DR → actor-tagged Signal)
  │        └─ CapabilityFetcher (per-cap DR → SignalExtractor → Signal)
@@ -121,13 +121,23 @@ that chooses which one to run.
   M50 EntityDetector handles that via CommunityProposal drafts.
 - `services/crawler/fetchers/economics.py` — analyst report + paper
   benchmark extraction; writes new `EconomicsDatapoint` rows.
-- `services/crawler/orchestrator.py` — ranking score from
-  composition.md §4 (binding × stale × pinned − cost), per-vision
-  $/day cap, picks top-K each tick.
-- `EconomicsDatapoint` Prisma model + migration. `economics` tRPC
-  router (list / latest-per-metric).
-- Cron in `services/crawler/main.py` ticks the orchestrator every
-  15min; manual `/admin/crawler/runs?vision=...&fetcher=...&run=now`.
+  (Deferred — MP5 already seeds + reads `EconomicsDatapoint` via
+  `economics.*` tRPC; live fetcher lands later if the manual seed
+  proves insufficient.)
+- ✅ M49e — shipped as **MP5** (EconomicsDatapoint Prisma model +
+  economics tRPC router + 57-row seed + full Economics tab) during
+  the Product Polish block.
+- ✅ M49f — `services/crawler/orchestrator.py` ships
+  composition.md §4 ranking
+  (W_binding × (100 − cap.score) + W_stale × hours_since_last
+   + W_priority × pinned − W_cost × estimated_cost),
+  per-vision $2/day cap, greedy top-K picker. `dispatcher.py`
+  routes picked candidates to capability / actor / risk / signal
+  fetchers in-process and isolates per-candidate errors. Cron:
+  `AsyncIOScheduler` with `IntervalTrigger(minutes=15)`, gated on
+  `CRAWLER_SCHEDULE != "off"` (default off so dev / CI don't burn
+  budget). Manual: `POST /jobs/orchestrator/tick?dry_run=true|false`
+  — dry_run returns picked candidates without execution.
 
 **verify**: enable the 5 fetchers on Space Data Centers → 24h later,
 `Signal` table has fresh rows tagged from each fetcher, capability
