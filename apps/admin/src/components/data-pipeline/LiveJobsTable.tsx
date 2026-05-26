@@ -1,5 +1,6 @@
 "use client";
 
+import { SourceList, type SourceRef } from "@platform/ui";
 import { useEffect, useState } from "react";
 
 import { type CrawlRun, listCrawlRuns } from "@/lib/sim-client";
@@ -125,10 +126,7 @@ function RunRow({ run }: { run: CrawlRun }) {
       ? `${((Date.now() - started.getTime()) / 1000).toFixed(0)}s…`
       : "running…");
   const costStr = run.cost_usd != null ? `$${run.cost_usd.toFixed(4)}` : "—";
-  const preview =
-    run.result_summary && typeof run.result_summary === "object"
-      ? (run.result_summary as { output_preview?: string }).output_preview ?? ""
-      : "";
+  const summary = parseSummary(run.result_summary);
   return (
     <li className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-2">
       <div className="flex flex-wrap items-baseline gap-3 text-xs">
@@ -146,10 +144,19 @@ function RunRow({ run }: { run: CrawlRun }) {
             +{run.signals_written} sig
           </span>
         )}
+        {summary.citations.length > 0 ? (
+          <SourceList
+            sources={summary.citations}
+            label={`${summary.citations.length} src`}
+            popoverPlacement="above"
+          />
+        ) : null}
       </div>
-      {preview && (
-        <p className="mt-1 line-clamp-1 text-[11px] text-neutral-400">{preview}</p>
-      )}
+      {summary.preview ? (
+        <p className="mt-1 line-clamp-1 text-[11px] text-neutral-400">
+          {summary.preview}
+        </p>
+      ) : null}
       {run.error && (
         <p className="mt-1 line-clamp-1 text-[11px] text-rose-400">
           error: {run.error}
@@ -157,4 +164,40 @@ function RunRow({ run }: { run: CrawlRun }) {
       )}
     </li>
   );
+}
+
+/**
+ * Pull the bits LiveJobsTable renders from the loosely-typed JSON
+ * blob CrawlRun.result_summary. Each fetcher writes its own shape
+ * (see digest.py / capability.py / etc.) but the two fields we read
+ * here — `output_preview` (string) and `citations` ([{url, title}]) —
+ * are convention across them. Defensive parsing so a fetcher that
+ * skips a field doesn't crash the row.
+ */
+function parseSummary(blob: unknown): {
+  preview: string;
+  citations: SourceRef[];
+} {
+  if (!blob || typeof blob !== "object") {
+    return { preview: "", citations: [] };
+  }
+  const obj = blob as { output_preview?: unknown; citations?: unknown };
+  const preview = typeof obj.output_preview === "string" ? obj.output_preview : "";
+  const citations: SourceRef[] = [];
+  if (Array.isArray(obj.citations)) {
+    for (const c of obj.citations) {
+      if (c && typeof c === "object") {
+        const url = (c as { url?: unknown }).url;
+        const title = (c as { title?: unknown }).title;
+        if (typeof url === "string" && url.length > 0) {
+          citations.push({
+            url,
+            title: typeof title === "string" ? title : null,
+            kind: "research_brief",
+          });
+        }
+      }
+    }
+  }
+  return { preview, citations };
 }
