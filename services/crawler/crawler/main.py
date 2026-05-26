@@ -8,6 +8,7 @@ Endpoints:
 - POST /fetchers/signal/run                     → SignalFetcher (M49c)
 - POST /fetchers/risk/run                       → RiskFetcher (M49d)
 - POST /jobs/orchestrator/tick?dry_run=         → Orchestrator (M49f)
+- POST /jobs/discovery/run                      → Bot discovery (M50)
 - GET  /jobs/runs?vision=&fetcher=&status=&limit=   → recent CrawlRuns
 - GET  /jobs/runs/{run_id}                      → single CrawlRun
 
@@ -57,15 +58,24 @@ from crawler.db.capability_reader import (
     CapabilityReader,
     PostgresCapabilityReader,
 )
+from crawler.db.discovery_reader import (
+    DiscoveryReader,
+    PostgresDiscoveryReader,
+)
 from crawler.db.orchestrator_repo import (
     OrchestratorReader,
     PostgresOrchestratorReader,
+)
+from crawler.db.proposal_writer import (
+    PostgresProposalWriter,
+    ProposalWriter,
 )
 from crawler.db.risk_reader import (
     PostgresRiskReader,
     RiskReader,
 )
 from crawler.db.signal_writer import PostgresSignalWriter, SignalWriter
+from crawler.discovery.runner import run_discovery
 from crawler.dispatcher import DispatcherClients, dispatch_tick
 from crawler.fetchers.actor import (
     ActorFetcherError,
@@ -232,6 +242,19 @@ class OrchestratorTickOut(BaseModel):
     dispatch_summary: dict[str, Any] | None = None
 
 
+class DiscoveryRunBody(BaseModel):
+    # Empty list / null → all eligible visions from the orchestrator
+    # reader (matches the per-vision $/day cap path).
+    vision_slugs: list[str] | None = Field(default=None, max_length=50)
+    min_signal_count: int = Field(default=2, ge=1, le=20)
+    lookback_days: int = Field(default=7, ge=1, le=30)
+    fuzzy_threshold: float = Field(default=0.92, ge=0.5, le=1.0)
+
+
+class DiscoveryRunOut(BaseModel):
+    summary: dict[str, Any]
+
+
 # --------------------------------------------------------------------------
 # Bootstrap helpers (separated so tests can inject)
 # --------------------------------------------------------------------------
@@ -351,6 +374,37 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
             app.state.orchestrator_reader = PostgresOrchestratorReader(repo.pool)
         else:
             app.state.orchestrator_reader = None
+
+    # M50 — discovery reader + proposal writer + bot user id resolution.
+    # The bot user is created by `pnpm db:seed`; we look it up by
+    # bot_kind on startup so reseeding (id rotation) is handled.
+    if not hasattr(app.state, "discovery_reader"):
+        repo = getattr(app.state, "repo", None)
+        if isinstance(repo, PostgresCrawlRunRepository):
+            app.state.discovery_reader = PostgresDiscoveryReader(repo.pool)
+        else:
+            app.state.discovery_reader = None
+    if not hasattr(app.state, "proposal_writer"):
+        repo = getattr(app.state, "repo", None)
+        if isinstance(repo, PostgresCrawlRunRepository):
+            app.state.proposal_writer = PostgresProposalWriter(repo.pool)
+        else:
+            app.state.proposal_writer = None
+    if not hasattr(app.state, "bot_user_id"):
+        repo = getattr(app.state, "repo", None)
+        if isinstance(repo, PostgresCrawlRunRepository):
+            row = await repo.pool.fetchrow(
+                "SELECT id FROM users WHERE bot_kind = 'research_agent' "
+                "AND is_bot = true LIMIT 1"
+            )
+            app.state.bot_user_id = row["id"] if row is not None else None
+            if app.state.bot_user_id is None:
+                log.warning(
+                    "crawler: no @feasibility_bot user found — discovery "
+                    "endpoint will 503 until `pnpm db:seed` runs"
+                )
+        else:
+            app.state.bot_user_id = None
 
     if not hasattr(app.state, "agent_client"):
         base = default_agent_orchestration_url()
@@ -575,6 +629,36 @@ def create_app() -> FastAPI:
             )
         return reader
 
+    def _require_discovery_reader() -> DiscoveryReader:
+        reader = getattr(app.state, "discovery_reader", None)
+        if reader is None:
+            raise HTTPException(
+                status_code=503,
+                detail="crawler unavailable — discovery_reader not configured",
+            )
+        return reader
+
+    def _require_proposal_writer() -> ProposalWriter:
+        writer = getattr(app.state, "proposal_writer", None)
+        if writer is None:
+            raise HTTPException(
+                status_code=503,
+                detail="crawler unavailable — proposal_writer not configured",
+            )
+        return writer
+
+    def _require_bot_user_id() -> str:
+        bot_id = getattr(app.state, "bot_user_id", None)
+        if not bot_id:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "crawler unavailable — no @feasibility_bot user; "
+                    "run `pnpm db:seed`"
+                ),
+            )
+        return bot_id
+
     def _require_signal_writer() -> SignalWriter:
         writer = getattr(app.state, "signal_writer", None)
         if writer is None:
@@ -657,6 +741,31 @@ def create_app() -> FastAPI:
             if out.scoring is not None
             else None,
         )
+
+    @app.post("/jobs/discovery/run", response_model=DiscoveryRunOut)
+    async def discovery_run(body: DiscoveryRunBody | None = None) -> DiscoveryRunOut:
+        """M50 — scan untagged signals for unknown actor candidates and
+        draft `add_actor` CommunityProposal rows. Idempotent: same
+        candidate name within the open-proposal window is skipped."""
+        discovery_reader = _require_discovery_reader()
+        proposal_writer = _require_proposal_writer()
+        bot_id = _require_bot_user_id()
+        body = body or DiscoveryRunBody()
+
+        slugs = body.vision_slugs
+        if not slugs:
+            orch_reader = _require_orchestrator_reader()
+            slugs = await orch_reader.list_vision_slugs()
+        summary = await run_discovery(
+            sector_slugs=slugs,
+            reader=discovery_reader,
+            writer=proposal_writer,
+            bot_user_id=bot_id,
+            min_signal_count=body.min_signal_count,
+            lookback_days=body.lookback_days,
+            fuzzy_threshold=body.fuzzy_threshold,
+        )
+        return DiscoveryRunOut(summary=summary.to_dict())
 
     @app.post("/jobs/orchestrator/tick", response_model=OrchestratorTickOut)
     async def orchestrator_tick(

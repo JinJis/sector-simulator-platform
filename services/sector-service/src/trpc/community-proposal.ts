@@ -78,6 +78,11 @@ const EvidenceOut = z.object({
 const AuthorOut = z.object({
   id: z.string(),
   label: z.string(),
+  // M50 — true when the proposal was authored by @feasibility_bot or
+  // any future bot account. ProposalCard reads this to render the
+  // gradient border + ✨ chip + "How this was drafted" drawer.
+  is_bot: z.boolean(),
+  bot_kind: z.string().nullable(),
 });
 
 const ProposalSummary = z.object({
@@ -108,13 +113,26 @@ const ProposalDetail = ProposalSummary.extend({
 
 // ============ Helpers ===================================================
 
-function authorLabel(user: {
-  id: string;
-  name: string | null;
-  email: string;
-} | null | undefined): { id: string; label: string } {
-  if (!user) return { id: "anonymous", label: "anonymous" };
-  return { id: user.id, label: user.name ?? user.email };
+function authorLabel(
+  user:
+    | {
+        id: string;
+        name: string | null;
+        email: string;
+        is_bot?: boolean;
+        bot_kind?: string | null;
+      }
+    | null
+    | undefined,
+): { id: string; label: string; is_bot: boolean; bot_kind: string | null } {
+  if (!user)
+    return { id: "anonymous", label: "anonymous", is_bot: false, bot_kind: null };
+  return {
+    id: user.id,
+    label: user.name ?? user.email,
+    is_bot: user.is_bot ?? false,
+    bot_kind: user.bot_kind ?? null,
+  };
 }
 
 const DAILY_PROPOSAL_CAP_DEFAULT = 3;
@@ -186,7 +204,15 @@ export const communityProposalRouter = router({
           ? { cursor: { id: input.cursor }, skip: 1 }
           : {}),
         include: {
-          author: { select: { id: true, name: true, email: true } },
+          author: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              is_bot: true,
+              bot_kind: true,
+            },
+          },
           _count: { select: { evidence: true, replies: true } },
         },
       });
@@ -238,8 +264,24 @@ export const communityProposalRouter = router({
       const row = await ctx.prisma.communityProposal.findUnique({
         where: { id: input.id },
         include: {
-          author: { select: { id: true, name: true, email: true } },
-          decided_by: { select: { id: true, name: true, email: true } },
+          author: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              is_bot: true,
+              bot_kind: true,
+            },
+          },
+          decided_by: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              is_bot: true,
+              bot_kind: true,
+            },
+          },
           evidence: { orderBy: { order_index: "asc" } },
           _count: { select: { evidence: true, replies: true } },
         },
@@ -398,6 +440,17 @@ export const communityProposalRouter = router({
         throw new TRPCError({
           code: "UNAUTHORIZED",
           message: "Sign in to vote",
+        });
+      }
+      // M50 — bot users can't vote on proposals (they only author).
+      const voter = await ctx.prisma.user.findUnique({
+        where: { id: ctx.user.id },
+        select: { is_bot: true },
+      });
+      if (voter?.is_bot) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Bot accounts can't vote on proposals",
         });
       }
       const userId = ctx.user.id;

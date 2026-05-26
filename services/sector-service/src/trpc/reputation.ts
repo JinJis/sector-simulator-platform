@@ -118,7 +118,8 @@ export const reputationRouter = router({
     .output(z.array(ReputationOut))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.prisma.userReputation.findMany({
-        where: { total_points: { gt: 0 } },
+        // M50 — bot users are excluded from human-facing leaderboards.
+        where: { total_points: { gt: 0 }, user: { is_bot: false } },
         orderBy: { total_points: "desc" },
         take: input.limit,
         include: {

@@ -492,7 +492,10 @@ export const prediction2Router = router({
     .query(async ({ ctx, input }) => {
       const grouped = await ctx.prisma.predictionV2.groupBy({
         by: ["user_id"],
-        where: { status: "resolved" },
+        // M50 — bot accounts shouldn't compete on the human leaderboard.
+        // They also shouldn't be placing predictions in v1, but the
+        // filter keeps the guarantee load-bearing.
+        where: { status: "resolved", user: { is_bot: false } },
         _sum: { reward_points: true },
         _count: { _all: true },
         _avg: { score: true },

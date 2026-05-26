@@ -52,9 +52,16 @@ export function ProposalCard({ proposal, kindLabel }: Props) {
   }
 
   const statusClass = STATUS_COLORS[proposal.status] ?? STATUS_COLORS["open"];
+  const isBot = proposal.author.is_bot;
 
   return (
-    <div className="flex gap-3 rounded-lg border border-neutral-800 bg-neutral-900/40 p-4 hover:border-neutral-700">
+    <div
+      className={`relative flex gap-3 rounded-lg p-4 transition ${
+        isBot
+          ? "border border-transparent bg-neutral-900/40 bg-gradient-to-r from-amber-900/10 via-neutral-900/40 to-violet-900/10 ring-1 ring-amber-500/40 hover:ring-amber-400/60"
+          : "border border-neutral-800 bg-neutral-900/40 hover:border-neutral-700"
+      }`}
+    >
       <VoteButton
         voted={voted}
         score={score}
@@ -71,6 +78,14 @@ export function ProposalCard({ proposal, kindLabel }: Props) {
           <span className="rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-neutral-300">
             {kindLabel}
           </span>
+          {isBot && (
+            <span
+              className="rounded border border-amber-500/50 bg-amber-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-amber-300"
+              title={`Drafted by ${proposal.author.label} (${proposal.author.bot_kind ?? "bot"})`}
+            >
+              ✨ AI proposed
+            </span>
+          )}
           <Link
             href={`/community/proposals?sector=${proposal.sector_slug}`}
             className="font-mono text-[10px] text-cyan-400 hover:underline"
@@ -78,13 +93,22 @@ export function ProposalCard({ proposal, kindLabel }: Props) {
             {proposal.sector_slug}
           </Link>
           <span className="text-neutral-600">·</span>
-          <Link
-            href={`/u/${encodeURIComponent(proposal.author.id)}`}
-            onClick={(e) => e.stopPropagation()}
-            className="text-neutral-500 hover:text-cyan-300"
-          >
-            by {proposal.author.label}
-          </Link>
+          {isBot ? (
+            <span
+              className="text-neutral-500"
+              title="Bot author — no profile page"
+            >
+              by {proposal.author.label}
+            </span>
+          ) : (
+            <Link
+              href={`/u/${encodeURIComponent(proposal.author.id)}`}
+              onClick={(e) => e.stopPropagation()}
+              className="text-neutral-500 hover:text-cyan-300"
+            >
+              by {proposal.author.label}
+            </Link>
+          )}
           <span className="text-neutral-700">·</span>
           <span className="text-neutral-600">{relativeTime(proposal.created_at)}</span>
         </div>
@@ -98,6 +122,18 @@ export function ProposalCard({ proposal, kindLabel }: Props) {
           <span>{proposal.evidence_count} evidence</span>
           <span>·</span>
           <span>{proposal.reply_count} replies</span>
+          {isBot && (
+            <>
+              <span>·</span>
+              <Link
+                href={`/community/proposals/${proposal.id}#how-this-was-drafted`}
+                onClick={(e) => e.stopPropagation()}
+                className="text-amber-300 hover:text-amber-200 hover:underline"
+              >
+                How this was drafted →
+              </Link>
+            </>
+          )}
         </div>
         {error && (
           <p className="mt-1 text-[11px] text-red-400">{error}</p>

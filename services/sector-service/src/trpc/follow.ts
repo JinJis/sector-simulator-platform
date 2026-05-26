@@ -83,12 +83,19 @@ export const followRouter = router({
       }
       const target = await ctx.prisma.user.findUnique({
         where: { id: input.followed_id },
-        select: { id: true },
+        select: { id: true, is_bot: true },
       });
       if (!target) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: `user ${input.followed_id}`,
+        });
+      }
+      // M50 — bots can't be followed.
+      if (target.is_bot) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Bot accounts can't be followed",
         });
       }
       const result = await ctx.prisma.$transaction(async (tx) => {

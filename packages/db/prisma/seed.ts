@@ -60,6 +60,20 @@ const SEED_SECTORS: SeedSector[] = [
   },
 ];
 
+// M50 — @feasibility_bot user used by the crawler's discovery loop to
+// author CommunityProposal rows. is_bot=true + bot_kind="research_agent"
+// ensures the UI guardrails (leaderboard/reputation/vote/follow) skip
+// this account. password_hash is a non-loggable placeholder — the bot
+// authenticates via a service token, not a password login.
+const BOT_USER = {
+  email: "feasibility-bot@platform.local",
+  name: "@feasibility_bot",
+  password_hash:
+    "$2b$12$DISABLED.bot.account.never.logs.in.password.hash.placeholder",
+  is_bot: true,
+  bot_kind: "research_agent",
+} as const;
+
 async function main(): Promise<void> {
   console.log(`[seed] upserting ${SEED_SECTORS.length} sectors…`);
   for (const sector of SEED_SECTORS) {
@@ -76,6 +90,26 @@ async function main(): Promise<void> {
   }
   const total = await prisma.sector.count();
   console.log(`[seed] done. sectors in DB: ${total}`);
+
+  console.log("[seed] upserting bot user @feasibility_bot…");
+  await prisma.user.upsert({
+    where: { email: BOT_USER.email },
+    create: {
+      email: BOT_USER.email,
+      name: BOT_USER.name,
+      password_hash: BOT_USER.password_hash,
+      is_bot: BOT_USER.is_bot,
+      bot_kind: BOT_USER.bot_kind,
+    },
+    update: {
+      // Keep name + bot flags in sync on re-runs; never touch
+      // password_hash (some envs may have rotated it).
+      name: BOT_USER.name,
+      is_bot: BOT_USER.is_bot,
+      bot_kind: BOT_USER.bot_kind,
+    },
+  });
+  console.log(`  ✓ ${BOT_USER.email}`);
 }
 
 main()

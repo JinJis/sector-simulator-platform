@@ -370,6 +370,14 @@ model User {
   // agent flow gating that we ship behind a soft (decorative) badge
   // today. The hard paywall lands when payment integration is wired.
   tier          String   @default("free")
+  // M50 — bot user flags. The crawler's discovery loop writes
+  // CommunityProposal rows authored by a special bot account
+  // (`@feasibility_bot`, bot_kind="research_agent"). UI guardrails
+  // exclude bot users from leaderboards, reputation tiers, follower
+  // mechanics, and proposal voting. is_bot is the load-bearing
+  // filter; bot_kind disambiguates future bot personalities.
+  is_bot        Boolean  @default(false) @map("is_bot")
+  bot_kind      String?  @map("bot_kind") // "research_agent" | "extractor" | "watcher"
   created_at    DateTime @default(now()) @map("created_at")
   updated_at    DateTime @updatedAt @map("updated_at")
 
@@ -393,6 +401,7 @@ model User {
   follows_out               UserFollow[]    @relation("FollowsOut")
   follows_in                UserFollow[]    @relation("FollowsIn")
 
+  @@index([is_bot])
   @@map("users")
 }
 

@@ -43,9 +43,9 @@ Six product-level outcomes Phase 4 ships:
 ## Milestones
 
 ```
-M48 ──► M49a ──► M49b ──► [MP1✅…MP7✅] ──► M49c✅ ─► M49d✅ ─► M49f✅
-                                                                  │
-                                                                  └─► M50 ─► M52 ─► M53 ─► M54
+M48 ──► M49a ──► M49b ──► [MP1✅…MP7✅] ──► M49c✅ ─► M49d✅ ─► M49f✅ ─► M50✅
+                                                                            │
+                                                                            └─► M52 ─► M53 ─► M54
  │        │        │
  │        │        └─ ActorFetcher (per-actor 90-day DR → actor-tagged Signal)
  │        └─ CapabilityFetcher (per-cap DR → SignalExtractor → Signal)
@@ -385,7 +385,52 @@ returns only the new `drop_sector_suggestions` migration file.
 
 ---
 
-### M50 — Bot user + Auto-proposal engine  (4–5d)
+### M50 — Bot user + Auto-proposal engine  (4–5d) ✅
+
+Shipped 2026-05-26. Verify criterion met: a Starcloud Inc fixture
+(4 mock signals, no existing Actor match) → discovery loop → exactly
+one CommunityProposal authored by `@feasibility_bot` with
+`target_kind="add_actor"`, payload populated, 4 ProposalEvidence
+URL rows, audit_logs row written.
+
+Shipped:
+- Additive migration `user_bot_flags`: `User.is_bot` + `User.bot_kind`
+  with index. Seed upserts `@feasibility_bot` (research_agent kind).
+- `services/crawler/crawler/discovery/entity_detector.py` — rule-based
+  org-name extraction (capitalized phrase + suffix taxonomy:
+  Inc/Corp/Ltd/LLC/Holdings/Energy/Technologies/Labs/...), head-word
+  blocklist, ≥2 distinct-signal rule in 7d, fuzzy diff against known
+  actors via in-tree Jaro-Winkler (≥0.92). LLM `is_org` gate
+  (composition.md §5 follow-up) intentionally deferred.
+- `services/crawler/crawler/discovery/proposal_drafter.py` +
+  `db/proposal_writer.py` — one asyncpg transaction inserts a
+  CommunityProposal row + N ProposalEvidence URL rows + an
+  AuditLog row (`action="community_proposal.bot_create"`).
+  Idempotent: re-detecting the same name while an open/review
+  bot proposal already targets it returns SkippedProposal.
+- `discovery/runner.py` — per-vision orchestration, returns
+  DiscoverySummary the cockpit + cron read.
+- `crawler/main.py` — `POST /jobs/discovery/run`. Lifespan resolves
+  `app.state.bot_user_id` from `users WHERE bot_kind='research_agent'`.
+
+UI guardrails:
+- `reputation.leaderboard`, `prediction2.leaderboard`: filter
+  `user.is_bot = false`.
+- `communityProposal.vote`: bot voters get 403.
+- `follow.toggle`: bot followees get 400.
+
+Bot proposal visual treatment in
+`apps/web/src/app/community/proposals/proposal-card.tsx`:
+gradient amber→violet ring + ✨ "AI proposed" chip + "How this was
+drafted →" link (anchor `#how-this-was-drafted` for the detail page
+to scroll to the evidence list). AuthorOut on `communityProposal.*`
+extended with `is_bot` + `bot_kind` so the chip lights up everywhere
+proposals render without a second roundtrip.
+
+Tests (9 in test_discovery.py): Jaro-Winkler sanity, EntityDetector
+happy / below-min / fuzzy-skip / blocklist-head, ProposalDrafter
+write + duplicate-skip, full verify-criterion run, idempotent-on-
+second-run. 65/65 crawler tests pass.
 
 The discovery loop from composition.md §5.
 
