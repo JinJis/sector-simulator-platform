@@ -39,21 +39,28 @@ from data_pipeline.db.signal_writer import SignalUpsert, SignalWriter
 from data_pipeline.signal_repo import CapabilityHandle, SignalRepository
 
 _DEFAULT_PROMPT = (
-    "You are writing the daily industry/macro digest for the vision "
-    "'{vision_slug}'.\n\n"
-    "Synthesize what happened in the broader {vision_slug} space "
-    "over the last 24 hours that the per-source crawlers (arXiv, "
-    "USPTO, NewsAPI) likely missed: regulatory news, supply-chain "
-    "shocks, hyperscaler capex shifts, government program "
-    "announcements, M&A activity, cross-industry partnerships, "
-    "macroeconomic context that materially affects the vision's "
-    "feasibility outlook.\n\n"
-    "Cite primary sources inline (filings, gov releases, company "
-    "press, reputable news). Be specific about WHO did WHAT.\n\n"
+    "You are writing the daily industry-shift digest for the vision "
+    "'{vision_slug}'. Use Google Search grounding to pull from the "
+    "last 24-72 hours of:\n"
+    "  - sell-side equity research notes (broker reports, analyst "
+    "    upgrades / downgrades on companies in this vision)\n"
+    "  - academic + applied research (arXiv, preprint servers, lab "
+    "    press releases on the underlying technology)\n"
+    "  - regulatory + government program announcements (NRC, FCC, "
+    "    DOE, MOTIE, etc. — anything that materially moves the "
+    "    regulatory dimension)\n"
+    "  - supply-chain shocks + hyperscaler capex announcements\n"
+    "  - M&A / strategic partnership news\n"
+    "  - macro context (rates, FX, commodities) that affects unit "
+    "    economics for this vision's deployment path\n\n"
+    "Cite primary sources inline (filings, gov releases, broker "
+    "PDFs, reputable news). Be specific about WHO did WHAT.\n\n"
     "Assess net impact on the four dimensions (technical, economic, "
     "regulatory, supply) for the anchor capability "
-    "'{capability_name}' — this is the capability the signal will "
-    "be attributed to. Keep under ~500 words."
+    "'{capability_name}' — this is the capability the resulting "
+    "signal will be attributed to in the feasibility model. Keep "
+    "the synthesis under ~500 words; citations don't count toward "
+    "the limit."
 )
 
 
@@ -333,6 +340,11 @@ def _summarize(
         "dr_cached": dr.cached,
         "dr_elapsed_seconds": round(dr.elapsed_seconds, 3),
         "output_preview": dr.output_text[:280],
+        # Grounded search citations — the cockpit + source-chip strip
+        # use this to render real URLs alongside the synthesis.
+        "citations": [
+            {"url": c.url, "title": c.title} for c in dr.citations
+        ],
     }
     if scoring is not None:
         out["scoring"] = {

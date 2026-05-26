@@ -433,6 +433,42 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
                 "data-pipeline: recompute_feasibility_hourly armed (cron='25 * * * *' UTC)"
             )
 
+            # ── digest_daily: grounded gemini synthesis per vision.
+            # DIGEST_SCHEDULE=off (default) keeps it manual-only so
+            # operators validate cost/quality before turning on per-
+            # vision daily billing (~$0.30/run × N visions).
+            digest_mode = os.environ.get("DIGEST_SCHEDULE", "off").lower()
+            if digest_mode != "off":
+                # 06:00 UTC = 15:00 KST — after Asia opens digest the
+                # overnight US news cycle.
+                digest_cron = os.environ.get("DIGEST_CRON", "0 6 * * *")
+                try:
+                    digest_trigger = CronTrigger.from_crontab(
+                        digest_cron, timezone="UTC"
+                    )
+                except ValueError as e:
+                    log.error("data-pipeline: bad DIGEST_CRON=%r (%s)", digest_cron, e)
+                else:
+                    scheduler.add_job(
+                        _run_digest_daily_job,
+                        trigger=digest_trigger,
+                        kwargs={"app": app},
+                        id="digest_daily",
+                        replace_existing=True,
+                        max_instances=1,
+                        coalesce=True,
+                    )
+                    log.info(
+                        "data-pipeline: digest_daily armed (cron=%r UTC)",
+                        digest_cron,
+                    )
+            else:
+                log.info(
+                    "data-pipeline: digest_daily disabled "
+                    "(DIGEST_SCHEDULE=off) — use POST /jobs/deep-research-digest/run "
+                    "for manual triggers"
+                )
+
         # M49f — orchestrator opportunistic picker. 15-min interval.
         # ORCHESTRATOR_SCHEDULE (new) or CRAWLER_SCHEDULE (legacy
         # alias from the standalone crawler service); default off so
@@ -586,6 +622,43 @@ async def _run_research_ingest_hourly(*, app: FastAPI):  # noqa: ANN201
     )
     app.state.last_signal_ingest_result = stats
     return stats
+
+
+async def _run_digest_daily_job(*, app: FastAPI):  # noqa: ANN201
+    """Daily grounded-research digest sweep — one signal per vision.
+    Each call hits the Vertex grounded gemini (DEEP tier) once, so the
+    daily cost is roughly $0.30 × N visions. Per-vision errors are
+    logged + swallowed so one bad vision doesn't kill the rest."""
+    repo = getattr(app.state, "crawl_runs_repo", None)
+    sig_repo = getattr(app.state, "signal_repo", None)
+    writer = getattr(app.state, "signal_writer", None)
+    dr = getattr(app.state, "deep_research", None)
+    agent = getattr(app.state, "agent_client", None)
+    if any(x is None for x in (repo, sig_repo, writer, dr, agent)):
+        log.warning(
+            "digest_daily: missing dep(s) — skipping "
+            "(crawl_runs=%s signal_repo=%s writer=%s dr=%s agent=%s)",
+            *[("on" if x is not None else "off") for x in (repo, sig_repo, writer, dr, agent)],
+        )
+        return None
+    visions: list[str] = app.state.signal_ingest_visions
+    ok = err = 0
+    for slug in visions:
+        try:
+            await run_deep_research_digest(
+                DigestRequest(vision_slug=slug),
+                runs_repo=repo,
+                signal_repo=sig_repo,
+                signal_writer=writer,
+                deep_research=dr,
+                agent_client=agent,
+            )
+            ok += 1
+        except Exception as exc:  # noqa: BLE001
+            log.error("digest_daily: vision=%s failed: %s", slug, exc)
+            err += 1
+    log.info("digest_daily: complete ok=%d err=%d (of %d visions)", ok, err, len(visions))
+    return {"ok": ok, "err": err, "visions": len(visions)}
 
 
 async def _run_recompute_feasibility_job(*, app: FastAPI):  # noqa: ANN201
