@@ -17,7 +17,6 @@ from .crawl4ai_news import (
     Crawl4aiNaverSource,
     Crawl4aiYahooSource,
 )
-from .newsapi import NewsApiSource  # legacy — kept for explicit imports only
 from .uspto import UsptoSource
 
 __all__ = [
@@ -25,7 +24,6 @@ __all__ = [
     "Crawl4aiFinvizSource",
     "Crawl4aiNaverSource",
     "Crawl4aiYahooSource",
-    "NewsApiSource",
     "RawSignal",
     "SignalSource",
     "UsptoSource",

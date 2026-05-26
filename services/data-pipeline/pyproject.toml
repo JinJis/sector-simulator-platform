@@ -19,11 +19,15 @@ dependencies = [
   # google-genai + anthropic[vertex] used by those modules.
   "agent-tools",
   # crawl4ai powers the news_ingest_5min tier (Yahoo/Naver/Finviz). It
-  # pulls in playwright at runtime for JS-rendered pages; operators need
-  # to run `playwright install chromium` once on the host (or inside the
-  # data-pipeline container) to enable the JS path. Markdown-only sites
-  # work without playwright.
+  # pulls in playwright at runtime for JS-rendered pages.
   "crawl4ai>=0.4.0",
+  # Playwright is NOT a hard dep of crawl4ai (it's behind extras in
+  # 0.4.x), but the Yahoo Finance adapter actually needs JS rendering,
+  # so we depend on it directly. Pin to >=1.40 to match crawl4ai's
+  # tested range. The chromium browser binary is installed separately
+  # by `python -m playwright install --with-deps chromium` in the
+  # data-pipeline Dockerfile.
+  "playwright>=1.40.0",
 ]
 
 [build-system]

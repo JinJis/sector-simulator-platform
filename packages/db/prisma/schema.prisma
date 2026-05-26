@@ -72,13 +72,13 @@ model Sector {
   graph_edges GraphEdge[]
 
   // M36: Vision Feasibility Monitor domain.
-  capabilities        Capability[]
-  signals             Signal[]
-  risks               Risk[]
-  feasibility_history VisionFeasibility[]
+  capabilities         Capability[]
+  signals              Signal[]
+  risks                Risk[]
+  feasibility_history  VisionFeasibility[]
   // M45: Actor layer — companies + labs + governments competing on
   // capabilities. Many-to-many via VisionActor.
-  vision_actors       VisionActor[]
+  vision_actors        VisionActor[]
   // MP5: per-vision economics time-series (cost curves, $/kWh, LCOE).
   economics_datapoints EconomicsDatapoint[]
 
@@ -146,7 +146,6 @@ model SectorEquity {
   financials      EquityFinancial[]
   graph_nodes     GraphNode[]
   watchlist_items WatchlistItem[]
-  predictions     Prediction[]
   predictions_v2  PredictionV2[]
 
   @@unique([sector_slug, ticker, exchange])
@@ -383,23 +382,21 @@ model User {
 
   sessions         Session[]
   watchlist_items  WatchlistItem[]
-  created_sectors  Sector[]               @relation("UserCreatedSectors")
+  created_sectors  Sector[]         @relation("UserCreatedSectors")
   billing_customer BillingCustomer?
-  predictions      Prediction[]
-  user_score       UserScore?
 
   // M46a — Community 3.0
-  community_proposals       CommunityProposal[] @relation("ProposalAuthor")
+  community_proposals          CommunityProposal[] @relation("ProposalAuthor")
   community_proposal_decisions CommunityProposal[] @relation("ProposalDecidedBy")
-  community_proposal_votes  ProposalVote[]
-  community_proposal_replies ProposalReply[]
+  community_proposal_votes     ProposalVote[]
+  community_proposal_replies   ProposalReply[]
   // M46b — PredictionV2
-  predictions_v2            PredictionV2[]      @relation("UserPredictionsV2")
+  predictions_v2               PredictionV2[]      @relation("UserPredictionsV2")
   // M46c — Reputation + Follow
-  reputation                UserReputation?
-  point_events              PointEvent[]
-  follows_out               UserFollow[]    @relation("FollowsOut")
-  follows_in                UserFollow[]    @relation("FollowsIn")
+  reputation                   UserReputation?
+  point_events                 PointEvent[]
+  follows_out                  UserFollow[]        @relation("FollowsOut")
+  follows_in                   UserFollow[]        @relation("FollowsIn")
 
   @@index([is_bot])
   @@map("users")
@@ -543,109 +540,15 @@ model BillingEvent {
 
 // =====================================================================
 // M32 — Community: predictions, scores, suggestions
+//
+// Cleanup history:
+// - MP7 (2026-05-26) dropped `SectorSuggestion` + `SectorSuggestionVote`
+//   (pre-pivot community-suggestion flow superseded by CommunityProposal).
+// - Grounded-research overhaul cleanup (2026-05-26) dropped `Prediction`
+//   + `PredictionResult` + `UserScore` — the v1 stock-prediction game
+//   retired with the pivot. PredictionV2 (M46b, see further below) is
+//   the live successor. Migration: `drop_legacy_prediction_v1_tables`.
 // =====================================================================
-
-/// @deprecated M36 — stock-prediction game retired with pivot. Rows
-/// retained; UI gated by ENABLE_LEGACY_INVESTMENT_FEATURES. M31 backtest
-/// harness when resumed will reframe forecasting around Vision feasibility,
-/// not equity price. See docs/PIVOT.md §1.5.
-model Prediction {
-  // One row per user-submitted prediction. The user picks an equity,
-  // a horizon ("1d" | "1w" | "1m"), and a predicted % change. We
-  // snapshot the anchor_close at submission time so the resolver
-  // (cron, future slice) can compute actual_pct against a stable
-  // baseline.
-  id                 String       @id @default(cuid())
-  user_id            String       @map("user_id")
-  user               User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  equity_id          String       @map("equity_id")
-  equity             SectorEquity @relation(fields: [equity_id], references: [id], onDelete: Cascade)
-  // "1d" | "1w" | "1m" — short enough to fit on chips, no point in
-  // enum-ing across tRPC boundary.
-  horizon            String
-  // Predicted % change vs anchor_close. Positive = up, negative = down.
-  predicted_pct      Float        @map("predicted_pct")
-  anchor_close       Float        @map("anchor_close")
-  // Computed at submission time: anchor_close * (1 + predicted_pct/100).
-  predicted_close    Float        @map("predicted_close")
-  // ISO date — when the prediction was made + the horizon-shifted target.
-  anchor_at          DateTime     @default(now()) @map("anchor_at")
-  target_date        DateTime     @map("target_date")
-  // Optional linkage to a saved Scenario — explains "what assumptions
-  // back this prediction".
-  scenario_id        String?      @map("scenario_id")
-  rationale          String?
-  // M33: structured Claude-generated analysis of the rationale + the
-  // linked scenario's driver overrides. Shape:
-  //   { thesis_summary, supporting_factors[], risk_factors[],
-  //     confidence: "low"|"med"|"high", edited_by_user }
-  // Persisted alongside the prediction so the reviewer can see what
-  // the LLM extracted even months after creation.
-  rationale_analysis Json?        @map("rationale_analysis")
-  // null until the prediction resolves at target_date.
-  resolved           Boolean      @default(false)
-  created_at         DateTime     @default(now()) @map("created_at")
-
-  result PredictionResult?
-
-  @@index([user_id, created_at(sort: Desc)])
-  @@index([equity_id, created_at(sort: Desc)])
-  @@index([resolved, target_date])
-  @@map("predictions")
-}
-
-/// @deprecated M36 — see Prediction. Retained; resolver cron disabled
-/// by default after M43.
-model PredictionResult {
-  // Created by the resolver cron when target_date passes. score
-  // formula in v1: max(0, 100 - |predicted_pct - actual_pct| * 5)
-  // — i.e. ±20pp error wipes the score; perfect call gets 100.
-  id            String     @id @default(cuid())
-  prediction_id String     @unique @map("prediction_id")
-  prediction    Prediction @relation(fields: [prediction_id], references: [id], onDelete: Cascade)
-  actual_close  Float      @map("actual_close")
-  actual_pct    Float      @map("actual_pct")
-  abs_error     Float      @map("abs_error")
-  score         Float
-  resolved_at   DateTime   @default(now()) @map("resolved_at")
-
-  @@map("prediction_results")
-}
-
-/// @deprecated M36 — leaderboard scored prediction game retired. Retained
-/// in case prediction surface is reactivated; M31 backtest reframe may
-/// supersede entirely.
-model UserScore {
-  // Rolling per-user totals. Updated each time a prediction resolves;
-  // a single row per user so the leaderboard is a flat query.
-  user_id              String   @id @map("user_id")
-  user                 User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  total_points         Float    @default(0) @map("total_points")
-  predictions_made     Int      @default(0) @map("predictions_made")
-  predictions_resolved Int      @default(0) @map("predictions_resolved")
-  // Lifetime hits (score >= 50). Stored denormalized so the resolver
-  // doesn't have to COUNT(*) over prediction_results on every write;
-  // hit_rate_pct stays consistent with hits/predictions_resolved with
-  // no float drift. Maintained by data-pipeline's resolve_predictions
-  // job (M33b).
-  hits                 Int      @default(0) @map("hits")
-  // Lifetime hits / lifetime resolved as a percentage; "hit" = score >= 50.
-  hit_rate_pct         Float    @default(0) @map("hit_rate_pct")
-  current_streak       Int      @default(0) @map("current_streak")
-  best_streak          Int      @default(0) @map("best_streak")
-  updated_at           DateTime @updatedAt @map("updated_at")
-
-  @@index([total_points(sort: Desc)])
-  @@map("user_scores")
-}
-
-// MP7 (2026-05-26) — `SectorSuggestion` + `SectorSuggestionVote`
-// removed. They were the pre-pivot community-suggestion flow; the
-// new `CommunityProposal` chain (M46a) covers the same use case and
-// no runtime caller referenced these models. Migration
-// `drop_sector_suggestions` drops both tables. Equity / Prediction
-// (v1) cleanups are deferred — they still have live callers
-// (PredictionV2, resolve_predictions_daily cron).
 
 // =====================================================================
 // M36 — Vision Feasibility Monitor
@@ -934,15 +837,15 @@ model Risk {
 // =====================================================================
 
 model EconomicsDatapoint {
-  id          String   @id @default(cuid())
-  sector_slug String   @map("sector_slug")
-  sector      Sector   @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+  id          String @id @default(cuid())
+  sector_slug String @map("sector_slug")
+  sector      Sector @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
 
   // Stable metric key per vision, e.g. "orbit_dc_per_kwh" or
   // "fusion_lcoe_per_mwh". A vision typically has 2–5 metric keys; the
   // page config picks which two to render as primary/baseline.
-  metric_key String  @map("metric_key")
-  value      Decimal @db.Decimal(20, 6)
+  metric_key String   @map("metric_key")
+  value      Decimal  @db.Decimal(20, 6)
   unit       String // "USD/kWh" | "USD/kg" | "USD/MWh" | "USD/GB" | ...
   as_of      DateTime
 
@@ -950,8 +853,8 @@ model EconomicsDatapoint {
   source_kind String  @map("source_kind") // analyst_report | paper | filing | press | gov_report
   // 0.00 – 1.00. Used to render the datapoint marker with reduced
   // opacity / dotted band when an extractor isn't fully confident.
-  confidence Decimal @db.Decimal(3, 2)
-  notes      String?
+  confidence  Decimal @db.Decimal(3, 2)
+  notes       String?
 
   created_at DateTime @default(now()) @map("created_at")
 
@@ -1244,15 +1147,15 @@ model ProposalEvidence {
   // For text kind: `content` IS the body (markdown allowed); fetched_meta
   // stays null.
 
-  id          String @id @default(cuid())
-  proposal_id String @map("proposal_id")
+  id          String            @id @default(cuid())
+  proposal_id String            @map("proposal_id")
   proposal    CommunityProposal @relation(fields: [proposal_id], references: [id], onDelete: Cascade)
 
-  kind        String  // url | pdf | image | text
-  content     String  // URL / R2 key / freeform body
+  kind         String // url | pdf | image | text
+  content      String // URL / R2 key / freeform body
   fetched_meta Json?  @map("fetched_meta")
   // Display order chosen by the author.
-  order_index Int     @default(0) @map("order_index")
+  order_index  Int    @default(0) @map("order_index")
 
   created_at DateTime @default(now()) @map("created_at")
 
@@ -1267,8 +1170,8 @@ model ProposalVote {
   // pattern: the system trusts high-rep voters more). M46a writes 1
   // unconditionally; M46c upgrades the writer.
 
-  proposal_id String @map("proposal_id")
-  user_id     String @map("user_id")
+  proposal_id String            @map("proposal_id")
+  user_id     String            @map("user_id")
   proposal    CommunityProposal @relation(fields: [proposal_id], references: [id], onDelete: Cascade)
   user        User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
@@ -1285,10 +1188,10 @@ model ProposalReply {
   // rendering simple — no deep tree. Reply upvotes don't exist in
   // M46a (only proposal-level votes; see plan §8 anti-features).
 
-  id              String @id @default(cuid())
-  proposal_id     String @map("proposal_id")
+  id              String  @id @default(cuid())
+  proposal_id     String  @map("proposal_id")
   parent_reply_id String? @map("parent_reply_id")
-  author_id       String @map("author_id")
+  author_id       String  @map("author_id")
 
   proposal CommunityProposal @relation(fields: [proposal_id], references: [id], onDelete: Cascade)
   author   User              @relation(fields: [author_id], references: [id], onDelete: Cascade)
@@ -1411,18 +1314,18 @@ model PredictionV2 {
 // =====================================================================
 
 model UserReputation {
-  user_id      String   @id @map("user_id")
-  user         User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user_id String @id @map("user_id")
+  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   // Sum of all PointEvent.amount rows for this user. Can dip
   // (proposal vote un-toggled subtracts; we don't floor here so the
   // log is honest. The tier function clamps to "newcomer" on
   // negative values).
-  total_points Int      @default(0) @map("total_points")
+  total_points Int    @default(0) @map("total_points")
   // newcomer | member | analyst | senior | maintainer
-  tier         String   @default("newcomer")
+  tier         String @default("newcomer")
 
-  updated_at   DateTime @updatedAt @map("updated_at")
+  updated_at DateTime @updatedAt @map("updated_at")
 
   // Leaderboard primary index
   @@index([total_points(sort: Desc)])
@@ -1446,7 +1349,7 @@ model PointEvent {
   //   reply_upvote          — reply landed an upvote (M47 only;
   //                            unused in M46c)
   //   manual_grant          — admin discretionary grant / clawback
-  kind   String
+  kind String
 
   // Signed integer — can be negative for revocations (e.g. vote
   // toggle-off). Sum stays non-negative under normal operation.
@@ -1470,12 +1373,12 @@ model UserFollow {
   // One-way follow relationship. (follower_id, followed_id) is the
   // composite PK so re-following is a no-op rather than duplicate.
 
-  follower_id String   @map("follower_id")
-  followed_id String   @map("followed_id")
-  follower    User     @relation("FollowsOut", fields: [follower_id], references: [id], onDelete: Cascade)
-  followed    User     @relation("FollowsIn",  fields: [followed_id], references: [id], onDelete: Cascade)
+  follower_id String @map("follower_id")
+  followed_id String @map("followed_id")
+  follower    User   @relation("FollowsOut", fields: [follower_id], references: [id], onDelete: Cascade)
+  followed    User   @relation("FollowsIn", fields: [followed_id], references: [id], onDelete: Cascade)
 
-  created_at  DateTime @default(now()) @map("created_at")
+  created_at DateTime @default(now()) @map("created_at")
 
   @@id([follower_id, followed_id])
   // Profile shows "followers of X" + "X follows N people"
@@ -1495,9 +1398,9 @@ model UserFollow {
 /// plans). `result_summary` shape is fetcher-specific JSON, validated
 /// by the fetcher's own Pydantic schema before write.
 model CrawlRun {
-  id           String @id @default(cuid())
+  id String @id @default(cuid())
 
-  vision_slug  String @map("vision_slug")
+  vision_slug String @map("vision_slug")
 
   // "capability" | "actor" | "signal" | "risk" | "economics" |
   // "deep_research" | "hello_world" (M48c smoke). Free-form string so
@@ -1505,11 +1408,11 @@ model CrawlRun {
   fetcher_kind String @map("fetcher_kind")
 
   // "queued" | "running" | "ok" | "error" | "cancelled"
-  status       String @default("queued")
+  status String @default("queued")
 
   // FetchPlan as JSON — the prompt or query the fetcher will issue.
   // Kept verbatim so a re-run from the cockpit is reproducible.
-  plan         Json
+  plan Json
 
   // WriteSummary as JSON — fetcher-specific result shape. Null until
   // status transitions to ok/error.
@@ -1522,7 +1425,7 @@ model CrawlRun {
   proposals_written Int      @default(0) @map("proposals_written")
 
   // Short, single-line. Full stack traces go to logs, not the table.
-  error      String?
+  error String?
 
   started_at DateTime  @default(now()) @map("started_at")
   ended_at   DateTime? @map("ended_at")
@@ -1533,6 +1436,5 @@ model CrawlRun {
   @@index([fetcher_kind, started_at(sort: Desc)])
   // Live-jobs pane — `WHERE status IN ('queued','running')`.
   @@index([status, started_at(sort: Desc)])
-
   @@map("crawl_runs")
 }
