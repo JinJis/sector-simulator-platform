@@ -5,12 +5,15 @@ import { useState, useTransition } from "react";
 
 import { runActorFetcher } from "@/lib/sim-client";
 
+import { TriggerSelectors, type TriggerSelectorsValue } from "./TriggerSelectors";
 import { TriggerError, TriggerOk } from "./TriggerFeedback";
 
 export function ActorTrigger() {
   const router = useRouter();
-  const [vision, setVision] = useState<string>("space-data-center");
-  const [actor, setActor] = useState<string>("spacex");
+  const [sel, setSel] = useState<TriggerSelectorsValue>({
+    vision_slug: "",
+    secondary_key: "",
+  });
   const [error, setError] = useState<string | null>(null);
   const [lastOk, setLastOk] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -22,8 +25,8 @@ export function ActorTrigger() {
     startTransition(async () => {
       try {
         const out = await runActorFetcher({
-          vision_slug: vision,
-          actor_key: actor,
+          vision_slug: sel.vision_slug,
+          actor_key: sel.secondary_key,
         });
         if (out.run.status === "ok") {
           const cost = out.run.cost_usd ?? 0;
@@ -46,43 +49,27 @@ export function ActorTrigger() {
     });
   };
 
+  const ready =
+    sel.vision_slug.length > 0 && sel.secondary_key.length > 0 && !pending;
+
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-4 py-3">
-      <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
-        <label className="text-xs text-neutral-400" htmlFor="actor-vision">
-          Vision
-        </label>
-        <input
-          id="actor-vision"
-          type="text"
-          value={vision}
-          onChange={(e) => setVision(e.target.value)}
-          className="w-40 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm text-neutral-100 focus:border-neutral-500 focus:outline-none"
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <label className="text-xs text-neutral-400" htmlFor="actor-key">
-          Actor key
-        </label>
-        <input
-          id="actor-key"
-          type="text"
-          value={actor}
-          onChange={(e) => setActor(e.target.value)}
-          className="w-40 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm text-neutral-100 focus:border-neutral-500 focus:outline-none"
-          autoComplete="off"
-          spellCheck={false}
+      <form onSubmit={onSubmit} className="flex flex-col gap-2">
+        <TriggerSelectors
+          secondaryKind="actor"
+          value={sel}
+          onChange={setSel}
         />
         <button
           type="submit"
-          disabled={pending || !vision.trim() || !actor.trim()}
-          className="rounded bg-violet-700 px-3 py-1 text-xs font-medium text-violet-50 hover:bg-violet-600 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+          disabled={!ready}
+          className="self-start rounded bg-violet-700 px-3 py-1 text-xs font-medium text-violet-50 hover:bg-violet-600 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
         >
           {pending ? "Running…" : "Run Actor fetcher"}
         </button>
       </form>
-      {lastOk && <TriggerOk text={lastOk} />}
-      {error && <TriggerError raw={error} />}
+      {lastOk ? <TriggerOk text={lastOk} /> : null}
+      {error ? <TriggerError raw={error} /> : null}
     </div>
   );
 }

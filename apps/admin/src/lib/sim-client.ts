@@ -437,6 +437,44 @@ export async function runDeepResearchDigest(input: {
   );
 }
 
+// ─── Dropdown lookups for the Data Pipeline triggers ───────────────────
+export type VisionLookupOption = RouterOutput["crawler"]["lookups"]["visions"][number];
+export type LookupOption = RouterOutput["crawler"]["lookups"]["capabilities"][number];
+
+export async function listVisionsForLookup(): Promise<VisionLookupOption[]> {
+  return rethrow(
+    () => trpc.crawler.lookups.visions.query(),
+    "listVisionsForLookup",
+  );
+}
+
+export async function listCapabilitiesForLookup(
+  vision_slug: string,
+): Promise<LookupOption[]> {
+  return rethrow(
+    () => trpc.crawler.lookups.capabilities.query({ vision_slug }),
+    `listCapabilitiesForLookup(${vision_slug})`,
+  );
+}
+
+export async function listActorsForLookup(
+  vision_slug: string,
+): Promise<LookupOption[]> {
+  return rethrow(
+    () => trpc.crawler.lookups.actors.query({ vision_slug }),
+    `listActorsForLookup(${vision_slug})`,
+  );
+}
+
+export async function listRisksForLookup(
+  vision_slug: string,
+): Promise<LookupOption[]> {
+  return rethrow(
+    () => trpc.crawler.lookups.risks.query({ vision_slug }),
+    `listRisksForLookup(${vision_slug})`,
+  );
+}
+
 export async function runOrchestratorTick(input: {
   dry_run?: boolean;
   pinned_visions?: string[];

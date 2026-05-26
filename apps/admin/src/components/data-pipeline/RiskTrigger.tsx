@@ -5,12 +5,15 @@ import { useState, useTransition } from "react";
 
 import { runRiskFetcher } from "@/lib/sim-client";
 
+import { TriggerSelectors, type TriggerSelectorsValue } from "./TriggerSelectors";
 import { TriggerError, TriggerOk } from "./TriggerFeedback";
 
 export function RiskTrigger() {
   const router = useRouter();
-  const [vision, setVision] = useState<string>("space-data-center");
-  const [risk, setRisk] = useState<string>("insurance_thinness");
+  const [sel, setSel] = useState<TriggerSelectorsValue>({
+    vision_slug: "",
+    secondary_key: "",
+  });
   const [error, setError] = useState<string | null>(null);
   const [lastOk, setLastOk] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -22,8 +25,8 @@ export function RiskTrigger() {
     startTransition(async () => {
       try {
         const out = await runRiskFetcher({
-          vision_slug: vision,
-          risk_key: risk,
+          vision_slug: sel.vision_slug,
+          risk_key: sel.secondary_key,
         });
         if (out.run.status === "ok") {
           const cost = out.run.cost_usd ?? 0;
@@ -46,43 +49,27 @@ export function RiskTrigger() {
     });
   };
 
+  const ready =
+    sel.vision_slug.length > 0 && sel.secondary_key.length > 0 && !pending;
+
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-4 py-3">
-      <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
-        <label className="text-xs text-neutral-400" htmlFor="risk-vision">
-          Vision
-        </label>
-        <input
-          id="risk-vision"
-          type="text"
-          value={vision}
-          onChange={(e) => setVision(e.target.value)}
-          className="w-40 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm text-neutral-100 focus:border-neutral-500 focus:outline-none"
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <label className="text-xs text-neutral-400" htmlFor="risk-key">
-          Risk key
-        </label>
-        <input
-          id="risk-key"
-          type="text"
-          value={risk}
-          onChange={(e) => setRisk(e.target.value)}
-          className="w-40 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm text-neutral-100 focus:border-neutral-500 focus:outline-none"
-          autoComplete="off"
-          spellCheck={false}
+      <form onSubmit={onSubmit} className="flex flex-col gap-2">
+        <TriggerSelectors
+          secondaryKind="risk"
+          value={sel}
+          onChange={setSel}
         />
         <button
           type="submit"
-          disabled={pending || !vision.trim() || !risk.trim()}
-          className="rounded bg-rose-700 px-3 py-1 text-xs font-medium text-rose-50 hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+          disabled={!ready}
+          className="self-start rounded bg-rose-700 px-3 py-1 text-xs font-medium text-rose-50 hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
         >
           {pending ? "Running…" : "Run Risk fetcher"}
         </button>
       </form>
-      {lastOk && <TriggerOk text={lastOk} />}
-      {error && <TriggerError raw={error} />}
+      {lastOk ? <TriggerOk text={lastOk} /> : null}
+      {error ? <TriggerError raw={error} /> : null}
     </div>
   );
 }

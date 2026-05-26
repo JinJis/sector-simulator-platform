@@ -239,12 +239,76 @@ async function proxy<T>(
 
 // ---------- Router ----------
 
+// Shape of lookup rows — kept narrow so dropdowns load fast (Prisma
+// `select` reads only what the UI renders).
+const LookupOption = z.object({
+  key: z.string(),
+  name: z.string(),
+});
+const VisionLookupOption = z.object({
+  slug: z.string(),
+  name: z.string(),
+});
+
 export const crawlerRouter = router({
   health: publicProcedure
     .output(CrawlerHealth)
     .query(async () =>
       proxy("/health", { method: "GET" }, CrawlerHealth),
     ),
+
+  // Dropdown lookups for the admin Data Pipeline triggers (commit C
+  // of the grounded-research/UX overhaul). All four read straight
+  // from Prisma — no LLM, no HTTP hop. Cached by tRPC's default
+  // staleTime on the client side.
+  lookups: router({
+    visions: publicProcedure
+      .output(z.array(VisionLookupOption))
+      .query(async ({ ctx }) => {
+        const rows = await ctx.prisma.sector.findMany({
+          where: { status: "live" },
+          select: { slug: true, name: true },
+          orderBy: { name: "asc" },
+        });
+        return rows;
+      }),
+
+    capabilities: publicProcedure
+      .input(z.object({ vision_slug: z.string().min(1).max(128) }))
+      .output(z.array(LookupOption))
+      .query(async ({ ctx, input }) => {
+        const rows = await ctx.prisma.capability.findMany({
+          where: { sector_slug: input.vision_slug },
+          select: { key: true, name: true },
+          orderBy: [{ display_order: "asc" }, { name: "asc" }],
+        });
+        return rows;
+      }),
+
+    actors: publicProcedure
+      .input(z.object({ vision_slug: z.string().min(1).max(128) }))
+      .output(z.array(LookupOption))
+      .query(async ({ ctx, input }) => {
+        const rows = await ctx.prisma.visionActor.findMany({
+          where: { sector_slug: input.vision_slug },
+          select: { actor: { select: { key: true, name: true } } },
+          orderBy: { display_order: "asc" },
+        });
+        return rows.map((r) => ({ key: r.actor.key, name: r.actor.name }));
+      }),
+
+    risks: publicProcedure
+      .input(z.object({ vision_slug: z.string().min(1).max(128) }))
+      .output(z.array(LookupOption))
+      .query(async ({ ctx, input }) => {
+        const rows = await ctx.prisma.risk.findMany({
+          where: { sector_slug: input.vision_slug },
+          select: { key: true, name: true },
+          orderBy: { name: "asc" },
+        });
+        return rows;
+      }),
+  }),
 
   runs: router({
     list: publicProcedure

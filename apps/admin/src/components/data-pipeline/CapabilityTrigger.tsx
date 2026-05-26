@@ -5,12 +5,15 @@ import { useState, useTransition } from "react";
 
 import { runCapabilityFetcher } from "@/lib/sim-client";
 
+import { TriggerSelectors, type TriggerSelectorsValue } from "./TriggerSelectors";
 import { TriggerError, TriggerOk } from "./TriggerFeedback";
 
 export function CapabilityTrigger() {
   const router = useRouter();
-  const [vision, setVision] = useState<string>("space-data-center");
-  const [capability, setCapability] = useState<string>("rad_hard_compute");
+  const [sel, setSel] = useState<TriggerSelectorsValue>({
+    vision_slug: "",
+    secondary_key: "",
+  });
   const [error, setError] = useState<string | null>(null);
   const [lastOk, setLastOk] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -22,8 +25,8 @@ export function CapabilityTrigger() {
     startTransition(async () => {
       try {
         const out = await runCapabilityFetcher({
-          vision_slug: vision,
-          capability_key: capability,
+          vision_slug: sel.vision_slug,
+          capability_key: sel.secondary_key,
         });
         if (out.run.status === "ok" || out.run.status === "running") {
           const cost = out.run.cost_usd ?? 0;
@@ -47,39 +50,21 @@ export function CapabilityTrigger() {
     });
   };
 
+  const ready =
+    sel.vision_slug.length > 0 && sel.secondary_key.length > 0 && !pending;
+
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-4 py-3">
-      <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
-        <label className="text-xs text-neutral-400" htmlFor="cap-vision">
-          Vision
-        </label>
-        <input
-          id="cap-vision"
-          type="text"
-          value={vision}
-          onChange={(e) => setVision(e.target.value)}
-          className="w-52 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm text-neutral-100 focus:border-neutral-500 focus:outline-none"
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <label className="text-xs text-neutral-400" htmlFor="cap-key">
-          Capability key
-        </label>
-        <input
-          id="cap-key"
-          type="text"
-          value={capability}
-          onChange={(e) => setCapability(e.target.value)}
-          className="w-52 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm text-neutral-100 focus:border-neutral-500 focus:outline-none"
-          autoComplete="off"
-          spellCheck={false}
+      <form onSubmit={onSubmit} className="flex flex-col gap-2">
+        <TriggerSelectors
+          secondaryKind="capability"
+          value={sel}
+          onChange={setSel}
         />
         <button
           type="submit"
-          disabled={
-            pending || vision.trim().length === 0 || capability.trim().length === 0
-          }
-          className="rounded bg-sky-700 px-3 py-1 text-xs font-medium text-sky-50 hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+          disabled={!ready}
+          className="self-start rounded bg-sky-700 px-3 py-1 text-xs font-medium text-sky-50 hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
         >
           {pending ? "Running…" : "Run Capability fetcher"}
         </button>
