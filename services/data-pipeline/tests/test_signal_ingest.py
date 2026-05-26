@@ -243,6 +243,37 @@ class TestRunSignalIngest:
         assert stats.signals_written == 0
         assert source.calls == []
 
+    async def test_capability_keys_filter_scopes_run(self) -> None:
+        """M49c — when capability_keys is provided, only those keys are
+        ingested. Other keys present in the keywords file are silently
+        dropped (no source.fetch call for them)."""
+        repo = InMemorySignalRepository(
+            capabilities={
+                "space-data-center": [
+                    _cap(id="cap_rad_hard", key="rad_hard_compute"),
+                    _cap(id="cap_thermal", key="thermal_rejection"),
+                ]
+            },
+            actors={"space-data-center": []},
+        )
+        source = FakeSignalSource(
+            results=[_raw(source_url="https://arxiv.org/abs/scoped.1", days_ago=1)]
+        )
+        stats = await run_signal_ingest(
+            sector_slugs=["space-data-center"],
+            repo=repo,
+            sources=[source],
+            skip_extractor=True,
+            capability_keys=["rad_hard_compute"],
+        )
+        assert stats.visions_processed == 1
+        # Only rad_hard_compute should be processed; thermal_rejection
+        # filtered out.
+        assert stats.capabilities_processed == 1
+        # source.fetch called exactly once (per-cap × per-source).
+        assert len(source.calls) == 1
+        assert source.calls[0]["capability_key"] == "rad_hard_compute"
+
     async def test_idempotent_on_second_run(self) -> None:
         """Re-running the cron with the same upstream results should not
         duplicate rows. InMemorySignalRepository keys by (source_url,

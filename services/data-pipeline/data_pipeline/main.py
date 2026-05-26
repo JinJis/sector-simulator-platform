@@ -39,6 +39,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
 from data_pipeline.adapters.base import DataSource
 from data_pipeline.adapters.dart_source import DartSource
@@ -477,6 +478,23 @@ async def _run_refresh_financials_job(*, app: FastAPI) -> RefreshFinancialsResul
     return result
 
 
+class SignalIngestScopeRequest(BaseModel):
+    """M49c — scoped trigger body for /jobs/signal-ingest/scope.
+
+    The crawler orchestrator picks one (vision × capability) per tick
+    based on its binding × stale × cost ranking; this request lets it
+    push exactly that scope into the existing M39 pipeline without
+    waiting on the full-vision daily sweep.
+    """
+
+    sector_slug: str = Field(..., min_length=1, max_length=128)
+    # None / empty → ingest every capability with a keyword entry (same
+    # behavior as the unscoped endpoint).
+    capability_keys: list[str] | None = Field(default=None, max_length=50)
+    lookback_days: int = Field(default=3, ge=1, le=30)
+    per_capability_limit: int = Field(default=10, ge=1, le=100)
+
+
 async def _run_signal_ingest_job(*, app: FastAPI):  # noqa: ANN201
     """M39c — daily signal ingest. Drives arXiv (+ M39d NewsAPI + M39e
     USPTO when those ship) through the SignalExtractor agent, writing
@@ -708,6 +726,46 @@ def create_app() -> FastAPI:
         stats = await _run_signal_ingest_job(app=app)
         if stats is None:
             raise HTTPException(status_code=503, detail="signal_ingest skipped")
+        return {
+            "started_at": stats.started_at.isoformat(),
+            "finished_at": stats.finished_at.isoformat() if stats.finished_at else None,
+            "visions_processed": stats.visions_processed,
+            "capabilities_processed": stats.capabilities_processed,
+            "raw_signals_fetched": stats.raw_signals_fetched,
+            "extractor_calls": stats.extractor_calls,
+            "extractor_failures": stats.extractor_failures,
+            "signals_written": stats.signals_written,
+            "extractor_total_cost_usd": stats.extractor_total_cost_usd,
+            "errors": stats.errors,
+        }
+
+    @app.post("/jobs/signal-ingest/scope")
+    async def scoped_signal_ingest(body: SignalIngestScopeRequest) -> dict:  # noqa: ANN201
+        """M49c — scope-controlled ingest. The crawler orchestrator
+        calls this per (vision × capability) instead of waiting on the
+        full-vision daily sweep. Returns the same IngestStats payload
+        the unscoped endpoint does."""
+        if app.state.signal_repo is None:
+            raise HTTPException(
+                status_code=503,
+                detail="signal_ingest unavailable — DATABASE_URL not configured",
+            )
+        from data_pipeline.jobs.signal_ingest import run_signal_ingest
+
+        log.info(
+            "data-pipeline: scoped signal-ingest vision=%s caps=%s",
+            body.sector_slug,
+            body.capability_keys,
+        )
+        stats = await run_signal_ingest(
+            sector_slugs=[body.sector_slug],
+            repo=app.state.signal_repo,
+            lookback_days=body.lookback_days,
+            per_capability_limit=body.per_capability_limit,
+            capability_keys=body.capability_keys,
+        )
+        # Mirror the legacy /jobs/signal-ingest payload so both endpoints
+        # are interchangeable for consumers.
         return {
             "started_at": stats.started_at.isoformat(),
             "finished_at": stats.finished_at.isoformat() if stats.finished_at else None,

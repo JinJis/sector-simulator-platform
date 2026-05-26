@@ -5,6 +5,7 @@ Endpoints:
 - POST /fetchers/hello-world/run                → smoke trigger (M48c)
 - POST /fetchers/capability/run                 → CapabilityFetcher (M49a)
 - POST /fetchers/actor/run                      → ActorFetcher (M49b)
+- POST /fetchers/signal/run                     → SignalFetcher (M49c)
 - GET  /jobs/runs?vision=&fetcher=&status=&limit=   → recent CrawlRuns
 - GET  /jobs/runs/{run_id}                      → single CrawlRun
 
@@ -41,6 +42,11 @@ from crawler.agents import (
     HttpAgentClient,
     default_agent_orchestration_url,
 )
+from crawler.data_pipeline import (
+    DataPipelineClient,
+    HttpDataPipelineClient,
+    default_data_pipeline_url,
+)
 from crawler.db.actor_reader import (
     ActorReader,
     PostgresActorReader,
@@ -63,6 +69,11 @@ from crawler.fetchers.capability import (
 from crawler.fetchers.hello_world import (
     HelloWorldRunRequest,
     run_hello_world,
+)
+from crawler.fetchers.signal import (
+    SignalFetcherError,
+    SignalFetchRequest,
+    run_signal_fetcher,
 )
 from crawler.repo import (
     CrawlRunRepository,
@@ -147,6 +158,21 @@ class ActorTriggerOut(BaseModel):
     scoring_confidence: float | None
     matched_actor_key: str | None
     primary_capability_key: str | None
+
+
+class SignalTriggerBody(BaseModel):
+    vision_slug: str = Field(..., min_length=1, max_length=128)
+    capability_key: str = Field(..., min_length=1, max_length=128)
+    lookback_days: int = Field(default=3, ge=1, le=30)
+    per_capability_limit: int = Field(default=10, ge=1, le=100)
+
+
+class SignalTriggerOut(BaseModel):
+    run: CrawlRunOut
+    raw_signals_fetched: int
+    signals_written: int
+    extractor_failures: int
+    extractor_total_cost_usd: float
 
 
 # --------------------------------------------------------------------------
@@ -264,6 +290,18 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
             )
             app.state.agent_client = None
 
+    # M49c — SignalFetcher delegates to data-pipeline's scoped ingest.
+    if not hasattr(app.state, "data_pipeline_client"):
+        base = default_data_pipeline_url()
+        if base:
+            app.state.data_pipeline_client = HttpDataPipelineClient(base_url=base)
+        else:
+            log.warning(
+                "crawler: DATA_PIPELINE_URL unset — SignalFetcher "
+                "will return 503 (no data-pipeline reachable)"
+            )
+            app.state.data_pipeline_client = None
+
     log.info(
         "crawler ready (repo=%s · deep_research=%s · agent_client=%s)",
         "on" if getattr(app.state, "repo", None) is not None else "off",
@@ -362,6 +400,18 @@ def create_app() -> FastAPI:
             )
         return client
 
+    def _require_data_pipeline_client() -> DataPipelineClient:
+        client = getattr(app.state, "data_pipeline_client", None)
+        if client is None:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "crawler unavailable — DATA_PIPELINE_URL not configured "
+                    "(SignalFetcher cannot reach the M39 ingest pipeline)"
+                ),
+            )
+        return client
+
     @app.get("/health")
     def health() -> dict[str, Any]:
         return {
@@ -371,6 +421,8 @@ def create_app() -> FastAPI:
                 "repo": getattr(app.state, "repo", None) is not None,
                 "deep_research": getattr(app.state, "deep_research", None) is not None,
                 "agent_client": getattr(app.state, "agent_client", None) is not None,
+                "data_pipeline_client": getattr(app.state, "data_pipeline_client", None)
+                is not None,
             },
         }
 
@@ -408,6 +460,40 @@ def create_app() -> FastAPI:
             scoring_confidence=out.scoring.scoring.confidence
             if out.scoring is not None
             else None,
+        )
+
+    @app.post("/fetchers/signal/run", response_model=SignalTriggerOut)
+    async def signal_run(body: SignalTriggerBody) -> SignalTriggerOut:
+        repo = _require_repo()
+        reader = _require_capability_reader()
+        pipeline = _require_data_pipeline_client()
+        log.info(
+            "crawler: signal triggered vision=%s cap=%s",
+            body.vision_slug,
+            body.capability_key,
+        )
+        try:
+            out = await run_signal_fetcher(
+                SignalFetchRequest(
+                    vision_slug=body.vision_slug,
+                    capability_key=body.capability_key,
+                    lookback_days=body.lookback_days,
+                    per_capability_limit=body.per_capability_limit,
+                ),
+                runs_repo=repo,
+                capability_reader=reader,
+                data_pipeline=pipeline,
+            )
+        except SignalFetcherError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return SignalTriggerOut(
+            run=CrawlRunOut.from_row(out.run),
+            raw_signals_fetched=out.ingest.raw_signals_fetched if out.ingest else 0,
+            signals_written=out.ingest.signals_written if out.ingest else 0,
+            extractor_failures=out.ingest.extractor_failures if out.ingest else 0,
+            extractor_total_cost_usd=out.ingest.extractor_total_cost_usd
+            if out.ingest
+            else 0.0,
         )
 
     @app.post("/fetchers/actor/run", response_model=ActorTriggerOut)

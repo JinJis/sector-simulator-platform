@@ -102,8 +102,14 @@ that chooses which one to run.
   binding; writes one actor_id-tagged `Signal` per actor per UTC day
   (day-bucketed pseudo-URL dedup). Ungated keyword scan for new
   org names (feeds M50 EntityDetector) lands with M50.
-- `services/crawler/fetchers/signal.py` — extends M39 arXiv / USPTO /
-  NewsAPI sweeps with the new orchestrator-driven cadence.
+- ✅ M49c — `services/crawler/fetchers/signal.py` — wraps the M39
+  ingest pipeline (arXiv / USPTO / NewsAPI + SignalExtractor) via
+  data-pipeline's new `POST /jobs/signal-ingest/scope` endpoint,
+  scoped per (vision × capability). `run_signal_ingest` gained an
+  optional `capability_keys` filter; crawler bookkeeps one
+  CrawlRun per call with `signals_written` + extractor cost rolled
+  onto the row. HTTP delegation (matches the crawler → agent-
+  orchestration pattern) keeps adapter ownership in data-pipeline.
 - `services/crawler/fetchers/risk.py` — regulatory keyword + safety
   event watch; uses curated risk-keyword sets per vision.
 - `services/crawler/fetchers/economics.py` — analyst report + paper

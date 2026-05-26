@@ -137,6 +137,7 @@ async def run_signal_ingest(
     lookback_days: int = _DEFAULT_LOOKBACK_DAYS,
     per_capability_limit: int = 10,
     skip_extractor: bool = False,
+    capability_keys: list[str] | None = None,
 ) -> IngestStats:
     """Drive one ingest pass across all visions × capabilities × sources.
 
@@ -152,12 +153,17 @@ async def run_signal_ingest(
         per_capability_limit: max_results passed to each adapter.
         skip_extractor: For test/CI — write raw signals without extractor
             scoring (all deltas null).
-        capability_meta: { capability_key: { name, description, rationale } }
-            for extractor context.
+        capability_keys: M49c — optional whitelist. When provided, only
+            these capability keys are ingested within each vision; keys
+            outside the keyword file are silently dropped. None = every
+            capability with a keyword entry (legacy behavior).
 
     Returns:
         IngestStats summary.
     """
+    capability_filter: set[str] | None = (
+        set(capability_keys) if capability_keys is not None else None
+    )
     if sources is None:
         # Default lineup: arXiv (always available, no key), NewsAPI (no-op
         # when NEWSAPI_KEY unset), USPTO (no-op when USPTO_API_KEY unset).
@@ -182,6 +188,8 @@ async def run_signal_ingest(
             stats.visions_processed += 1
 
             for cap_key, keywords in keywords_by_cap.items():
+                if capability_filter is not None and cap_key not in capability_filter:
+                    continue
                 cap = cap_by_key.get(cap_key)
                 if cap is None:
                     log.info(
