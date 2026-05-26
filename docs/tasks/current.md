@@ -43,9 +43,9 @@ Six product-level outcomes Phase 4 ships:
 ## Milestones
 
 ```
-M48 ──► M49a ──► M49b ──► [MP1✅…MP7✅] ──► M49c✅ ─► M49d✅ ─► M49f✅ ─► M50✅
-                                                                            │
-                                                                            └─► M52 ─► M53 ─► M54
+M48 ──► M49a ──► M49b ──► [MP1✅…MP7✅] ──► M49c✅ ─► M49d✅ ─► M49f✅ ─► M50✅ ─► M52✅
+                                                                                      │
+                                                                                      └─► M53 ─► M54
  │        │        │
  │        │        └─ ActorFetcher (per-actor 90-day DR → actor-tagged Signal)
  │        └─ CapabilityFetcher (per-cap DR → SignalExtractor → Signal)
@@ -484,7 +484,44 @@ non-zero counts for last 24h, every score number opens a drawer
 with at least 1 source-linked signal, sync pills show fresh-green
 across all 8 sub-tabs.
 
-### M52 — Admin Crawler Cockpit  (4–5d)
+### M52 — Admin Crawler Cockpit  (4–5d) ✅
+
+Shipped 2026-05-26. `/admin/crawler` redesigned into the four panes
+composition.md §7 specifies, plus a fifth manual-trigger row.
+
+Shipped:
+- `crawler.*` tRPC extended with proxy procs for `runs.actor`,
+  `runs.signal`, `runs.risk`, `orchestratorTick` (dry_run default
+  true), `discoveryRun`, and a Postgres-direct `stats.health24h`
+  aggregating per-fetcher success/p95/cost + per-vision $/day spend.
+  `CrawlerHealth.ready` now surfaces `agent_client` +
+  `data_pipeline_client` flags.
+- `communityProposal.list` gained an `author_is_bot` filter.
+  New `communityProposal.bulkDecide(ids[], status, reason)` writes
+  the status transition + per-proposal audit log row in one
+  transaction. M46e applier (which actually mints Actor rows from
+  the payload) stays a separate deferred job.
+- `/admin/crawler` page redesigned. Five sections:
+    1. Service health pills (4 readiness flags).
+    2. Manual fetcher triggers (Hello / Capability / Actor / Signal
+       / Risk) in a 2-column grid.
+    3. LiveJobsTable — client component, 5s polling, per-row status
+       pill + elapsed + cost + signals_written delta.
+    4. HealthPane — server-rendered. Per-fetcher cards (success rate
+       pill, P95 latency, $/24h) + per-vision $/day vs $2 cap chips
+       with green/amber/rose tone.
+    5. BotProposalQueue — server-loaded bot-authored open proposals;
+       client component for select-all + per-row checkbox + bulk
+       Apply / Reject with optional audit reason.
+    6. SchedulePane — orchestrator preview (dry-run shows picked
+       candidates without burning budget), "Run tick now", and a
+       discovery loop trigger. Per-vision schedule editor (weight
+       knobs, $/day cap overrides) is the only deferred §7 item —
+       needs the CrawlerConfig JSON column.
+
+Verify (composition.md §7): admin can preview a tick → see the
+top-K candidates → run discovery → bulk-apply the resulting bot
+proposal, all without leaving the cockpit. ✓
 
 `/admin/crawler` — composition.md §7. One page, four panes.
 

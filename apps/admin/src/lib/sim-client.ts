@@ -380,6 +380,126 @@ export async function runCapabilityFetcher(input: {
   );
 }
 
+// ---------- M49b/c/d — additional fetcher triggers ----------
+
+export type ActorFetchResult = RouterOutput["crawler"]["runs"]["actor"];
+export type SignalFetchResult = RouterOutput["crawler"]["runs"]["signal"];
+export type RiskFetchResult = RouterOutput["crawler"]["runs"]["risk"];
+
+export async function runActorFetcher(input: {
+  vision_slug: string;
+  actor_key: string;
+  prompt?: string;
+}): Promise<ActorFetchResult> {
+  return rethrow(
+    () => trpc.crawler.runs.actor.mutate(input),
+    `runActorFetcher(${input.vision_slug}/${input.actor_key})`,
+  );
+}
+
+export async function runSignalFetcher(input: {
+  vision_slug: string;
+  capability_key: string;
+  lookback_days?: number;
+  per_capability_limit?: number;
+}): Promise<SignalFetchResult> {
+  return rethrow(
+    () => trpc.crawler.runs.signal.mutate(input),
+    `runSignalFetcher(${input.vision_slug}/${input.capability_key})`,
+  );
+}
+
+export async function runRiskFetcher(input: {
+  vision_slug: string;
+  risk_key: string;
+  prompt?: string;
+}): Promise<RiskFetchResult> {
+  return rethrow(
+    () => trpc.crawler.runs.risk.mutate(input),
+    `runRiskFetcher(${input.vision_slug}/${input.risk_key})`,
+  );
+}
+
+// ---------- M49f / M50 — orchestrator + discovery ----------
+
+export type OrchestratorTickResult = RouterOutput["crawler"]["orchestratorTick"];
+export type DiscoveryRunResult = RouterOutput["crawler"]["discoveryRun"];
+export type Health24h = RouterOutput["crawler"]["stats"]["health24h"];
+
+export async function runOrchestratorTick(input: {
+  dry_run?: boolean;
+  pinned_visions?: string[];
+}): Promise<OrchestratorTickResult> {
+  return rethrow(
+    () => trpc.crawler.orchestratorTick.mutate(input),
+    `runOrchestratorTick(dry=${input.dry_run ?? true})`,
+  );
+}
+
+export async function runDiscoveryLoop(
+  input: {
+    vision_slugs?: string[];
+    min_signal_count?: number;
+    lookback_days?: number;
+    fuzzy_threshold?: number;
+  } = {},
+): Promise<DiscoveryRunResult> {
+  return rethrow(
+    () => trpc.crawler.discoveryRun.mutate(input),
+    "runDiscoveryLoop",
+  );
+}
+
+export async function fetchHealth24h(window_hours?: number): Promise<Health24h> {
+  return rethrow(
+    () =>
+      trpc.crawler.stats.health24h.query(
+        window_hours != null ? { window_hours } : {},
+      ),
+    `fetchHealth24h(${window_hours ?? 24}h)`,
+  );
+}
+
+// ---------- M52 — bot proposal queue + bulk decide ----------
+
+export type BotProposalRow =
+  RouterOutput["communityProposal"]["list"]["rows"][number];
+
+export async function listBotProposals(
+  input: { limit?: number } = {},
+): Promise<BotProposalRow[]> {
+  const res = await rethrow(
+    () =>
+      trpc.communityProposal.list.query({
+        author_is_bot: true,
+        sort: "hot",
+        limit: input.limit ?? 30,
+      }),
+    "listBotProposals",
+  );
+  return res.rows;
+}
+
+export async function bulkDecideProposals(input: {
+  ids: string[];
+  status: "applied" | "rejected";
+  reason?: string;
+  decided_by_label?: string;
+}): Promise<{ decided_count: number; skipped_ids: string[] }> {
+  return rethrow(
+    () =>
+      trpc.communityProposal.bulkDecide.mutate({
+        ids: input.ids,
+        status: input.status,
+        reason: input.reason ?? "",
+        ...(input.decided_by_label
+          ? { decided_by_label: input.decided_by_label }
+          : {}),
+      }),
+    `bulkDecideProposals(${input.ids.length}→${input.status})`,
+  );
+}
+
 // ---------- Sector lifecycle (M21) ----------
 
 export type SectorRow = RouterOutput["sector"]["list"][number];

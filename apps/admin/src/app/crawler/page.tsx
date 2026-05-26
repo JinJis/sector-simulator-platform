@@ -1,46 +1,71 @@
+/**
+ * /admin/crawler — M52 cockpit.
+ *
+ * Four panes (composition.md §7):
+ *   1. Service health pills + manual fetcher triggers
+ *   2. Live jobs (auto-refresh 5s, client component)
+ *   3. 24h health stats (per-fetcher success/p95/cost + per-vision $/day vs cap)
+ *   4. Bot proposal queue (bulk apply/reject with audit reason)
+ *   5. Schedule + orchestrator preview / discovery trigger
+ *
+ * Server component pre-loads the read paths; client subcomponents own
+ * polling + mutations.
+ */
+
 import { Breadcrumbs } from "@platform/ui";
 
+import { ActorTrigger } from "@/components/crawler/ActorTrigger";
+import { BotProposalQueue } from "@/components/crawler/BotProposalQueue";
 import { CapabilityTrigger } from "@/components/crawler/CapabilityTrigger";
+import { HealthPane } from "@/components/crawler/HealthPane";
 import { HelloWorldTrigger } from "@/components/crawler/HelloWorldTrigger";
+import { LiveJobsTable } from "@/components/crawler/LiveJobsTable";
+import { RiskTrigger } from "@/components/crawler/RiskTrigger";
+import { SchedulePane } from "@/components/crawler/SchedulePane";
+import { SignalTrigger } from "@/components/crawler/SignalTrigger";
 import {
+  type BotProposalRow,
   type CrawlerHealth,
   type CrawlRun,
+  type Health24h,
   fetchCrawlerHealth,
+  fetchHealth24h,
+  listBotProposals,
   listCrawlRuns,
   SECTOR_SERVICE_URL,
 } from "@/lib/sim-client";
 
 export const dynamic = "force-dynamic";
 
-const STATUS_TONE: Record<string, string> = {
-  ok: "border-emerald-800/60 bg-emerald-950/40 text-emerald-300",
-  running: "border-blue-800/60 bg-blue-950/40 text-blue-300",
-  queued: "border-neutral-800 bg-neutral-900/40 text-neutral-300",
-  error: "border-rose-800/60 bg-rose-950/40 text-rose-300",
-  cancelled: "border-amber-800/60 bg-amber-950/40 text-amber-300",
-  timeout: "border-amber-800/60 bg-amber-950/40 text-amber-300",
-};
-
-function statusTone(status: string): string {
-  return STATUS_TONE[status] ?? "border-neutral-800 bg-neutral-900/40 text-neutral-400";
-}
-
 export default async function CrawlerCockpitPage() {
   let health: CrawlerHealth | null = null;
   let healthError: string | null = null;
   let runs: CrawlRun[] = [];
   let runsError: string | null = null;
+  let stats: Health24h | null = null;
+  let statsError: string | null = null;
+  let bots: BotProposalRow[] = [];
+  let botsError: string | null = null;
 
   try {
     health = await fetchCrawlerHealth();
   } catch (err) {
     healthError = err instanceof Error ? err.message : String(err);
   }
-
   try {
     runs = await listCrawlRuns({ limit: 20 });
   } catch (err) {
     runsError = err instanceof Error ? err.message : String(err);
+  }
+  try {
+    stats = await fetchHealth24h(24);
+  } catch (err) {
+    statsError = err instanceof Error ? err.message : String(err);
+  }
+  try {
+    bots = await listBotProposals({ limit: 30 });
+  } catch (err) {
+    botsError = err instanceof Error ? err.message : String(err);
   }
 
   return (
@@ -49,12 +74,14 @@ export default async function CrawlerCockpitPage() {
       <header className="mb-5">
         <h1 className="text-xl font-semibold text-neutral-50">Crawler cockpit</h1>
         <p className="mt-1 text-xs text-neutral-500">
-          Phase 4 real-time crawler — fetcher runs, health, smoke triggers.
-          Production fetchers (capability / actor / signal / risk / economics)
-          land in M49.
+          Phase 4 real-time crawler — live jobs, 24h health, bot proposal
+          queue, schedule + orchestrator preview. M48 → M50 shipped; full
+          per-vision schedule editor lands when CrawlerConfig column is
+          added.
         </p>
       </header>
 
+      {/* Pane 1: service health pills + manual triggers */}
       <section className="mb-6">
         <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
           Service health
@@ -65,9 +92,17 @@ export default async function CrawlerCockpitPage() {
             <div className="mt-1 text-[11px] text-rose-400/80">{healthError}</div>
           </div>
         ) : health ? (
-          <div className="flex flex-wrap gap-2 text-[11px]">
+          <div className="flex flex-wrap items-baseline gap-2 text-[11px]">
             <ReadyChip label="repo" on={health.ready.repo} />
             <ReadyChip label="deep_research" on={health.ready.deep_research} />
+            <ReadyChip
+              label="agent_client"
+              on={health.ready.agent_client ?? false}
+            />
+            <ReadyChip
+              label="data_pipeline_client"
+              on={health.ready.data_pipeline_client ?? false}
+            />
             <span className="ml-auto text-neutral-500">
               checked {new Date(health.now).toISOString().slice(0, 19).replace("T", " ")}
             </span>
@@ -77,34 +112,49 @@ export default async function CrawlerCockpitPage() {
 
       <section className="mb-6">
         <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-          Fetchers
+          Manual fetcher triggers
         </h2>
-        <div className="flex flex-col gap-2">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
           <HelloWorldTrigger />
           <CapabilityTrigger />
+          <ActorTrigger />
+          <SignalTrigger />
+          <RiskTrigger />
         </div>
       </section>
 
-      <section>
-        <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-          Recent runs ({runs.length})
-        </h2>
+      {/* Pane 2: Live jobs (auto-refresh) */}
+      <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         {runsError ? (
-          <div className="rounded-lg border border-rose-800/60 bg-rose-950/30 px-4 py-3 text-sm text-rose-300">
+          <p className="rounded border border-rose-800/60 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">
             {runsError}
-          </div>
-        ) : runs.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-neutral-800 bg-neutral-950/40 px-4 py-6 text-center text-xs text-neutral-500">
-            아직 fetcher 실행 이력이 없습니다. 위 smoke trigger로 첫 run을 만들어 보세요.
           </p>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {runs.map((r) => (
-              <RunRow key={r.id} run={r} />
-            ))}
-          </ul>
+          <LiveJobsTable initialRuns={runs} limit={20} />
         )}
-      </section>
+        {/* Pane 3: 24h health */}
+        {statsError ? (
+          <p className="rounded border border-rose-800/60 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">
+            {statsError}
+          </p>
+        ) : (
+          <HealthPane health={stats} />
+        )}
+      </div>
+
+      {/* Pane 4: Bot proposal queue */}
+      <div className="mb-6">
+        {botsError ? (
+          <p className="rounded border border-rose-800/60 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">
+            {botsError}
+          </p>
+        ) : (
+          <BotProposalQueue initialProposals={bots} />
+        )}
+      </div>
+
+      {/* Pane 5: Schedule + orchestrator preview */}
+      <SchedulePane />
     </main>
   );
 }
@@ -120,42 +170,5 @@ function ReadyChip({ label, on }: { label: string; on: boolean }) {
     >
       {label} {on ? "on" : "off"}
     </span>
-  );
-}
-
-function RunRow({ run }: { run: CrawlRun }) {
-  const started = new Date(run.started_at);
-  const ended = run.ended_at ? new Date(run.ended_at) : null;
-  const elapsed =
-    ended != null ? `${((ended.getTime() - started.getTime()) / 1000).toFixed(2)}s` : "—";
-  const preview =
-    run.result_summary && typeof run.result_summary === "object"
-      ? // Surface `output_preview` if HelloWorldFetcher wrote it.
-        (run.result_summary as { output_preview?: string }).output_preview ?? ""
-      : "";
-  const costStr = run.cost_usd != null ? `$${run.cost_usd.toFixed(4)}` : "—";
-
-  return (
-    <li className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-4 py-3">
-      <div className="flex flex-wrap items-baseline gap-3 text-xs">
-        <span
-          className={`rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider ${statusTone(run.status)}`}
-        >
-          {run.status}
-        </span>
-        <span className="font-mono text-neutral-200">{run.fetcher_kind}</span>
-        <span className="text-neutral-400">{run.vision_slug}</span>
-        <span className="ml-auto text-neutral-500">{elapsed}</span>
-        <span className="text-neutral-500">{costStr}</span>
-      </div>
-      {preview ? (
-        <p className="mt-2 line-clamp-2 text-[12px] text-neutral-300">{preview}</p>
-      ) : null}
-      <div className="mt-2 flex flex-wrap gap-3 text-[10px] text-neutral-500">
-        <span>id: {run.id}</span>
-        <span>started: {started.toISOString().slice(0, 19).replace("T", " ")}</span>
-        {run.error ? <span className="text-rose-400">error: {run.error}</span> : null}
-      </div>
-    </li>
   );
 }

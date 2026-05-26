@@ -63,15 +63,90 @@ const CapabilityOut = z.object({
   scoring_confidence: z.number().nullable(),
 });
 
+const ActorTriggerOut = z.object({
+  run: CrawlRunOut,
+  signal_id: z.string().nullable(),
+  dr_cached: z.boolean(),
+  scoring_confidence: z.number().nullable(),
+  matched_actor_key: z.string().nullable(),
+  primary_capability_key: z.string().nullable(),
+});
+
+const SignalTriggerOut = z.object({
+  run: CrawlRunOut,
+  raw_signals_fetched: z.number().int(),
+  signals_written: z.number().int(),
+  extractor_failures: z.number().int(),
+  extractor_total_cost_usd: z.number(),
+});
+
+const RiskTriggerOut = z.object({
+  run: CrawlRunOut,
+  signal_id: z.string().nullable(),
+  dr_cached: z.boolean(),
+  scoring_confidence: z.number().nullable(),
+  primary_capability_key: z.string().nullable(),
+  risk_severity: z.string(),
+  risk_likelihood: z.string(),
+});
+
+const OrchestratorCandidateOut = z.object({
+  vision_slug: z.string(),
+  fetcher_kind: z.string(),
+  key: z.string(),
+  anchor_composite: z.number().nullable(),
+  stale_hours: z.number(),
+  estimated_cost_usd: z.number(),
+  ranking_score: z.number(),
+});
+
+const OrchestratorTickOut = z.object({
+  dry_run: z.boolean(),
+  total_candidates: z.number().int(),
+  over_budget_skipped: z.number().int(),
+  picked: z.array(OrchestratorCandidateOut),
+  per_vision_remaining_usd: z.record(z.number()),
+  dispatch_summary: z.record(z.unknown()).nullable(),
+});
+
+const DiscoveryRunOut = z.object({
+  summary: z.record(z.unknown()),
+});
+
 const CrawlerHealth = z.object({
   status: z.string(),
   now: z.string(),
   ready: z.object({
     repo: z.boolean(),
     deep_research: z.boolean(),
-    // M49a — optional so older crawler builds still validate.
+    // M49a → M49f — added incrementally; all optional so older
+    // crawler builds still validate.
     agent_client: z.boolean().optional(),
+    data_pipeline_client: z.boolean().optional(),
   }),
+});
+
+const FetcherHealthRow = z.object({
+  fetcher_kind: z.string(),
+  count: z.number().int(),
+  ok_count: z.number().int(),
+  error_count: z.number().int(),
+  success_rate: z.number(),
+  p95_duration_ms: z.number().nullable(),
+  total_cost_usd: z.number(),
+});
+
+const VisionDailyCostRow = z.object({
+  vision_slug: z.string(),
+  total_cost_usd: z.number(),
+});
+
+const Health24hOut = z.object({
+  window_hours: z.number().int(),
+  by_fetcher: z.array(FetcherHealthRow),
+  by_vision: z.array(VisionDailyCostRow),
+  total_runs: z.number().int(),
+  total_cost_usd: z.number(),
 });
 
 // ---------- Helpers ----------
@@ -234,5 +309,189 @@ export const crawlerRouter = router({
           CapabilityOut,
         ),
       ),
+
+    // M49b — ActorFetcher.
+    actor: publicProcedure
+      .input(
+        z.object({
+          vision_slug: z.string().min(1).max(128),
+          actor_key: z.string().min(1).max(128),
+          prompt: z.string().min(1).max(4000).optional(),
+        }),
+      )
+      .output(ActorTriggerOut)
+      .mutation(async ({ input }) =>
+        proxy(
+          "/fetchers/actor/run",
+          { method: "POST", body: JSON.stringify(input) },
+          ActorTriggerOut,
+        ),
+      ),
+
+    // M49c — SignalFetcher (delegates to data-pipeline scoped ingest).
+    signal: publicProcedure
+      .input(
+        z.object({
+          vision_slug: z.string().min(1).max(128),
+          capability_key: z.string().min(1).max(128),
+          lookback_days: z.number().int().min(1).max(30).optional(),
+          per_capability_limit: z.number().int().min(1).max(100).optional(),
+        }),
+      )
+      .output(SignalTriggerOut)
+      .mutation(async ({ input }) =>
+        proxy(
+          "/fetchers/signal/run",
+          { method: "POST", body: JSON.stringify(input) },
+          SignalTriggerOut,
+        ),
+      ),
+
+    // M49d — RiskFetcher.
+    risk: publicProcedure
+      .input(
+        z.object({
+          vision_slug: z.string().min(1).max(128),
+          risk_key: z.string().min(1).max(128),
+          prompt: z.string().min(1).max(4000).optional(),
+        }),
+      )
+      .output(RiskTriggerOut)
+      .mutation(async ({ input }) =>
+        proxy(
+          "/fetchers/risk/run",
+          { method: "POST", body: JSON.stringify(input) },
+          RiskTriggerOut,
+        ),
+      ),
+  }),
+
+  // M49f — orchestrator dry-run + execute. Cockpit defaults to
+  // dry_run so admins can preview the tick without burning budget.
+  orchestratorTick: publicProcedure
+    .input(
+      z
+        .object({
+          dry_run: z.boolean().default(true),
+          pinned_visions: z.array(z.string()).max(50).optional(),
+        })
+        .default({}),
+    )
+    .output(OrchestratorTickOut)
+    .mutation(async ({ input }) =>
+      proxy(
+        `/jobs/orchestrator/tick?dry_run=${input.dry_run ? "true" : "false"}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            pinned_visions: input.pinned_visions ?? null,
+          }),
+        },
+        OrchestratorTickOut,
+      ),
+    ),
+
+  // M50 — bot discovery loop.
+  discoveryRun: publicProcedure
+    .input(
+      z
+        .object({
+          vision_slugs: z.array(z.string()).max(50).optional(),
+          min_signal_count: z.number().int().min(1).max(20).optional(),
+          lookback_days: z.number().int().min(1).max(30).optional(),
+          fuzzy_threshold: z.number().min(0.5).max(1.0).optional(),
+        })
+        .default({}),
+    )
+    .output(DiscoveryRunOut)
+    .mutation(async ({ input }) =>
+      proxy(
+        "/jobs/discovery/run",
+        { method: "POST", body: JSON.stringify(input) },
+        DiscoveryRunOut,
+      ),
+    ),
+
+  // M52 — 24h health aggregation read directly from Postgres
+  // (crawl_runs lives in the shared DB). Avoids a roundtrip through
+  // the crawler service and gives us GROUP BY / percentile in-engine.
+  stats: router({
+    health24h: publicProcedure
+      .input(
+        z.object({
+          window_hours: z.number().int().min(1).max(168).default(24),
+        }).default({}),
+      )
+      .output(Health24hOut)
+      .query(async ({ ctx, input }) => {
+        const since = new Date(Date.now() - input.window_hours * 3600 * 1000);
+
+        const byFetcherRaw = await ctx.prisma.$queryRaw<
+          Array<{
+            fetcher_kind: string;
+            count: bigint;
+            ok_count: bigint;
+            error_count: bigint;
+            p95_duration_ms: number | null;
+            total_cost_usd: number | null;
+          }>
+        >`
+          SELECT fetcher_kind,
+                 COUNT(*) AS count,
+                 COUNT(*) FILTER (WHERE status = 'ok')     AS ok_count,
+                 COUNT(*) FILTER (WHERE status = 'error')  AS error_count,
+                 percentile_cont(0.95) WITHIN GROUP (
+                   ORDER BY EXTRACT(EPOCH FROM (ended_at - started_at)) * 1000
+                 ) FILTER (WHERE ended_at IS NOT NULL) AS p95_duration_ms,
+                 COALESCE(SUM(cost_usd), 0) AS total_cost_usd
+          FROM crawl_runs
+          WHERE started_at >= ${since}
+          GROUP BY fetcher_kind
+          ORDER BY fetcher_kind ASC
+        `;
+        const byVisionRaw = await ctx.prisma.$queryRaw<
+          Array<{ vision_slug: string; total_cost_usd: number | null }>
+        >`
+          SELECT vision_slug,
+                 COALESCE(SUM(cost_usd), 0) AS total_cost_usd
+          FROM crawl_runs
+          WHERE started_at >= ${since}
+          GROUP BY vision_slug
+          ORDER BY total_cost_usd DESC NULLS LAST
+        `;
+
+        const by_fetcher = byFetcherRaw.map((r) => {
+          const count = Number(r.count);
+          const ok = Number(r.ok_count);
+          const err = Number(r.error_count);
+          return {
+            fetcher_kind: r.fetcher_kind,
+            count,
+            ok_count: ok,
+            error_count: err,
+            success_rate: count > 0 ? ok / count : 0,
+            p95_duration_ms:
+              r.p95_duration_ms != null ? Number(r.p95_duration_ms) : null,
+            total_cost_usd: Number(r.total_cost_usd ?? 0),
+          };
+        });
+        const by_vision = byVisionRaw.map((r) => ({
+          vision_slug: r.vision_slug,
+          total_cost_usd: Number(r.total_cost_usd ?? 0),
+        }));
+        const total_runs = by_fetcher.reduce((s, r) => s + r.count, 0);
+        const total_cost_usd = by_fetcher.reduce(
+          (s, r) => s + r.total_cost_usd,
+          0,
+        );
+
+        return {
+          window_hours: input.window_hours,
+          by_fetcher,
+          by_vision,
+          total_runs,
+          total_cost_usd,
+        };
+      }),
   }),
 });

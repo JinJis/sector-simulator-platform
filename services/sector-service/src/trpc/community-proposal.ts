@@ -169,6 +169,9 @@ export const communityProposalRouter = router({
       z.object({
         sector_slug: z.string().optional(),
         status: ProposalStatus.optional(),
+        // M52 — admin cockpit filter: true → bot-authored only,
+        // false → human-authored only, null/undefined → all.
+        author_is_bot: z.boolean().nullish(),
         sort: z.enum(["hot", "new"]).default("hot"),
         limit: z.number().int().positive().max(100).default(20),
         cursor: z.string().optional(),
@@ -184,9 +187,13 @@ export const communityProposalRouter = router({
       const where: {
         sector_slug?: string;
         status?: string;
+        author?: { is_bot: boolean };
       } = {};
       if (input.sector_slug) where.sector_slug = input.sector_slug;
       if (input.status) where.status = input.status;
+      if (input.author_is_bot != null) {
+        where.author = { is_bot: input.author_is_bot };
+      }
       // Default feed hides applied/rejected/stale unless caller asks
       // explicitly — most users want to see what's actually under debate.
       if (!input.status) where.status = "open";
@@ -530,5 +537,74 @@ export const communityProposalRouter = router({
         }
       });
       return result;
+    }),
+
+  /**
+   * Bulk admin decision on a batch of proposals (M52 cockpit). Transitions
+   * each proposal's status from open/review to applied|rejected, stamps
+   * decided_at / decided_by / decision_reason, and writes one audit row
+   * per proposal. The actual "apply" (writing Actor + VisionActor rows
+   * from the payload) is the M46e applier job — this mutation just
+   * records the decision; downstream job processes accepted entries.
+   *
+   * Proposals already at terminal status (applied / rejected / stale)
+   * are silently skipped so retrying a failed batch is safe.
+   */
+  bulkDecide: publicProcedure
+    .input(
+      z.object({
+        ids: z.array(z.string().min(1)).min(1).max(50),
+        status: z.enum(["applied", "rejected"]),
+        reason: z.string().max(1000).default(""),
+        decided_by_label: z.string().max(120).optional(),
+      }),
+    )
+    .output(
+      z.object({
+        decided_count: z.number().int(),
+        skipped_ids: z.array(z.string()),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const label = input.decided_by_label ?? ctx.user?.label ?? "admin";
+      const decided_by_id = ctx.user?.id ?? null;
+      const skipped: string[] = [];
+      let decidedCount = 0;
+      await ctx.prisma.$transaction(async (tx) => {
+        const rows = await tx.communityProposal.findMany({
+          where: { id: { in: input.ids } },
+          select: { id: true, status: true, sector_slug: true, target_kind: true },
+        });
+        for (const r of rows) {
+          if (r.status === "applied" || r.status === "rejected" || r.status === "stale") {
+            skipped.push(r.id);
+            continue;
+          }
+          await tx.communityProposal.update({
+            where: { id: r.id },
+            data: {
+              status: input.status,
+              decided_at: new Date(),
+              decided_by_id,
+              decision_reason: input.reason || null,
+            },
+          });
+          await tx.auditLog.create({
+            data: {
+              action: `community_proposal.${input.status}`,
+              sector_slug: r.sector_slug,
+              payload: {
+                id: r.id,
+                target_kind: r.target_kind,
+                prev_status: r.status,
+                reason: input.reason || null,
+              },
+              author_label: label,
+            },
+          });
+          decidedCount += 1;
+        }
+      });
+      return { decided_count: decidedCount, skipped_ids: skipped };
     }),
 });
