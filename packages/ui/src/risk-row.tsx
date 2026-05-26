@@ -1,5 +1,7 @@
 import type { CSSProperties } from "react";
 
+import { SourceChip, type SourceRef } from "./source-chip";
+
 export type RiskSeverity = "low" | "medium" | "high" | "critical";
 export type RiskLikelihood = "low" | "medium" | "high";
 
@@ -14,6 +16,10 @@ export interface RiskRowProps {
   likelihood?: RiskLikelihood | null;
   /** Optional time-horizon chip (immediate / 1y / 3y / 5y / 10y). */
   timeHorizon?: string | null;
+  /** MP4 — when provided, renders a SourceChip inline next to the
+   *  severity badge so the user can drill from "this risk exists" to
+   *  the underlying filing / report / news article. */
+  source?: SourceRef | null;
   /** Compact = single-line; expanded shows description on a second line. */
   variant?: "default" | "compact";
   className?: string;
@@ -50,6 +56,7 @@ export function RiskRow({
   severity,
   likelihood,
   timeHorizon,
+  source,
   variant = "default",
   className,
   style,
@@ -94,6 +101,7 @@ export function RiskRow({
               {timeHorizon}
             </span>
           )}
+          {source?.url && <SourceChip source={source} />}
         </div>
         {description && variant === "default" && (
           <p className="mt-1 text-xs leading-snug text-neutral-400" title={description}>

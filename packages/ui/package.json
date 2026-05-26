@@ -15,6 +15,7 @@
     "./economics-curve-chart": "./src/economics-curve-chart.tsx",
     "./eta-window": "./src/eta-window.tsx",
     "./feasibility-gauge": "./src/feasibility-gauge.tsx",
+    "./risk-matrix": "./src/risk-matrix.tsx",
     "./risk-row": "./src/risk-row.tsx",
     "./signal-row": "./src/signal-row.tsx",
     "./source-chip": "./src/source-chip.tsx",

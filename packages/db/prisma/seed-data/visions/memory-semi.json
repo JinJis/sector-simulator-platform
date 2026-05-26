@@ -142,10 +142,26 @@
     }
   ],
   "dependencies": [
-    { "source": "hbm_yield_curve", "target": "ai_hbm_demand_durability", "rationale": "Net supply scarcity sustains ASP — feeds back into demand durability." },
-    { "source": "node_migration", "target": "ddr_pricing_power", "rationale": "Cost-down via node migration shapes commodity DRAM unit economics." },
-    { "source": "korea_supply_concentration", "target": "hbm_yield_curve", "rationale": "Korea hosts the binding HBM capacity." },
-    { "source": "capex_efficiency", "target": "ddr_pricing_power", "rationale": "Capex efficiency determines whether marginal supply is profitable." }
+    {
+      "source": "hbm_yield_curve",
+      "target": "ai_hbm_demand_durability",
+      "rationale": "Net supply scarcity sustains ASP — feeds back into demand durability."
+    },
+    {
+      "source": "node_migration",
+      "target": "ddr_pricing_power",
+      "rationale": "Cost-down via node migration shapes commodity DRAM unit economics."
+    },
+    {
+      "source": "korea_supply_concentration",
+      "target": "hbm_yield_curve",
+      "rationale": "Korea hosts the binding HBM capacity."
+    },
+    {
+      "source": "capex_efficiency",
+      "target": "ddr_pricing_power",
+      "rationale": "Capex efficiency determines whether marginal supply is profitable."
+    }
   ],
   "risks": [
     {
@@ -157,8 +173,14 @@
       "likelihood": "high",
       "time_horizon": "1y",
       "mitigations": "Diversify customer mix; comply with allowed-spec carve-outs.",
-      "affected_capability_keys": ["ai_hbm_demand_durability", "korea_supply_concentration"],
-      "display_order": 10
+      "affected_capability_keys": [
+        "ai_hbm_demand_durability",
+        "korea_supply_concentration"
+      ],
+      "display_order": 10,
+      "source_url": "https://www.bis.doc.gov/index.php",
+      "source_kind": "filing",
+      "source_title": "BIS — HBM export-license guidance"
     },
     {
       "key": "samsung_hbm_recovery",
@@ -169,8 +191,14 @@
       "likelihood": "medium",
       "time_horizon": "1y",
       "mitigations": "Track quarterly qualification milestones.",
-      "affected_capability_keys": ["hbm_yield_curve", "korea_supply_concentration"],
-      "display_order": 20
+      "affected_capability_keys": [
+        "hbm_yield_curve",
+        "korea_supply_concentration"
+      ],
+      "display_order": 20,
+      "source_url": "https://news.samsung.com/global/category/business",
+      "source_kind": "press",
+      "source_title": "Samsung newsroom — HBM qualification updates"
     },
     {
       "key": "ai_demand_compression",
@@ -181,8 +209,13 @@
       "likelihood": "medium",
       "time_horizon": "1y",
       "mitigations": "Diversify into automotive + edge AI memory.",
-      "affected_capability_keys": ["ai_hbm_demand_durability"],
-      "display_order": 30
+      "affected_capability_keys": [
+        "ai_hbm_demand_durability"
+      ],
+      "display_order": 30,
+      "source_url": "https://www.bloomberg.com/news/articles",
+      "source_kind": "news",
+      "source_title": "Bloomberg — hyperscaler capex commentary"
     }
   ]
 }

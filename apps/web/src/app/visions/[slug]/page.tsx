@@ -402,6 +402,15 @@ export default async function VisionOverviewPage({ params }: Props) {
                 severity={r.severity as RiskSeverity}
                 likelihood={r.likelihood as "low" | "medium" | "high"}
                 timeHorizon={r.time_horizon}
+                source={
+                  r.source_url
+                    ? {
+                        url: r.source_url,
+                        title: r.source_title ?? r.name,
+                        kind: r.source_kind ?? undefined,
+                      }
+                    : null
+                }
               />
             ))}
           </div>

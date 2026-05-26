@@ -205,15 +205,51 @@
     }
   ],
   "dependencies": [
-    { "source": "rad_hard_compute", "target": "tier3_reliability", "rationale": "Reliability assumes rad-hard chips meet SEU rates." },
-    { "source": "thermal_rejection", "target": "tier3_reliability", "rationale": "Thermal margin is a precondition for sustained uptime." },
-    { "source": "in_orbit_power", "target": "tier3_reliability", "rationale": "Power continuity through eclipse seasons gates uptime." },
-    { "source": "in_orbit_assembly", "target": "tier3_reliability", "rationale": "Spare-stocking + repair latency depend on assembly tooling." },
-    { "source": "downlink_bandwidth", "target": "tier3_reliability", "rationale": "Customer SLA on workload throughput depends on downlink reliability." },
-    { "source": "launch_economics", "target": "in_orbit_assembly", "rationale": "Lower $/kg enables multi-launch DC scale." },
-    { "source": "launch_economics", "target": "in_orbit_power", "rationale": "Cheaper launch lets you fly larger / more solar panels." },
-    { "source": "spectrum_allocation", "target": "downlink_bandwidth", "rationale": "Spectrum rights gate the bandwidth deployment." },
-    { "source": "insurance_availability", "target": "tier3_reliability", "rationale": "Insurance terms shape feasible redundancy budgets." }
+    {
+      "source": "rad_hard_compute",
+      "target": "tier3_reliability",
+      "rationale": "Reliability assumes rad-hard chips meet SEU rates."
+    },
+    {
+      "source": "thermal_rejection",
+      "target": "tier3_reliability",
+      "rationale": "Thermal margin is a precondition for sustained uptime."
+    },
+    {
+      "source": "in_orbit_power",
+      "target": "tier3_reliability",
+      "rationale": "Power continuity through eclipse seasons gates uptime."
+    },
+    {
+      "source": "in_orbit_assembly",
+      "target": "tier3_reliability",
+      "rationale": "Spare-stocking + repair latency depend on assembly tooling."
+    },
+    {
+      "source": "downlink_bandwidth",
+      "target": "tier3_reliability",
+      "rationale": "Customer SLA on workload throughput depends on downlink reliability."
+    },
+    {
+      "source": "launch_economics",
+      "target": "in_orbit_assembly",
+      "rationale": "Lower $/kg enables multi-launch DC scale."
+    },
+    {
+      "source": "launch_economics",
+      "target": "in_orbit_power",
+      "rationale": "Cheaper launch lets you fly larger / more solar panels."
+    },
+    {
+      "source": "spectrum_allocation",
+      "target": "downlink_bandwidth",
+      "rationale": "Spectrum rights gate the bandwidth deployment."
+    },
+    {
+      "source": "insurance_availability",
+      "target": "tier3_reliability",
+      "rationale": "Insurance terms shape feasible redundancy budgets."
+    }
   ],
   "risks": [
     {
@@ -225,8 +261,14 @@
       "likelihood": "medium",
       "time_horizon": "3y",
       "mitigations": "Dual-source non-US optics; license-exempt chip variants; political engagement.",
-      "affected_capability_keys": ["rad_hard_compute", "downlink_bandwidth"],
-      "display_order": 10
+      "affected_capability_keys": [
+        "rad_hard_compute",
+        "downlink_bandwidth"
+      ],
+      "display_order": 10,
+      "source_url": "https://www.state.gov/bureau-of-political-military-affairs/directorate-of-defense-trade-controls-pm-ddtc/",
+      "source_kind": "gov_report",
+      "source_title": "DDTC — USML Category XV interpretive guidance"
     },
     {
       "key": "kessler_scenario",
@@ -237,8 +279,13 @@
       "likelihood": "medium",
       "time_horizon": "5y",
       "mitigations": "Active debris monitoring + deorbit reserves required by insurers.",
-      "affected_capability_keys": ["insurance_availability"],
-      "display_order": 20
+      "affected_capability_keys": [
+        "insurance_availability"
+      ],
+      "display_order": 20,
+      "source_url": "https://www.esa.int/Space_Safety/Space_Debris",
+      "source_kind": "gov_report",
+      "source_title": "ESA Space Debris Office — environment & mitigation"
     },
     {
       "key": "insurance_thinness",
@@ -249,8 +296,13 @@
       "likelihood": "high",
       "time_horizon": "1y",
       "mitigations": "Sovereign backstop programs; coinsurance pools across primes.",
-      "affected_capability_keys": ["insurance_availability"],
-      "display_order": 30
+      "affected_capability_keys": [
+        "insurance_availability"
+      ],
+      "display_order": 30,
+      "source_url": "https://www.lloyds.com/news-and-insights/news",
+      "source_kind": "analyst_report",
+      "source_title": "Lloyd's market bulletin on orbital concentration risk"
     },
     {
       "key": "itu_coordination",
@@ -261,8 +313,13 @@
       "likelihood": "low",
       "time_horizon": "1y",
       "mitigations": "Standard ITU process.",
-      "affected_capability_keys": ["spectrum_allocation"],
-      "display_order": 40
+      "affected_capability_keys": [
+        "spectrum_allocation"
+      ],
+      "display_order": 40,
+      "source_url": "https://www.itu.int/en/ITU-R/space/Pages/default.aspx",
+      "source_kind": "gov_report",
+      "source_title": "ITU-R Space Services Department"
     },
     {
       "key": "chips_act_flux",
@@ -273,8 +330,14 @@
       "likelihood": "high",
       "time_horizon": "1y",
       "mitigations": "Diversify across jurisdictions; lobby for technology-neutral language.",
-      "affected_capability_keys": ["launch_economics", "rad_hard_compute"],
-      "display_order": 50
+      "affected_capability_keys": [
+        "launch_economics",
+        "rad_hard_compute"
+      ],
+      "display_order": 50,
+      "source_url": "https://www.commerce.gov/news/chips-program-office",
+      "source_kind": "gov_report",
+      "source_title": "Commerce — CHIPS Program Office updates"
     }
   ]
 }

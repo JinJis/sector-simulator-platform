@@ -43,7 +43,7 @@ Six product-level outcomes Phase 4 ships:
 ## Milestones
 
 ```
-M48 ──► M49a ──► M49b ──► [MP1✅ ─► MP2✅ ─► MP3✅ ─► MP4 ─► MP5 ─► MP6 ─► MP7]
+M48 ──► M49a ──► M49b ──► [MP1✅ ─► MP2✅ ─► MP3✅ ─► MP4✅ ─► MP5 ─► MP6 ─► MP7]
  │        │        │       │
  │        │        │       └─► M49c ─► M49d ─► M49f ─► M50 ─► M52 ─► M53 ─► M54
  │        │        │
@@ -220,7 +220,19 @@ tagged signals.
 signals list renders with source chips, capability heatmap shows
 non-zero bars, "why this matters" chip opens 3 source links.
 
-### MP4 — Risk Board source attribution + matrix  (2–3d)
+### MP4 — Risk Board source attribution + matrix  (2–3d) ✅
+
+Shipped 2026-05-26: additive migration `risk_source_attribution`
+adds `source_url`, `source_kind`, `source_title` on `Risk`. All 17
+seeded risks across the 4 visions backfilled with real public URLs
+(DDTC / ESA Space Debris / Lloyd's / ITU / Commerce / IAEA / DOE /
+NRC / AMSC / IEA / BIS / EPA / arXiv / patents). tRPC `risk.*` +
+`vision.getOverview` carry the new fields. `<RiskRow>` renders a
+`<SourceChip>` next to severity when present. New `<RiskMatrix>`
+component (severity × likelihood 4×3 grid, severity×likelihood-tinted
+cells, hover ring) embedded at the top of `/visions/[slug]/risks`;
+the page itself now reads from `trpc.risk.list` with fixture as
+fallback.
 
 - Schema migration: additive `source_url String?`, `source_kind
   String?`, `source_title String?` on `Risk`. One migration.

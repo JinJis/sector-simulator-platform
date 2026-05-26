@@ -517,6 +517,9 @@ export const spaceDataCenterFixture: VisionOverview = {
         "Dual-source non-US optics; license-exempt chip variants; political engagement.",
       affected_capability_keys: ["rad_hard_compute", "downlink_bandwidth"],
       display_order: 10,
+      source_url: "https://www.state.gov/bureau-of-political-military-affairs/directorate-of-defense-trade-controls-pm-ddtc/",
+      source_kind: "gov_report",
+      source_title: "DDTC — USML Category XV interpretive guidance",
     },
     {
       id: "fx_risk_kessler",
@@ -531,6 +534,9 @@ export const spaceDataCenterFixture: VisionOverview = {
       mitigations: "Active debris monitoring + deorbit reserves required by insurers.",
       affected_capability_keys: ["insurance_availability"],
       display_order: 20,
+      source_url: "https://www.esa.int/Space_Safety/Space_Debris",
+      source_kind: "gov_report",
+      source_title: "ESA Space Debris Office — environment & mitigation",
     },
     {
       id: "fx_risk_insurance",
@@ -545,6 +551,9 @@ export const spaceDataCenterFixture: VisionOverview = {
       mitigations: "Sovereign backstop programs; coinsurance pools across primes.",
       affected_capability_keys: ["insurance_availability"],
       display_order: 30,
+      source_url: "https://www.lloyds.com/news-and-insights/news",
+      source_kind: "analyst_report",
+      source_title: "Lloyd's market bulletin on orbital concentration risk",
     },
     {
       id: "fx_risk_spectrum",
@@ -558,6 +567,9 @@ export const spaceDataCenterFixture: VisionOverview = {
       mitigations: "Standard ITU process.",
       affected_capability_keys: ["spectrum_allocation"],
       display_order: 40,
+      source_url: "https://www.itu.int/en/ITU-R/space/Pages/default.aspx",
+      source_kind: "gov_report",
+      source_title: "ITU-R Space Services Department",
     },
     {
       id: "fx_risk_chips",
@@ -572,6 +584,9 @@ export const spaceDataCenterFixture: VisionOverview = {
       mitigations: "Diversify across jurisdictions; lobby for technology-neutral language.",
       affected_capability_keys: ["launch_economics", "rad_hard_compute"],
       display_order: 50,
+      source_url: "https://www.commerce.gov/news/chips-program-office",
+      source_kind: "gov_report",
+      source_title: "Commerce — CHIPS Program Office updates",
     },
   ],
   recent_signals: [

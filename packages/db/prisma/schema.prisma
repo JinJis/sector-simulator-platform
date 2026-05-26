@@ -929,6 +929,17 @@ model Risk {
 
   affected_capability_keys String[] @map("affected_capability_keys")
 
+  // MP4 — source attribution. Lets the Risk Board attach a clickable
+  // SourceChip to every risk so the user can drill from "this risk
+  // exists" to "here is the regulatory filing / accident report / news
+  // article that says so". All three are nullable for backward compat;
+  // when present, source_url is the canonical link, source_kind drives
+  // the chip's colour (paper / news / filing / gov_report / ...),
+  // source_title is the optional hover-popover headline.
+  source_url   String? @map("source_url")
+  source_kind  String? @map("source_kind")
+  source_title String? @map("source_title")
+
   display_order Int @default(100) @map("display_order")
 
   created_at DateTime @default(now()) @map("created_at")

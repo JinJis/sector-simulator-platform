@@ -72,6 +72,10 @@ interface RiskInput {
   mitigations: string | null;
   affected_capability_keys: string[];
   display_order: number;
+  // MP4 — optional source attribution. Real public URL when present.
+  source_url?: string | null;
+  source_kind?: string | null;
+  source_title?: string | null;
 }
 
 interface FeasibilityInput {
@@ -216,6 +220,9 @@ async function seedVision(seed: VisionSeed): Promise<void> {
         mitigations: r.mitigations,
         affected_capability_keys: cleanKeys,
         display_order: r.display_order,
+        source_url: r.source_url ?? null,
+        source_kind: r.source_kind ?? null,
+        source_title: r.source_title ?? null,
       },
       update: {
         category: r.category,
@@ -227,6 +234,9 @@ async function seedVision(seed: VisionSeed): Promise<void> {
         mitigations: r.mitigations,
         affected_capability_keys: cleanKeys,
         display_order: r.display_order,
+        source_url: r.source_url ?? null,
+        source_kind: r.source_kind ?? null,
+        source_title: r.source_title ?? null,
       },
     });
   }

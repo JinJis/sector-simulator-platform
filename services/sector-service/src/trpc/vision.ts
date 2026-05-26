@@ -126,6 +126,11 @@ const RiskInVisionOverview = z.object({
   time_horizon: z.string(),
   mitigations: z.string().nullable(),
   affected_capability_keys: z.array(z.string()),
+  // MP4 — source attribution surfaced through the Overview Risk Board
+  // so the same SourceChip wiring works without a second tRPC roundtrip.
+  source_url: z.string().nullable(),
+  source_kind: z.string().nullable(),
+  source_title: z.string().nullable(),
   display_order: z.number().int(),
 });
 
@@ -514,6 +519,9 @@ export const visionRouter = router({
           time_horizon: r.time_horizon,
           mitigations: r.mitigations,
           affected_capability_keys: r.affected_capability_keys,
+          source_url: r.source_url,
+          source_kind: r.source_kind,
+          source_title: r.source_title,
           display_order: r.display_order,
         })),
         recent_signals: recentSignals.map((s) => ({

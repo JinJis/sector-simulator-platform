@@ -37,6 +37,10 @@ const RiskOut = z.object({
   time_horizon: z.string(),
   mitigations: z.string().nullable(),
   affected_capability_keys: z.array(z.string()),
+  // MP4 — source attribution (additive; all nullable).
+  source_url: z.string().nullable(),
+  source_kind: z.string().nullable(),
+  source_title: z.string().nullable(),
   display_order: z.number().int(),
   created_at: z.date(),
   updated_at: z.date(),
@@ -54,6 +58,11 @@ const UpsertInput = z.object({
   mitigations: z.string().max(2000).nullable().optional(),
   affected_capability_keys: z.array(z.string()).default([]),
   display_order: z.number().int().min(0).max(10_000).default(100),
+  // MP4 — additive source attribution. URL is required to be a URL
+  // when present; kind/title are free strings.
+  source_url: z.string().url().nullable().optional(),
+  source_kind: z.string().max(40).nullable().optional(),
+  source_title: z.string().max(280).nullable().optional(),
   author_label: z.string().max(120).optional(),
 });
 
@@ -138,6 +147,9 @@ export const riskRouter = router({
           mitigations: input.mitigations ?? null,
           affected_capability_keys: validatedKeys,
           display_order: input.display_order,
+          source_url: input.source_url ?? null,
+          source_kind: input.source_kind ?? null,
+          source_title: input.source_title ?? null,
         },
         update: {
           category: input.category,
@@ -149,6 +161,9 @@ export const riskRouter = router({
           mitigations: input.mitigations ?? null,
           affected_capability_keys: validatedKeys,
           display_order: input.display_order,
+          source_url: input.source_url ?? null,
+          source_kind: input.source_kind ?? null,
+          source_title: input.source_title ?? null,
         },
       });
       await ctx.prisma.auditLog.create({

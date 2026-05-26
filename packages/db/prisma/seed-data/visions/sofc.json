@@ -142,10 +142,26 @@
     }
   ],
   "dependencies": [
-    { "source": "stack_durability", "target": "system_cost_curve", "rationale": "Longer stack life amortizes replacement capex." },
-    { "source": "manufacturing_capacity", "target": "system_cost_curve", "rationale": "Scale drives learning curve." },
-    { "source": "fuel_economics", "target": "system_cost_curve", "rationale": "Fuel cost is the second-biggest LCOE input." },
-    { "source": "permitting_interconnection", "target": "datacenter_power_demand", "rationale": "Permit timelines gate hyperscaler deployment." }
+    {
+      "source": "stack_durability",
+      "target": "system_cost_curve",
+      "rationale": "Longer stack life amortizes replacement capex."
+    },
+    {
+      "source": "manufacturing_capacity",
+      "target": "system_cost_curve",
+      "rationale": "Scale drives learning curve."
+    },
+    {
+      "source": "fuel_economics",
+      "target": "system_cost_curve",
+      "rationale": "Fuel cost is the second-biggest LCOE input."
+    },
+    {
+      "source": "permitting_interconnection",
+      "target": "datacenter_power_demand",
+      "rationale": "Permit timelines gate hyperscaler deployment."
+    }
   ],
   "risks": [
     {
@@ -157,8 +173,13 @@
       "likelihood": "high",
       "time_horizon": "5y",
       "mitigations": "Maintain NG-compatible architecture; lobby for hydrogen tax credits.",
-      "affected_capability_keys": ["fuel_economics"],
-      "display_order": 10
+      "affected_capability_keys": [
+        "fuel_economics"
+      ],
+      "display_order": 10,
+      "source_url": "https://energy.ec.europa.eu/topics/energy-systems-integration/hydrogen_en",
+      "source_kind": "gov_report",
+      "source_title": "EU — H2 backbone milestone updates"
     },
     {
       "key": "ng_carbon_pricing",
@@ -169,8 +190,13 @@
       "likelihood": "medium",
       "time_horizon": "3y",
       "mitigations": "Lock in carbon-cost passthrough clauses with utility customers.",
-      "affected_capability_keys": ["fuel_economics"],
-      "display_order": 20
+      "affected_capability_keys": [
+        "fuel_economics"
+      ],
+      "display_order": 20,
+      "source_url": "https://www.epa.gov/climate-change",
+      "source_kind": "gov_report",
+      "source_title": "EPA — power-sector emissions reporting"
     },
     {
       "key": "stack_supply_chain",
@@ -181,8 +207,14 @@
       "likelihood": "medium",
       "time_horizon": "3y",
       "mitigations": "Qualify non-China suppliers; substitute with cobalt-based formulations.",
-      "affected_capability_keys": ["stack_durability", "manufacturing_capacity"],
-      "display_order": 30
+      "affected_capability_keys": [
+        "stack_durability",
+        "manufacturing_capacity"
+      ],
+      "display_order": 30,
+      "source_url": "https://patents.google.com/?q=solid+oxide+fuel+cell+electrolyte",
+      "source_kind": "patent",
+      "source_title": "Solid-oxide electrolyte patent landscape"
     }
   ]
 }

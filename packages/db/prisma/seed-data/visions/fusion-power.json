@@ -126,7 +126,7 @@
       "description": "NRC + IAEA clear, predictable licensing pathway distinct from fission Part 50/52.",
       "rationale": "Pre-2024 fusion was regulatory limbo. NRC's 2024 ruling treats fusion as Part 30 byproduct material — order-of-magnitude faster licensing than fission.",
       "display_order": 60,
-      "weight": 0.10,
+      "weight": 0.1,
       "primary_driver_name": null,
       "score": {
         "technical": 80,
@@ -205,16 +205,56 @@
     }
   ],
   "dependencies": [
-    { "source": "hts_magnets", "target": "plasma_confinement", "rationale": "Higher field enables smaller plant footprint + better confinement." },
-    { "source": "first_wall_materials", "target": "plasma_confinement", "rationale": "Wall integrity is a precondition for sustained burn." },
-    { "source": "tritium_breeding", "target": "plant_economics", "rationale": "External tritium purchase at $30k/g destroys FOAK economics." },
-    { "source": "first_wall_materials", "target": "plant_economics", "rationale": "Wall replacement frequency drives amortized opex." },
-    { "source": "plasma_confinement", "target": "plant_economics", "rationale": "Low duty cycle inflates LCOE proportionally." },
-    { "source": "supply_chain_rebco", "target": "hts_magnets", "rationale": "REBCO tape supply gates magnet manufacturing throughput." },
-    { "source": "supply_chain_rebco", "target": "tritium_breeding", "rationale": "Li-6 + Be supply gates blanket manufacturing." },
-    { "source": "regulatory_pathway", "target": "plant_economics", "rationale": "Licensing duration enters cost of capital." },
-    { "source": "workforce_skills", "target": "plant_economics", "rationale": "Skilled operations labor is a cost lever at scale." },
-    { "source": "plant_economics", "target": "grid_integration", "rationale": "Without economics, grid integration is moot." }
+    {
+      "source": "hts_magnets",
+      "target": "plasma_confinement",
+      "rationale": "Higher field enables smaller plant footprint + better confinement."
+    },
+    {
+      "source": "first_wall_materials",
+      "target": "plasma_confinement",
+      "rationale": "Wall integrity is a precondition for sustained burn."
+    },
+    {
+      "source": "tritium_breeding",
+      "target": "plant_economics",
+      "rationale": "External tritium purchase at $30k/g destroys FOAK economics."
+    },
+    {
+      "source": "first_wall_materials",
+      "target": "plant_economics",
+      "rationale": "Wall replacement frequency drives amortized opex."
+    },
+    {
+      "source": "plasma_confinement",
+      "target": "plant_economics",
+      "rationale": "Low duty cycle inflates LCOE proportionally."
+    },
+    {
+      "source": "supply_chain_rebco",
+      "target": "hts_magnets",
+      "rationale": "REBCO tape supply gates magnet manufacturing throughput."
+    },
+    {
+      "source": "supply_chain_rebco",
+      "target": "tritium_breeding",
+      "rationale": "Li-6 + Be supply gates blanket manufacturing."
+    },
+    {
+      "source": "regulatory_pathway",
+      "target": "plant_economics",
+      "rationale": "Licensing duration enters cost of capital."
+    },
+    {
+      "source": "workforce_skills",
+      "target": "plant_economics",
+      "rationale": "Skilled operations labor is a cost lever at scale."
+    },
+    {
+      "source": "plant_economics",
+      "target": "grid_integration",
+      "rationale": "Without economics, grid integration is moot."
+    }
   ],
   "risks": [
     {
@@ -226,8 +266,14 @@
       "likelihood": "medium",
       "time_horizon": "5y",
       "mitigations": "Test blanket modules at ITER (2035+); accelerated breeder R&D at private companies (CFS, Helion alternative fuels).",
-      "affected_capability_keys": ["tritium_breeding", "plant_economics"],
-      "display_order": 10
+      "affected_capability_keys": [
+        "tritium_breeding",
+        "plant_economics"
+      ],
+      "display_order": 10,
+      "source_url": "https://www.iaea.org/topics/fusion-power",
+      "source_kind": "analyst_report",
+      "source_title": "IAEA — fusion fuel cycle & tritium inventory"
     },
     {
       "key": "foak_cost_overruns",
@@ -238,8 +284,13 @@
       "likelihood": "high",
       "time_horizon": "3y",
       "mitigations": "Fixed-price contracting; small-plant strategies (CFS, Helion); diversified investor base (sovereign + corporate).",
-      "affected_capability_keys": ["plant_economics"],
-      "display_order": 20
+      "affected_capability_keys": [
+        "plant_economics"
+      ],
+      "display_order": 20,
+      "source_url": "https://science.osti.gov/fes",
+      "source_kind": "gov_report",
+      "source_title": "DOE FES — Milestone-Based Fusion Development Program"
     },
     {
       "key": "wall_neutron_damage",
@@ -250,8 +301,14 @@
       "likelihood": "medium",
       "time_horizon": "5y",
       "mitigations": "Materials irradiation testing (IFMIF-DONES); liquid-wall alternatives; modular wall design for fast swaps.",
-      "affected_capability_keys": ["first_wall_materials", "plant_economics"],
-      "display_order": 30
+      "affected_capability_keys": [
+        "first_wall_materials",
+        "plant_economics"
+      ],
+      "display_order": 30,
+      "source_url": "https://arxiv.org/list/physics.acc-ph/recent",
+      "source_kind": "paper",
+      "source_title": "arXiv — first-wall materials under DT neutron load"
     },
     {
       "key": "fission_political_drag",
@@ -262,8 +319,13 @@
       "likelihood": "medium",
       "time_horizon": "10y",
       "mitigations": "Communications campaigns emphasizing zero long-lived waste; siting in pro-energy jurisdictions (Texas, UK, Korea).",
-      "affected_capability_keys": ["regulatory_pathway"],
-      "display_order": 40
+      "affected_capability_keys": [
+        "regulatory_pathway"
+      ],
+      "display_order": 40,
+      "source_url": "https://www.nrc.gov/reactors/new-reactors/advanced/fusion-energy.html",
+      "source_kind": "filing",
+      "source_title": "NRC — fusion energy regulatory framework"
     },
     {
       "key": "rebco_concentration",
@@ -274,8 +336,14 @@
       "likelihood": "medium",
       "time_horizon": "3y",
       "mitigations": "Multi-source qualification at each fusion company; Faraday + AMSC US capacity expansions.",
-      "affected_capability_keys": ["hts_magnets", "supply_chain_rebco"],
-      "display_order": 50
+      "affected_capability_keys": [
+        "hts_magnets",
+        "supply_chain_rebco"
+      ],
+      "display_order": 50,
+      "source_url": "https://www.amsc.com/news-events/",
+      "source_kind": "press",
+      "source_title": "AMSC — REBCO conductor supply commentary"
     },
     {
       "key": "alt_clean_baseload",
@@ -286,8 +354,14 @@
       "likelihood": "high",
       "time_horizon": "10y",
       "mitigations": "Fusion's positioning shifts to niches (industrial heat, no-water siting); accelerated commercialization timeline.",
-      "affected_capability_keys": ["plant_economics", "grid_integration"],
-      "display_order": 60
+      "affected_capability_keys": [
+        "plant_economics",
+        "grid_integration"
+      ],
+      "display_order": 60,
+      "source_url": "https://www.iea.org/topics/electricity",
+      "source_kind": "analyst_report",
+      "source_title": "IEA — electricity & advanced baseload outlook"
     }
   ]
 }

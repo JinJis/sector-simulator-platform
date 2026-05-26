@@ -27,6 +27,13 @@ export {
 export { EtaWindow, type EtaWindowProps } from "./eta-window";
 export { FeasibilityGauge, type FeasibilityGaugeProps } from "./feasibility-gauge";
 export {
+  RiskMatrix,
+  type RiskMatrixCell,
+  type RiskMatrixLikelihood,
+  type RiskMatrixProps,
+  type RiskMatrixSeverity,
+} from "./risk-matrix";
+export {
   RiskRow,
   type RiskLikelihood,
   type RiskRowProps,
