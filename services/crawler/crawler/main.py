@@ -4,6 +4,7 @@ Endpoints:
 - GET  /health                                  → liveness + ready flags
 - POST /fetchers/hello-world/run                → smoke trigger (M48c)
 - POST /fetchers/capability/run                 → CapabilityFetcher (M49a)
+- POST /fetchers/actor/run                      → ActorFetcher (M49b)
 - GET  /jobs/runs?vision=&fetcher=&status=&limit=   → recent CrawlRuns
 - GET  /jobs/runs/{run_id}                      → single CrawlRun
 
@@ -30,24 +31,33 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
+from agent_tools import DeepResearchClient
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from agent_tools import DeepResearchClient
 from crawler.agents import (
     AgentClient,
     HttpAgentClient,
     default_agent_orchestration_url,
+)
+from crawler.db.actor_reader import (
+    ActorReader,
+    PostgresActorReader,
 )
 from crawler.db.capability_reader import (
     CapabilityReader,
     PostgresCapabilityReader,
 )
 from crawler.db.signal_writer import PostgresSignalWriter, SignalWriter
+from crawler.fetchers.actor import (
+    ActorFetcherError,
+    ActorFetchRequest,
+    run_actor_fetcher,
+)
 from crawler.fetchers.capability import (
-    CapabilityFetchRequest,
     CapabilityFetcherError,
+    CapabilityFetchRequest,
     run_capability_fetcher,
 )
 from crawler.fetchers.hello_world import (
@@ -84,7 +94,7 @@ class CrawlRunOut(BaseModel):
     ended_at: datetime | None
 
     @classmethod
-    def from_row(cls, row: CrawlRunRow) -> "CrawlRunOut":
+    def from_row(cls, row: CrawlRunRow) -> CrawlRunOut:
         return cls(
             id=row.id,
             vision_slug=row.vision_slug,
@@ -122,6 +132,21 @@ class CapabilityTriggerOut(BaseModel):
     signal_id: str | None
     dr_cached: bool
     scoring_confidence: float | None
+
+
+class ActorTriggerBody(BaseModel):
+    vision_slug: str = Field(..., min_length=1, max_length=128)
+    actor_key: str = Field(..., min_length=1, max_length=128)
+    prompt: str | None = Field(default=None, max_length=4000)
+
+
+class ActorTriggerOut(BaseModel):
+    run: CrawlRunOut
+    signal_id: str | None
+    dr_cached: bool
+    scoring_confidence: float | None
+    matched_actor_key: str | None
+    primary_capability_key: str | None
 
 
 # --------------------------------------------------------------------------
@@ -220,6 +245,14 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         else:
             app.state.signal_writer = None
 
+    # M49b — actor lookup reuses the shared asyncpg pool.
+    if not hasattr(app.state, "actor_reader"):
+        repo = getattr(app.state, "repo", None)
+        if isinstance(repo, PostgresCrawlRunRepository):
+            app.state.actor_reader = PostgresActorReader(repo.pool)
+        else:
+            app.state.actor_reader = None
+
     if not hasattr(app.state, "agent_client"):
         base = default_agent_orchestration_url()
         if base:
@@ -299,6 +332,15 @@ def create_app() -> FastAPI:
             )
         return reader
 
+    def _require_actor_reader() -> ActorReader:
+        reader = getattr(app.state, "actor_reader", None)
+        if reader is None:
+            raise HTTPException(
+                status_code=503,
+                detail="crawler unavailable — actor_reader not configured (needs DATABASE_URL)",
+            )
+        return reader
+
     def _require_signal_writer() -> SignalWriter:
         writer = getattr(app.state, "signal_writer", None)
         if writer is None:
@@ -365,6 +407,48 @@ def create_app() -> FastAPI:
             dr_cached=out.deep_research.cached,
             scoring_confidence=out.scoring.scoring.confidence
             if out.scoring is not None
+            else None,
+        )
+
+    @app.post("/fetchers/actor/run", response_model=ActorTriggerOut)
+    async def actor_run(body: ActorTriggerBody) -> ActorTriggerOut:
+        repo = _require_repo()
+        dr = _require_deep_research()
+        reader = _require_actor_reader()
+        writer = _require_signal_writer()
+        agent = _require_agent_client()
+        log.info(
+            "crawler: actor triggered vision=%s actor=%s",
+            body.vision_slug,
+            body.actor_key,
+        )
+        try:
+            out = await run_actor_fetcher(
+                ActorFetchRequest(
+                    vision_slug=body.vision_slug,
+                    actor_key=body.actor_key,
+                    prompt=body.prompt,
+                ),
+                runs_repo=repo,
+                actor_reader=reader,
+                signal_writer=writer,
+                deep_research=dr,
+                agent_client=agent,
+            )
+        except ActorFetcherError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return ActorTriggerOut(
+            run=CrawlRunOut.from_row(out.run),
+            signal_id=out.signal_id,
+            dr_cached=out.deep_research.cached,
+            scoring_confidence=out.scoring.scoring.confidence
+            if out.scoring is not None
+            else None,
+            matched_actor_key=out.scoring.scoring.matched_actor_key
+            if out.scoring is not None
+            else None,
+            primary_capability_key=out.actor.primary_capability.key
+            if out.actor.primary_capability is not None
             else None,
         )
 
