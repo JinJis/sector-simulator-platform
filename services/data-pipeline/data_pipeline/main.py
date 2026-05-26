@@ -74,6 +74,11 @@ from data_pipeline.db.orchestrator_repo import OrchestratorReader, PostgresOrche
 from data_pipeline.db.proposal_writer import PostgresProposalWriter, ProposalWriter
 from data_pipeline.db.risk_reader import PostgresRiskReader, RiskReader
 from data_pipeline.db.signal_writer import PostgresSignalWriter, SignalWriter
+from data_pipeline.deep_research.digest import (
+    DigestError,
+    DigestRequest,
+    run_deep_research_digest,
+)
 from data_pipeline.deep_research.discovery.runner import run_discovery
 from data_pipeline.deep_research.dispatcher import DispatcherClients, dispatch_tick
 from data_pipeline.deep_research.fetchers.actor import (
@@ -719,6 +724,19 @@ class OrchestratorTickOut(BaseModel):
     picked: list[OrchestratorCandidateOut]
     per_vision_remaining_usd: dict[str, float]
     dispatch_summary: dict[str, Any] | None = None
+
+
+class DigestRunBody(BaseModel):
+    vision_slug: str = Field(..., min_length=1, max_length=128)
+    prompt: str | None = Field(default=None, max_length=4000)
+
+
+class DigestRunOut(BaseModel):
+    run: CrawlRunOut
+    anchor_capability_key: str | None
+    signal_id: str | None
+    dr_cached: bool
+    scoring_confidence: float | None
 
 
 class DiscoveryRunBody(BaseModel):
@@ -1434,6 +1452,50 @@ def create_app() -> FastAPI:
                 k: round(v, 4) for k, v in pick.per_vision_remaining_usd.items()
             },
             dispatch_summary=summary.to_summary_dict(),
+        )
+
+    @app.post("/jobs/deep-research-digest/run", response_model=DigestRunOut)
+    async def deep_research_digest_run(body: DigestRunBody) -> DigestRunOut:
+        """Daily-style industry/macro Deep Research digest per vision.
+        Manual-only at this commit — no cron arming. Writes one signal
+        row anchored on the vision's first capability with
+        source_kind='research_brief' + source_url='internal://digest/
+        {vision}/{YYYY-MM-DD}' so re-runs the same day dedupe."""
+        repo = _require_crawl_repo()
+        dr = _require_deep_research()
+        agent = _require_agent_client()
+        writer = _require_signal_writer()
+        sig_repo = getattr(app.state, "signal_repo", None)
+        if sig_repo is None:
+            raise HTTPException(
+                status_code=503,
+                detail="data-pipeline unavailable — signal_repo not configured (DATABASE_URL)",
+            )
+        log.info(
+            "data-pipeline: deep-research-digest triggered vision=%s",
+            body.vision_slug,
+        )
+        try:
+            out = await run_deep_research_digest(
+                DigestRequest(vision_slug=body.vision_slug, prompt=body.prompt),
+                runs_repo=repo,
+                signal_repo=sig_repo,
+                signal_writer=writer,
+                deep_research=dr,
+                agent_client=agent,
+            )
+        except DigestError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return DigestRunOut(
+            run=CrawlRunOut.from_row(out.run),
+            anchor_capability_key=out.anchor_capability.key
+            if out.anchor_capability is not None
+            else None,
+            signal_id=out.signal_id,
+            dr_cached=out.deep_research.cached,
+            scoring_confidence=out.scoring.scoring.confidence
+            if out.scoring is not None
+            else None,
         )
 
     @app.post("/jobs/discovery/run", response_model=DiscoveryRunOut)

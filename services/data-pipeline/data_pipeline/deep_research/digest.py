@@ -1,0 +1,344 @@
+"""DigestFetcher (commit 5/6).
+
+Once a day (manual trigger only at this commit; cron arming is a
+follow-up) the operator can request a per-vision Deep Research digest:
+"synthesize what happened across the {vision} space in the last 24 h
+— industry/macro context the per-source crawlers won't have caught."
+
+The output lands as one `signals` row anchored on the vision's first
+listed capability with `source_kind="research_brief"` + a synthetic
+`source_url=internal://digest/{vision}/{YYYY-MM-DD}`. Re-running the
+same day collapses via the existing `(source_url, capability_id)`
+unique constraint. SignalExtractor scoring is applied (same shape as
+RiskFetcher), so the deltas flow into the next ScoreUpdater pass.
+
+This is the "고급 크롤링" pole of the tiered ingest: the 5-min news /
+hourly research crons stay narrow and source-grounded; the daily
+digest brings the higher-context industry-shift framing.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
+
+from agent_tools import DeepResearchClient, DeepResearchResult
+
+from data_pipeline.agents import (
+    AgentClient,
+    SignalExtractorRequest,
+    SignalExtractorRunResult,
+)
+from data_pipeline.crawl_run_repo import CrawlRunRepository, CrawlRunRow
+from data_pipeline.db.signal_writer import SignalUpsert, SignalWriter
+from data_pipeline.signal_repo import CapabilityHandle, SignalRepository
+
+_DEFAULT_PROMPT = (
+    "You are writing the daily industry/macro digest for the vision "
+    "'{vision_slug}'.\n\n"
+    "Synthesize what happened in the broader {vision_slug} space "
+    "over the last 24 hours that the per-source crawlers (arXiv, "
+    "USPTO, NewsAPI) likely missed: regulatory news, supply-chain "
+    "shocks, hyperscaler capex shifts, government program "
+    "announcements, M&A activity, cross-industry partnerships, "
+    "macroeconomic context that materially affects the vision's "
+    "feasibility outlook.\n\n"
+    "Cite primary sources inline (filings, gov releases, company "
+    "press, reputable news). Be specific about WHO did WHAT.\n\n"
+    "Assess net impact on the four dimensions (technical, economic, "
+    "regulatory, supply) for the anchor capability "
+    "'{capability_name}' — this is the capability the signal will "
+    "be attributed to. Keep under ~500 words."
+)
+
+
+@dataclass(frozen=True, slots=True)
+class DigestRequest:
+    vision_slug: str
+    prompt: str | None = None  # override the default template
+
+
+@dataclass(frozen=True, slots=True)
+class DigestResult:
+    run: CrawlRunRow
+    anchor_capability: CapabilityHandle | None
+    deep_research: DeepResearchResult
+    scoring: SignalExtractorRunResult | None
+    signal_id: str | None
+
+
+class DigestError(Exception):
+    """Raised when the digest refuses to even attempt the DR call —
+    e.g. unknown vision or vision with no capabilities to anchor on.
+    The endpoint maps this to a 404."""
+
+    def __init__(self, message: str, *, run: CrawlRunRow) -> None:
+        super().__init__(message)
+        self.run = run
+
+
+def _synthetic_source_url(*, vision_slug: str, as_of: datetime) -> str:
+    """Day-bucketed pseudo-URL so re-running on the same UTC day
+    collapses to one Signal row via the unique constraint."""
+    day = as_of.strftime("%Y-%m-%d")
+    return f"internal://digest/{vision_slug}/{day}"
+
+
+def _first_sentence(text: str) -> str:
+    for end in (".", "?", "!", "\n"):
+        idx = text.find(end)
+        if 0 < idx < 240:
+            return text[: idx + 1].strip()
+    return text[:240].strip()
+
+
+async def run_deep_research_digest(
+    request: DigestRequest,
+    *,
+    runs_repo: CrawlRunRepository,
+    signal_repo: SignalRepository,
+    signal_writer: SignalWriter,
+    deep_research: DeepResearchClient,
+    agent_client: AgentClient,
+) -> DigestResult:
+    plan: dict[str, Any] = {
+        "fetcher": "digest",
+        "vision_slug": request.vision_slug,
+        "prompt_override": request.prompt is not None,
+        "tier": "max",
+    }
+    run = await runs_repo.create_queued(
+        vision_slug=request.vision_slug,
+        fetcher_kind="digest",
+        plan=plan,
+    )
+    await runs_repo.mark_running(run.id)
+
+    # 1. Pick an anchor capability. Composite-lowest selection (the
+    # binding capability) would be more principled, but requires
+    # joining current_capability_scores; for the initial cut, take the
+    # first capability the vision has. Refinement to composite-lowest
+    # is a follow-up once the digest is in steady use.
+    capabilities = await signal_repo.list_vision_capabilities(request.vision_slug)
+    if not capabilities:
+        await runs_repo.mark_complete(
+            run.id,
+            status="error",
+            result_summary={
+                "error_kind": "no_capabilities_for_vision",
+                "vision_slug": request.vision_slug,
+            },
+            cost_usd=None,
+            signals_written=0,
+            proposals_written=0,
+            error=f"vision {request.vision_slug!r} has no capabilities — "
+            "digest cannot anchor a signal",
+        )
+        fresh = await runs_repo.get(run.id)
+        assert fresh is not None
+        raise DigestError(
+            f"digest unanchored: {request.vision_slug}",
+            run=fresh,
+        )
+
+    anchor = capabilities[0]
+    prompt = (request.prompt or _DEFAULT_PROMPT).format(
+        vision_slug=request.vision_slug,
+        capability_name=anchor.name,
+    )
+
+    # 2. Deep Research synthesis. tier="max" — the digest is the one
+    # surface in this service where the deeper Vertex DR variant is
+    # explicitly warranted (industry/macro framing).
+    try:
+        dr = await deep_research.research(
+            prompt=prompt,
+            surface="digest",
+            vision_slug=request.vision_slug,
+            tier="max",
+        )
+    except Exception as exc:  # noqa: BLE001
+        err_text = (
+            f"{type(exc).__name__}: "
+            f"{str(exc).splitlines()[0] if str(exc) else 'unknown error'}"
+        )
+        await runs_repo.mark_complete(
+            run.id,
+            status="error",
+            result_summary={
+                "error_kind": type(exc).__name__,
+                "anchor_capability_id": anchor.id,
+                "anchor_capability_key": anchor.key,
+            },
+            cost_usd=None,
+            signals_written=0,
+            proposals_written=0,
+            error=err_text[:500],
+        )
+        fresh = await runs_repo.get(run.id)
+        assert fresh is not None
+        return DigestResult(
+            run=fresh,
+            anchor_capability=anchor,
+            deep_research=DeepResearchResult(
+                interaction_id="",
+                tier="max",
+                model="deep-research-preview-04-2026",
+                status="error",
+                output_text="",
+                error=err_text,
+                cached=False,
+                cost_usd=0.0,
+                elapsed_seconds=0.0,
+                raw_usage={},
+            ),
+            scoring=None,
+            signal_id=None,
+        )
+
+    total_cost = dr.cost_usd
+    scoring: SignalExtractorRunResult | None = None
+    signal_id: str | None = None
+    signals_written = 0
+
+    if dr.status != "completed" or not dr.output_text:
+        await runs_repo.mark_complete(
+            run.id,
+            status=dr.status if dr.status == "timeout" else "error",
+            result_summary=_summarize(dr=dr, scoring=None, anchor=anchor),
+            cost_usd=total_cost if total_cost > 0 else None,
+            signals_written=0,
+            proposals_written=0,
+            error=dr.error or "deep research returned empty output",
+        )
+        fresh = await runs_repo.get(run.id)
+        assert fresh is not None
+        return DigestResult(
+            run=fresh,
+            anchor_capability=anchor,
+            deep_research=dr,
+            scoring=None,
+            signal_id=None,
+        )
+
+    # 3. SignalExtractor — digests aren't tied to a specific actor, so
+    # leave actor_keywords empty. matched_actor_key will be None.
+    signal_title = _first_sentence(dr.output_text)
+    extractor_req = SignalExtractorRequest(
+        sector_slug=anchor.sector_slug,
+        capability_key=anchor.key,
+        capability_name=anchor.name,
+        capability_description=anchor.description or "",
+        capability_rationale=anchor.rationale or "",
+        signal_title=signal_title,
+        signal_summary=dr.output_text,
+        source_kind="research_brief",
+        actor_keywords=[],
+    )
+    try:
+        scoring = await agent_client.score_signal(extractor_req)
+    except Exception as exc:  # noqa: BLE001
+        await runs_repo.mark_complete(
+            run.id,
+            status="error",
+            result_summary=_summarize(dr=dr, scoring=None, anchor=anchor),
+            cost_usd=total_cost if total_cost > 0 else None,
+            signals_written=0,
+            proposals_written=0,
+            error=f"signal extractor failed: {exc}",
+        )
+        fresh = await runs_repo.get(run.id)
+        assert fresh is not None
+        return DigestResult(
+            run=fresh,
+            anchor_capability=anchor,
+            deep_research=dr,
+            scoring=None,
+            signal_id=None,
+        )
+    total_cost += scoring.cost_usd
+
+    # 4. Signal upsert. Day-bucketed source_url + anchor capability_id
+    # is the dedup key. Digests are always promoted (is_highlight=True);
+    # the cockpit Highlights drawer surfaces them at the top.
+    now = datetime.now(UTC)
+    upsert = SignalUpsert(
+        sector_slug=anchor.sector_slug,
+        capability_id=anchor.id,
+        actor_id=None,
+        source_kind="research_brief",
+        source_url=_synthetic_source_url(
+            vision_slug=anchor.sector_slug,
+            as_of=now,
+        ),
+        source_id_ext=dr.interaction_id,
+        title=signal_title,
+        summary=dr.output_text,
+        published_at=now,
+        delta_technical=scoring.scoring.delta_technical
+        if scoring.scoring.confidence >= 0.5
+        else None,
+        delta_economic=scoring.scoring.delta_economic
+        if scoring.scoring.confidence >= 0.5
+        else None,
+        delta_regulatory=scoring.scoring.delta_regulatory
+        if scoring.scoring.confidence >= 0.5
+        else None,
+        delta_supply=scoring.scoring.delta_supply
+        if scoring.scoring.confidence >= 0.5
+        else None,
+        is_highlight=True,
+    )
+    signal_id = await signal_writer.upsert(upsert)
+    signals_written = 1
+
+    await runs_repo.mark_complete(
+        run.id,
+        status="ok",
+        result_summary=_summarize(dr=dr, scoring=scoring, anchor=anchor),
+        cost_usd=total_cost if total_cost > 0 else None,
+        signals_written=signals_written,
+        proposals_written=0,
+        error=None,
+    )
+    fresh = await runs_repo.get(run.id)
+    assert fresh is not None
+    return DigestResult(
+        run=fresh,
+        anchor_capability=anchor,
+        deep_research=dr,
+        scoring=scoring,
+        signal_id=signal_id,
+    )
+
+
+def _summarize(
+    *,
+    dr: DeepResearchResult,
+    scoring: SignalExtractorRunResult | None,
+    anchor: CapabilityHandle,
+) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "anchor_capability_id": anchor.id,
+        "anchor_capability_key": anchor.key,
+        "anchor_capability_name": anchor.name,
+        "interaction_id": dr.interaction_id,
+        "model": dr.model,
+        "dr_status": dr.status,
+        "dr_cached": dr.cached,
+        "dr_elapsed_seconds": round(dr.elapsed_seconds, 3),
+        "output_preview": dr.output_text[:280],
+    }
+    if scoring is not None:
+        out["scoring"] = {
+            "confidence": scoring.scoring.confidence,
+            "delta_technical": scoring.scoring.delta_technical,
+            "delta_economic": scoring.scoring.delta_economic,
+            "delta_regulatory": scoring.scoring.delta_regulatory,
+            "delta_supply": scoring.scoring.delta_supply,
+            "is_highlight": scoring.scoring.is_highlight,
+            "rationale": scoring.scoring.rationale,
+            "cost_usd": scoring.cost_usd,
+        }
+    return out
