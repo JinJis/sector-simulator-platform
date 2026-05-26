@@ -43,18 +43,25 @@ Six product-level outcomes Phase 4 ships:
 ## Milestones
 
 ```
-M48 ──► M49 ──► M50 ──► M51 ──► M52 ──► M53 ──► M54
- │       │       │       │       │       │       │
- │       │       │       │       │       │       └─ 4-vision full seed
- │       │       │       │       │       └─ Visualization pack
- │       │       │       │       └─ Admin cockpit
- │       │       │       └─ Live Pulse UX
- │       │       └─ Bot user + auto-proposal
- │       └─ Per-surface fetcher set + orchestrator
+M48 ──► M49a ──► M49b ──► [MP1✅ ─► MP2✅ ─► MP3 ─► MP4 ─► MP5 ─► MP6 ─► MP7]
+ │        │        │       │
+ │        │        │       └─► M49c ─► M49d ─► M49f ─► M50 ─► M52 ─► M53 ─► M54
+ │        │        │
+ │        │        └─ ActorFetcher (per-actor 90-day DR → actor-tagged Signal)
+ │        └─ CapabilityFetcher (per-cap DR → SignalExtractor → Signal)
  └─ Crawler service Docker + Deep Research wrapper
 ```
 
-Estimated total: ~7–9 weeks at 1-person pace. Each milestone is
+Product Polish (MP1–MP7) — inserted between M49b and M49c on
+2026-05-26 after end-to-end UX review. Foundations from M48/M49a/M49b
+gave us actor + capability data flowing; before finishing the rest of
+the per-surface fetchers and the bot, we ship one cycle of polish so
+the product is demo-able and source-grounded on the 4 seed visions.
+Then we resume M49c/d/f → M50 → M52 → M53/M54 to make that polished
+state self-sustaining.
+
+Estimated total: ~7–9 weeks at 1-person pace (was 7–9; Product Polish
++2–3 weeks but compresses M51 + parts of M53/M54). Each milestone is
 independently mergeable behind feature flags; the crawler service
 starts dormant and is enabled per-vision once its fetcher pack lands.
 
@@ -87,12 +94,14 @@ CrawlRun row appears with cost_usd > 0 and a Deep Research summary.
 The 5 fetcher classes from composition.md §3, plus the orchestrator
 that chooses which one to run.
 
-- `services/crawler/fetchers/capability.py` — per binding capability
-  per dim, Deep Research prompt template, writes `Signal` rows that
-  ripple through existing M40 ScoreUpdater.
-- `services/crawler/fetchers/actor.py` — per top-N actor refresh
-  (news + filings + hiring signals); ungated keyword scan for new
-  org names (feeds M50 EntityDetector).
+- ✅ M49a — `services/crawler/fetchers/capability.py` — per binding
+  capability per dim, Deep Research prompt template, writes `Signal`
+  rows that ripple through existing M40 ScoreUpdater.
+- ✅ M49b — `services/crawler/fetchers/actor.py` — per-actor 90-day
+  Deep Research synthesis anchored on the actor's top CapabilityActor
+  binding; writes one actor_id-tagged `Signal` per actor per UTC day
+  (day-bucketed pseudo-URL dedup). Ungated keyword scan for new
+  org names (feeds M50 EntityDetector) lands with M50.
 - `services/crawler/fetchers/signal.py` — extends M39 arXiv / USPTO /
   NewsAPI sweeps with the new orchestrator-driven cadence.
 - `services/crawler/fetchers/risk.py` — regulatory keyword + safety
@@ -111,6 +120,176 @@ that chooses which one to run.
 `Signal` table has fresh rows tagged from each fetcher, capability
 scores have moved, `EconomicsDatapoint` has at least one cost-curve
 point, cost stays under $2 for the day.
+
+---
+
+## Product Polish (MP1–MP7) — UX + source-grounding sprint
+
+Inserted between M49b and M49c on 2026-05-26 after end-to-end review.
+The crawler foundation (M48 + M49a + M49b) is in place; the user-facing
+surface still has gaps that block demo + adoption. Each MP slice is
+one PR, verified live before the next starts. MP5 pulls forward
+M49e's `EconomicsDatapoint` model. MP1+MP2+MP3+MP4+MP6 collectively
+replace most of M51 (Live Pulse UX + source-grounded transparency).
+
+### MP1 — Source-link design system + Signal mock seed  (2–3d) ✅
+
+Builds the shared transparency primitive every other polish slice
+reuses, plus enough seed data that the Pulse / signal feeds stop
+looking empty on a fresh `db:reset`. Shipped 2026-05-26: ~82 signals
+across the 4 visions with real clickable URLs; `SourceChip` /
+`SourceList` live in `@platform/ui`; `pnpm db:seed:all` orchestrates
+sectors → visions → actors → signals in one command.
+
+- `packages/ui/src/source-chip/` — `<SourceChip>` (small 🔗 glyph,
+  source_kind color, hover popover showing kind · title · published_at,
+  click opens `source_url` in new tab) + `<SourceList>` (multi-source
+  hover popover used by MP2/MP4 thesis + risk bullets).
+- Wire `SignalRow` to use `SourceChip` instead of raw `<a>`.
+- New `packages/db/prisma/seed-signals.ts` — per-vision 20–30 realistic
+  Signal rows: mixed `source_kind` (paper / patent / news / filing /
+  gov_report), **real URLs** (arxiv.org/abs/…, patents.uspto.gov/…,
+  sec.gov/…, real press releases — clickable to actual content),
+  per-dim deltas in -10..+10, `is_highlight` on ~20%, `actor_id` set
+  where the source ties to a seeded actor, `capability_id` always set,
+  `published_at` spread over the last 90 days.
+- Register the seed in `packages/db/prisma/seed.ts` so `pnpm seed`
+  populates signals on every reset.
+
+**verify**: `pnpm db:reset && pnpm seed` → `/visions/space-data-center/pulse`
+shows ≥20 signals with working source chips that open real arxiv /
+news pages; Overview "Live Signals" band populated; SignalRow source
+icon hover shows the source_kind label.
+
+### MP2 — Investment Thesis sources + Catalysts filters  (2d) ✅
+
+Shipped 2026-05-26: `ThesisBullet { text, sources? }` fixture type;
+all 4 visions have thesis + catalysts populated with real public
+URLs (SpaceX / NASA / FCC / Lloyd's / CFS / DOE / Helion / NVIDIA /
+TrendForce / Bloom / FERC / arXiv). `InvestmentThesisPanel` renders
+`<SourceList>` chips per bullet (hover → list, click → real source).
+`CatalystsTimeline` converted to client component with segmented
+control (Latest · 1m · 3m · 6m · 1y) and refresh button wired to
+`router.refresh()`.
+
+- Extend the `InvestmentThesis` fixture type so each `bull_case` /
+  `bear_case` bullet is `{ text, sources: [{ url, title, kind }] }`
+  instead of plain string. Migrate all 4 vision fixtures.
+- `InvestmentThesisPanel` renders a `<SourceList>` chip next to each
+  bullet (hover → list, click → open). Empty `sources` → no chip.
+- `CatalystsTimeline` — add segmented control with 5 buttons (Latest ·
+  1m · 3m · 6m · 1y) that filters by `expected_at` window. "Latest" =
+  upcoming + last 7d. Add a refresh icon button that re-fetches the
+  underlying catalyst list (tRPC `vision.getOverview` for now; once
+  M50 lands the bot may push new catalysts).
+- All thesis source URLs in the 4 seed visions point to real,
+  clickable analyst / press / paper pages.
+
+**verify**: hover any thesis bullet → source list appears; click a
+source → real page opens; switch Catalysts filter to "1m" → only
+events within ±1 month visible.
+
+### MP3 — Actor detail: signal feed + visuals + sources  (3d)
+
+- New tRPC `signal.listForActor(sector_slug, actor_key, limit?, cursor?)`
+  on `services/sector-service/src/trpc/signal.ts`. Same shape as
+  `signal.list` but pre-joined on `actor_id`.
+- `apps/web/src/app/visions/[slug]/actors/[key]/page.tsx` — replace
+  the M39 stub at L196 with the real feed using `SignalRow` +
+  `SourceChip`.
+- Add a small Capability heatmap to the actor detail: bar per
+  CapabilityActor binding, height = 90-day signal count for that
+  (actor × capability) pair. Click bar → jump to that capability detail.
+- Render `actor.website` + `actor.logo_url` + `actor.name_local`
+  fields that exist but were never surfaced.
+- "Why this actor matters here" gets a `<SourceList>` chip when the
+  rationale links to one or more supporting signals — derive from the
+  top 3 signals tagged with this actor in the last 30d.
+
+**verify**: open `/visions/space-data-center/actors/spacex` → recent
+signals list renders with source chips, capability heatmap shows
+non-zero bars, "why this matters" chip opens 3 source links.
+
+### MP4 — Risk Board source attribution + matrix  (2–3d)
+
+- Schema migration: additive `source_url String?`, `source_kind
+  String?`, `source_title String?` on `Risk`. One migration.
+- `seed-visions.ts` updated to populate source fields on every seeded
+  risk (real regulatory filings, accident reports, supply news).
+- `RiskRow` renders a `SourceChip` when `source_url` is set.
+- New `<RiskMatrix>` component in `packages/ui` — Severity × Likelihood
+  grid (5×3), cell colored by aggregate `severity` of risks landing
+  in that cell, click a cell → drawer with the underlying risks.
+  Embedded at the top of `/visions/[slug]/risks` and (small variant)
+  on Overview's Risk Board band.
+
+**verify**: `/visions/space-data-center/risks` → matrix renders, every
+risk row has a working source chip; clicking a matrix cell opens the
+right subset.
+
+### MP5 — Economics tab build-out (+ pull EconomicsDatapoint forward)  (3–4d)
+
+Pulls M49e's `EconomicsDatapoint` model + tRPC router forward so the
+Economics tab stops being a "coming soon" stub.
+
+- `EconomicsDatapoint` Prisma model + migration (composition.md §10
+  spec — sector_slug, metric_key, value, unit, as_of, source_url,
+  source_kind, confidence, notes).
+- `economics` tRPC router on `services/sector-service/src/trpc/` —
+  `list(sector_slug, metric_key?, since?)`, `latestPerMetric(sector_slug)`.
+- Move the hardcoded `ECONOMICS_CURVES` from Overview to `seed-economics.ts`
+  (one curve per vision, ≥3 metrics, ≥8 datapoints each, real source URLs).
+- `/visions/[slug]/economics/page.tsx` — full render: multi-line cost
+  curve chart (legend, axes, hover datapoint → SourceChip), scenario
+  toggle (baseline only for v1; placeholder for optimistic /
+  pessimistic), data table view toggle.
+- Overview keeps a *preview* of the primary curve (small variant)
+  that links to the full Economics tab.
+
+**verify**: `/visions/space-data-center/economics` shows the full
+curve set with working source chips on every datapoint; Overview
+shows the preview that routes to the full page.
+
+### MP6 — IA polish: tab alignment + Top10 + Pulse clarity + click affordances  (1d)
+
+The small high-leverage UX cleanup that addresses gaps 4 / 5
+(perception) / 8 / 9 (explanation).
+
+- `packages/ui/src/sub-nav.tsx` — `flex` container gets
+  `justify-center`; tab links lose `flex-1` so they don't stretch.
+- Overview Risk Board sliced to top 10 (sort by severity_score desc),
+  with "View Full Board →" link (consistent with capabilities / actors).
+- `/visions/[slug]/pulse/page.tsx` — header gets a one-line "what is
+  Pulse" copy + a small legend explaining source_kind badges.
+- `CapabilityCard` / `ActorCard` — add `cursor-pointer`, hover ring,
+  and a small "Detail →" chevron in the card footer so the
+  click-to-detail affordance is obvious.
+
+**verify**: SubNav tabs visibly centered on every vision sub-route;
+hovering a Capability card on Overview shows the chevron + ring;
+Pulse header explains itself in one glance.
+
+### MP7 — Deprecated code + schema cleanup  (2–3d)
+
+Runs last so prior MPs aren't competing with churn. One PR per
+removal; each PR proves no callers remain via grep + typecheck +
+test.
+
+- Remove `SectorEquity` + `EquityFinancial` + `EquityQuote` Prisma
+  models + all downstream code paths + `seed-equities.ts` /
+  `seed-equity-financials.ts` / `seed-equity-quotes.ts`.
+- Confirm `SectorSuggestion` + `SectorSuggestionVote` have zero
+  callers → remove if confirmed.
+- Confirm old `Prediction` + `PredictionResult` superseded by
+  `PredictionV2` → remove if confirmed.
+- Remove `apps/web/src/app/visions/_components/domain-filter.tsx`
+  if no caller.
+- `ENABLE_LEGACY_INVESTMENT_FEATURES` flag + all branches: remove.
+
+**verify**: `pnpm typecheck && pnpm lint && pnpm test` clean after
+each removal slice; `git grep <removed-name>` returns no hits.
+
+---
 
 ### M50 — Bot user + Auto-proposal engine  (4–5d)
 

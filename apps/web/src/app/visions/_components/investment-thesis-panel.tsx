@@ -1,4 +1,10 @@
-import type { InvestmentThesis } from "../_fixtures";
+import { SourceList } from "@platform/ui";
+
+import type {
+  InvestmentThesis,
+  ThesisBullet,
+  ThesisBulletInput,
+} from "../_fixtures";
 
 const CONVICTION_TONE: Record<InvestmentThesis["conviction"], string> = {
   high: "border-emerald-700/60 bg-emerald-950/40 text-emerald-200",
@@ -31,6 +37,10 @@ interface Props {
  * the gauge. Three blocks: the bet (one line), bull case (2-4 bullets),
  * bear case (2-4 bullets). Conviction pill colours the border + a
  * "last reviewed" footnote keeps the editorial signal honest.
+ *
+ * MP2: each bullet can carry `sources[]`. When non-empty, a `SourceList`
+ * chip renders inline; hover lists the supporting URLs, click opens the
+ * actual source. Plain-string bullets (legacy) render unchanged.
  *
  * When the fixture doesn't carry a thesis yet, renders an empty-state
  * card pointing at the raw data tabs rather than disappearing.
@@ -114,6 +124,10 @@ export function InvestmentThesisPanel({ thesis, locale }: Props) {
   );
 }
 
+function normalize(b: ThesisBulletInput): ThesisBullet {
+  return typeof b === "string" ? { text: b } : b;
+}
+
 function ThesisColumn({
   tone,
   title,
@@ -121,7 +135,7 @@ function ThesisColumn({
 }: {
   tone: "bull" | "bear";
   title: string;
-  bullets: string[];
+  bullets: ThesisBulletInput[];
 }) {
   const accent =
     tone === "bull"
@@ -135,15 +149,28 @@ function ThesisColumn({
         {title}
       </div>
       <ul className="flex flex-col gap-2">
-        {bullets.map((b, i) => (
-          <li
-            key={i}
-            className="flex gap-2 text-[13px] leading-relaxed text-neutral-200"
-          >
-            <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
-            <span>{b}</span>
-          </li>
-        ))}
+        {bullets.map((raw, i) => {
+          const b = normalize(raw);
+          const hasSources = b.sources && b.sources.length > 0;
+          return (
+            <li
+              key={i}
+              className="flex gap-2 text-[13px] leading-relaxed text-neutral-200"
+            >
+              <span
+                className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${dot}`}
+              />
+              <span className="min-w-0 flex-1">
+                {b.text}
+                {hasSources && (
+                  <span className="ml-1.5 inline-flex align-middle">
+                    <SourceList sources={b.sources!} />
+                  </span>
+                )}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
