@@ -43,7 +43,7 @@ Six product-level outcomes Phase 4 ships:
 ## Milestones
 
 ```
-M48 ──► M49a ──► M49b ──► [MP1✅ ─► MP2✅ ─► MP3✅ ─► MP4✅ ─► MP5 ─► MP6 ─► MP7]
+M48 ──► M49a ──► M49b ──► [MP1✅ ─► MP2✅ ─► MP3✅ ─► MP4✅ ─► MP5✅ ─► MP6 ─► MP7]
  │        │        │       │
  │        │        │       └─► M49c ─► M49d ─► M49f ─► M50 ─► M52 ─► M53 ─► M54
  │        │        │
@@ -249,7 +249,25 @@ fallback.
 risk row has a working source chip; clicking a matrix cell opens the
 right subset.
 
-### MP5 — Economics tab build-out (+ pull EconomicsDatapoint forward)  (3–4d)
+### MP5 — Economics tab build-out (+ pull EconomicsDatapoint forward)  (3–4d) ✅
+
+Shipped 2026-05-26: `EconomicsDatapoint` Prisma model + migration
+`economics_datapoints` (composition.md §10 spec). New `economics.*`
+tRPC router (`list` + `latestPerMetric` via raw `DISTINCT ON`).
+`seed-economics.ts` writes **57 datapoints across 4 visions × 2
+metrics each** (real source URLs — IEA / Lazard / EIA / DOE / IRENA /
+TrendForce / SIA / Bloom Energy / Helion / CFS). New `seed:economics`
++ `db:seed:economics` scripts; `db:seed:all` extended.
+
+`/visions/[slug]/economics` becomes a full page: paired-metric
+`EconomicsCurveChart` (720×320), per-metric datapoint table with
+year / value / confidence / notes / inline `SourceChip` per row,
+low-confidence rows render at reduced opacity. Overview economics
+section shrunk to a 560×160 preview reading from the same tRPC source
+(hardcoded `ECONOMICS_CURVES` removed); "Full curves →" link drives
+into the dedicated tab. Pair config extracted to
+`_economics-pairs.ts` so Overview + Economics share one source of
+truth.
 
 Pulls M49e's `EconomicsDatapoint` model + tRPC router forward so the
 Economics tab stops being a "coming soon" stub.

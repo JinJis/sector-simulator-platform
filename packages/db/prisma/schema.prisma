@@ -79,6 +79,8 @@ model Sector {
   // M45: Actor layer — companies + labs + governments competing on
   // capabilities. Many-to-many via VisionActor.
   vision_actors       VisionActor[]
+  // MP5: per-vision economics time-series (cost curves, $/kWh, LCOE).
+  economics_datapoints EconomicsDatapoint[]
 
   @@index([status])
   @@index([created_by_user_id])
@@ -949,6 +951,47 @@ model Risk {
   @@index([sector_slug])
   @@index([sector_slug, severity])
   @@map("risks")
+}
+
+// =====================================================================
+// MP5 (pulled forward from M49e) — economics datapoints
+//
+// Time-series of per-vision economic metrics (cost curves, prices,
+// LCOE, $/kg, $/kWh). Each row is one point. The Economics tab pairs
+// metrics (primary vs baseline — orbit DC vs ground DC, fusion LCOE
+// vs CCGT LCOE, etc.) and renders them on EconomicsCurveChart with a
+// click-to-source datapoint chip.
+//
+// Source attribution is mandatory (URL + kind + confidence) so the
+// chart inherits the same "every number traces to its source" rule
+// the rest of MP-shipped surfaces follow.
+// =====================================================================
+
+model EconomicsDatapoint {
+  id          String   @id @default(cuid())
+  sector_slug String   @map("sector_slug")
+  sector      Sector   @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+
+  // Stable metric key per vision, e.g. "orbit_dc_per_kwh" or
+  // "fusion_lcoe_per_mwh". A vision typically has 2–5 metric keys; the
+  // page config picks which two to render as primary/baseline.
+  metric_key String  @map("metric_key")
+  value      Decimal @db.Decimal(20, 6)
+  unit       String // "USD/kWh" | "USD/kg" | "USD/MWh" | "USD/GB" | ...
+  as_of      DateTime
+
+  source_url  String  @map("source_url")
+  source_kind String  @map("source_kind") // analyst_report | paper | filing | press | gov_report
+  // 0.00 – 1.00. Used to render the datapoint marker with reduced
+  // opacity / dotted band when an extractor isn't fully confident.
+  confidence Decimal @db.Decimal(3, 2)
+  notes      String?
+
+  created_at DateTime @default(now()) @map("created_at")
+
+  @@unique([sector_slug, metric_key, as_of])
+  @@index([sector_slug, metric_key, as_of(sort: Desc)])
+  @@map("economics_datapoints")
 }
 
 model VisionFeasibility {

@@ -30,6 +30,7 @@ import { TrajectorySparkline } from "@platform/ui";
 import { notFound } from "next/navigation";
 
 import { getLocale, getT } from "@/lib/i18n/server";
+import { trpc } from "@/lib/sim-client";
 import {
   fetchFeasibilityHistory,
   fetchVisionOverview,
@@ -39,6 +40,7 @@ import {
 
 import { CatalystsTimeline } from "../_components/catalysts-timeline";
 import { InvestmentThesisPanel } from "../_components/investment-thesis-panel";
+import { ECONOMICS_PAIRS } from "../_economics-pairs";
 import type { Catalyst, InvestmentThesis } from "../_fixtures";
 import { getVisionFixture } from "../_fixtures";
 
@@ -46,40 +48,54 @@ interface Props {
   params: Promise<{ slug: string }>;
 }
 
-// Hardcoded economics curves per vision — moves to capability_scoring_code
-// outputs at M40. Kept inline here so the hero page is one-file readable.
-const ECONOMICS_CURVES: Record<
-  string,
-  {
-    primary: Array<{ year: number; value: number }>;
-    baseline?: Array<{ year: number; value: number }>;
-    primaryLabel: string;
-    baselineLabel: string;
-    yUnit: string;
-  } | null
-> = {
-  "space-data-center": {
-    primary: [
-      { year: 2026, value: 0.42 },
-      { year: 2028, value: 0.3 },
-      { year: 2030, value: 0.18 },
-      { year: 2032, value: 0.11 },
-      { year: 2034, value: 0.07 },
-      { year: 2036, value: 0.05 },
-    ],
-    baseline: [
-      { year: 2026, value: 0.08 },
-      { year: 2030, value: 0.09 },
-      { year: 2034, value: 0.11 },
-      { year: 2036, value: 0.12 },
-    ],
-    primaryLabel: "Orbit DC",
-    baselineLabel: "Ground DC",
-    yUnit: "$/kWh",
-  },
-  "memory-semi": null,
-  sofc: null,
-};
+// MP5 — Economics curves now come from `economics_datapoints` via
+// trpc.economics.list, paired per vision in `_economics-pairs.ts`. The
+// Overview hero renders a small preview; full curves + per-datapoint
+// source chips live on /visions/[slug]/economics.
+
+interface EconomicsPreview {
+  primary: Array<{ year: number; value: number }>;
+  baseline: Array<{ year: number; value: number }>;
+  primaryLabel: string;
+  baselineLabel: string;
+  yUnit: string;
+  title: string;
+}
+
+async function loadEconomicsPreview(slug: string): Promise<EconomicsPreview | null> {
+  const pair = ECONOMICS_PAIRS[slug];
+  if (!pair) return null;
+  try {
+    const rows = await trpc.economics.list.query({
+      sector_slug: slug,
+      limit: 500,
+    });
+    const byMetric = new Map<string, Array<{ year: number; value: number }>>();
+    for (const r of rows) {
+      const arr = byMetric.get(r.metric_key) ?? [];
+      arr.push({
+        year: new Date(r.as_of).getUTCFullYear(),
+        value: r.value,
+      });
+      byMetric.set(r.metric_key, arr);
+    }
+    const primary = byMetric.get(pair.primary.key) ?? [];
+    const baseline = byMetric.get(pair.baseline.key) ?? [];
+    if (primary.length < 2 || baseline.length < 2) return null;
+    primary.sort((a, b) => a.year - b.year);
+    baseline.sort((a, b) => a.year - b.year);
+    return {
+      primary,
+      baseline,
+      primaryLabel: pair.primary.label,
+      baselineLabel: pair.baseline.label,
+      yUnit: pair.yUnit,
+      title: pair.title,
+    };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Load Vision data. Server-side: try real DB via tRPC first; fall back
@@ -137,7 +153,7 @@ export default async function VisionOverviewPage({ params }: Props) {
   const { overview, history, source, thesis, catalysts } = data;
   const { vision, capabilities, risks, recent_signals, actors } = overview;
   const feas = vision.feasibility;
-  const economics = ECONOMICS_CURVES[slug];
+  const economics = await loadEconomicsPreview(slug);
   // TrajectorySparkline expects { as_of, composite, p10?, p90? }; map.
   const trajectory = history.map((h) => ({
     as_of: h.as_of,
@@ -350,18 +366,21 @@ export default async function VisionOverviewPage({ params }: Props) {
         </section>
       )}
 
-      {/* ----- Economics curve ----- */}
+      {/* ----- Economics preview — small. Detail + tables live on the dedicated tab. ----- */}
       {economics && (
-        <section className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-6">
-          <div className="mb-2 flex items-baseline justify-between">
-            <h2 className="text-sm font-medium uppercase tracking-wider text-neutral-400">
-              {t("hero.section.economics")}
-            </h2>
+        <section className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-5">
+          <div className="mb-2 flex items-baseline justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-medium uppercase tracking-wider text-neutral-400">
+                {t("hero.section.economics")}
+              </h2>
+              <p className="text-[11px] text-neutral-500">{economics.title}</p>
+            </div>
             <a
               href={`/visions/${slug}/economics`}
-              className="text-xs text-neutral-500 hover:text-cyan-400"
+              className="rounded border border-cyan-900/40 bg-cyan-950/30 px-2 py-1 text-[10px] uppercase tracking-wider text-cyan-300 hover:bg-cyan-900/40"
             >
-              {t("hero.fullCurves")}
+              {t("hero.fullCurves")} →
             </a>
           </div>
           <EconomicsCurveChart
@@ -370,8 +389,8 @@ export default async function VisionOverviewPage({ params }: Props) {
             primaryLabel={economics.primaryLabel}
             baselineLabel={economics.baselineLabel}
             yUnit={economics.yUnit}
-            width={720}
-            height={220}
+            width={560}
+            height={160}
             className="w-full"
             ariaLabel={`${vision.name} cost curve vs ${economics.baselineLabel}`}
           />

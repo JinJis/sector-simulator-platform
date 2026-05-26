@@ -16,6 +16,7 @@
     "seed:visions": "tsx prisma/seed-visions.ts",
     "seed:actors": "tsx prisma/seed-actors.ts",
     "seed:signals": "tsx prisma/seed-signals.ts",
+    "seed:economics": "tsx prisma/seed-economics.ts",
     "seed:equities": "tsx prisma/seed-equities.ts",
     "seed:equity-quotes": "tsx prisma/seed-equity-quotes.ts",
     "seed:equity-financials": "tsx prisma/seed-equity-financials.ts",
