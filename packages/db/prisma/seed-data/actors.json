@@ -12,7 +12,14 @@
       "blurb": "Cheap launch + Starship — sets the orbital DC capex floor.",
       "description": "SpaceX operates Falcon 9 (reusable medium-lift) and is developing Starship (super-heavy, fully reusable). Its $/kg-to-LEO curve is the primary cost lever for orbital data centers.",
       "stage": "scaling",
-      "signal_keywords": ["SpaceX", "Starship", "Falcon 9", "Falcon Heavy", "Elon Musk", "Hawthorne"]
+      "signal_keywords": [
+        "SpaceX",
+        "Starship",
+        "Falcon 9",
+        "Falcon Heavy",
+        "Elon Musk",
+        "Hawthorne"
+      ]
     },
     {
       "key": "lonestar_data",
@@ -25,7 +32,11 @@
       "blurb": "Orbital DC payload startup; Series B 2026.",
       "description": "First-mover commercial orbital DC operator; lunar + LEO demos planned for 2027.",
       "stage": "pilot",
-      "signal_keywords": ["Lonestar", "Lonestar Data Holdings", "orbital data center"]
+      "signal_keywords": [
+        "Lonestar",
+        "Lonestar Data Holdings",
+        "orbital data center"
+      ]
     },
     {
       "key": "starcloud",
@@ -38,7 +49,11 @@
       "blurb": "1kW orbital heat-rejection demo (2025); scaling to 100kW.",
       "description": "Early-stage in-orbit thermal radiator demonstrator. Only commercial actor with proven in-orbit thermal demo at meaningful scale.",
       "stage": "pilot",
-      "signal_keywords": ["Starcloud", "radiator", "thermal rejection"]
+      "signal_keywords": [
+        "Starcloud",
+        "radiator",
+        "thermal rejection"
+      ]
     },
     {
       "key": "amd",
@@ -51,7 +66,13 @@
       "blurb": "GPU competitor; MI300 rad-qual in flight.",
       "description": "GPU and CPU manufacturer pursuing radiation qualification of the MI300 family at NASA Pegasus. Outcome gates orbital training workloads.",
       "stage": "scaling",
-      "signal_keywords": ["AMD", "MI300", "EPYC", "Lisa Su", "Advanced Micro Devices"]
+      "signal_keywords": [
+        "AMD",
+        "MI300",
+        "EPYC",
+        "Lisa Su",
+        "Advanced Micro Devices"
+      ]
     },
     {
       "key": "nvidia",
@@ -64,7 +85,14 @@
       "blurb": "Dominant ground GPU player; orbital rad-tolerance roadmap pending.",
       "description": "Dominant AI accelerator supplier. Orbital rad-tolerance announcement would materially shift the binding capability.",
       "stage": "scaling",
-      "signal_keywords": ["NVIDIA", "H100", "H200", "B100", "Blackwell", "Jensen Huang"]
+      "signal_keywords": [
+        "NVIDIA",
+        "H100",
+        "H200",
+        "B100",
+        "Blackwell",
+        "Jensen Huang"
+      ]
     },
     {
       "key": "intel",
@@ -77,7 +105,13 @@
       "blurb": "Foundry + accelerator competitor; rad-hard SoC programs.",
       "description": "Intel Foundry Services + Gaudi/Ponte Vecchio accelerator lines. Some rad-hard SoC work via Altera.",
       "stage": "scaling",
-      "signal_keywords": ["Intel", "Gaudi", "Ponte Vecchio", "Altera", "Pat Gelsinger"]
+      "signal_keywords": [
+        "Intel",
+        "Gaudi",
+        "Ponte Vecchio",
+        "Altera",
+        "Pat Gelsinger"
+      ]
     },
     {
       "key": "cobham",
@@ -90,7 +124,11 @@
       "blurb": "Radiation-hardened microelectronics specialist.",
       "description": "Lead supplier of rad-hard ICs, FPGAs, and memory to space programs. The default vendor for rad-tolerant logic.",
       "stage": "commercial",
-      "signal_keywords": ["Cobham", "RAD750", "rad-hard"]
+      "signal_keywords": [
+        "Cobham",
+        "RAD750",
+        "rad-hard"
+      ]
     },
     {
       "key": "mynaric",
@@ -103,7 +141,12 @@
       "blurb": "Optical comms terminals — Tbps-class downlink shipping.",
       "description": "Volume optical terminal supplier; lead actor on downlink capability.",
       "stage": "commercial",
-      "signal_keywords": ["Mynaric", "optical communications", "laser comms", "CONDOR"]
+      "signal_keywords": [
+        "Mynaric",
+        "optical communications",
+        "laser comms",
+        "CONDOR"
+      ]
     },
     {
       "key": "nasa",
@@ -116,7 +159,13 @@
       "blurb": "OSAM-1 assembly + Pegasus rad-qual facility.",
       "description": "Anchor lab for in-orbit assembly + radiation testing. OSAM-1 demonstrator delays directly affect assembly score.",
       "stage": "research",
-      "signal_keywords": ["NASA", "OSAM-1", "Pegasus", "Goddard", "JPL"]
+      "signal_keywords": [
+        "NASA",
+        "OSAM-1",
+        "Pegasus",
+        "Goddard",
+        "JPL"
+      ]
     },
     {
       "key": "esa",
@@ -129,7 +178,12 @@
       "blurb": "Optical comms + radiator R&D + payload programs.",
       "description": "Active across downlink + thermal capabilities; lab-scale demos feed commercial pipeline.",
       "stage": "research",
-      "signal_keywords": ["ESA", "European Space Agency", "ESTEC", "ARTES"]
+      "signal_keywords": [
+        "ESA",
+        "European Space Agency",
+        "ESTEC",
+        "ARTES"
+      ]
     },
     {
       "key": "jaxa",
@@ -142,7 +196,10 @@
       "blurb": "Optical comms milestone partner.",
       "description": "Active on optical downlink demonstrations; Hayabusa heritage useful for in-orbit thermal.",
       "stage": "research",
-      "signal_keywords": ["JAXA", "Hayabusa"]
+      "signal_keywords": [
+        "JAXA",
+        "Hayabusa"
+      ]
     },
     {
       "key": "jpl",
@@ -155,7 +212,11 @@
       "blurb": "Thermal control flagship lab.",
       "description": "Caltech-operated FFRDC. Long history of in-orbit thermal control technology development.",
       "stage": "research",
-      "signal_keywords": ["JPL", "Jet Propulsion Laboratory", "Caltech"]
+      "signal_keywords": [
+        "JPL",
+        "Jet Propulsion Laboratory",
+        "Caltech"
+      ]
     },
     {
       "key": "made_in_space",
@@ -168,7 +229,12 @@
       "blurb": "In-orbit manufacturing + assembly competitor to OSAM-1.",
       "description": "Acquired Made In Space; pursues commercial OSAM (on-orbit servicing, assembly, manufacturing).",
       "stage": "pilot",
-      "signal_keywords": ["Redwire", "Made In Space", "OSAM", "in-orbit manufacturing"]
+      "signal_keywords": [
+        "Redwire",
+        "Made In Space",
+        "OSAM",
+        "in-orbit manufacturing"
+      ]
     },
     {
       "key": "northrop_grumman",
@@ -181,7 +247,12 @@
       "blurb": "MEV satellite servicing competitor.",
       "description": "Operates MEV (Mission Extension Vehicle) servicing program. Adjacent to in-orbit assembly capability.",
       "stage": "commercial",
-      "signal_keywords": ["Northrop Grumman", "MEV", "Mission Extension Vehicle", "SpaceLogistics"]
+      "signal_keywords": [
+        "Northrop Grumman",
+        "MEV",
+        "Mission Extension Vehicle",
+        "SpaceLogistics"
+      ]
     },
     {
       "key": "lloyds",
@@ -194,7 +265,11 @@
       "blurb": "Orbital insurance market hub — $2B/y aggregate cap.",
       "description": "Insurance market that underwrites the majority of orbital programs. Underwriting depth caps project size.",
       "stage": "commercial",
-      "signal_keywords": ["Lloyd's", "Lloyds of London", "space insurance"]
+      "signal_keywords": [
+        "Lloyd's",
+        "Lloyds of London",
+        "space insurance"
+      ]
     },
     {
       "key": "axa_xl",
@@ -207,7 +282,10 @@
       "blurb": "Second-tier orbital underwriter.",
       "description": "Continental European orbital insurance carrier; rare among non-Lloyd's writers.",
       "stage": "commercial",
-      "signal_keywords": ["AXA XL", "space insurance"]
+      "signal_keywords": [
+        "AXA XL",
+        "space insurance"
+      ]
     },
     {
       "key": "itu",
@@ -220,7 +298,12 @@
       "blurb": "Spectrum coordination for Ka/Q-band orbital links.",
       "description": "UN body that allocates orbital spectrum + slots. Ka/Q-band largely settled; per-constellation coordination ongoing.",
       "stage": "commercial",
-      "signal_keywords": ["ITU", "International Telecommunication Union", "WRC", "spectrum"]
+      "signal_keywords": [
+        "ITU",
+        "International Telecommunication Union",
+        "WRC",
+        "spectrum"
+      ]
     },
     {
       "key": "fcc",
@@ -233,7 +316,10 @@
       "blurb": "US spectrum + orbital licensing regulator.",
       "description": "Issues US spectrum licenses + orbital debris mitigation rules.",
       "stage": "commercial",
-      "signal_keywords": ["FCC", "Federal Communications Commission"]
+      "signal_keywords": [
+        "FCC",
+        "Federal Communications Commission"
+      ]
     },
     {
       "key": "uptime_institute",
@@ -246,7 +332,11 @@
       "blurb": "Tier-N reliability certification authority for data centers.",
       "description": "Sets Tier-I through Tier-IV reliability standards for terrestrial DCs; orbital adaptation pending.",
       "stage": "commercial",
-      "signal_keywords": ["Uptime Institute", "Tier-3", "Tier-4"]
+      "signal_keywords": [
+        "Uptime Institute",
+        "Tier-3",
+        "Tier-4"
+      ]
     },
     {
       "key": "solaero",
@@ -259,7 +349,11 @@
       "blurb": "Space-grade solar cells (acquired by Rocket Lab).",
       "description": "Premier US space solar cell manufacturer; now part of Rocket Lab.",
       "stage": "commercial",
-      "signal_keywords": ["SolAero", "Rocket Lab", "space solar"]
+      "signal_keywords": [
+        "SolAero",
+        "Rocket Lab",
+        "space solar"
+      ]
     },
     {
       "key": "maxar",
@@ -272,7 +366,11 @@
       "blurb": "Satellite buses + Earth observation incumbent.",
       "description": "Largest US commercial satellite bus supplier. Power systems + integration depth.",
       "stage": "commercial",
-      "signal_keywords": ["Maxar", "Maxar Technologies", "SSL"]
+      "signal_keywords": [
+        "Maxar",
+        "Maxar Technologies",
+        "SSL"
+      ]
     },
     {
       "key": "rocket_lab",
@@ -285,7 +383,12 @@
       "blurb": "Small-lift competitor; Neutron medium-lift in development.",
       "description": "Electron (small-lift) operational; Neutron under development as a medium-lift reusable competitor.",
       "stage": "commercial",
-      "signal_keywords": ["Rocket Lab", "Electron", "Neutron", "Peter Beck"]
+      "signal_keywords": [
+        "Rocket Lab",
+        "Electron",
+        "Neutron",
+        "Peter Beck"
+      ]
     },
     {
       "key": "blue_origin",
@@ -298,9 +401,13 @@
       "blurb": "New Glenn heavy-lift competitor.",
       "description": "New Glenn heavy-lift reusable; lunar Blue Moon lander program.",
       "stage": "pilot",
-      "signal_keywords": ["Blue Origin", "New Glenn", "Blue Moon", "Bezos"]
+      "signal_keywords": [
+        "Blue Origin",
+        "New Glenn",
+        "Blue Moon",
+        "Bezos"
+      ]
     },
-
     {
       "key": "cfs",
       "name": "Commonwealth Fusion Systems",
@@ -312,7 +419,14 @@
       "blurb": "SPARC tokamak; HTS magnet breakthrough (2021) revived private fusion.",
       "description": "MIT PSFC spinout. Building SPARC (140 MW thermal, Q > 10) in Devens, MA; targets first plasma 2026. ARC commercial follow-on planned 2030s.",
       "stage": "pilot",
-      "signal_keywords": ["Commonwealth Fusion", "CFS", "SPARC", "ARC tokamak", "Bob Mumgaard", "Devens"]
+      "signal_keywords": [
+        "Commonwealth Fusion",
+        "CFS",
+        "SPARC",
+        "ARC tokamak",
+        "Bob Mumgaard",
+        "Devens"
+      ]
     },
     {
       "key": "helion",
@@ -325,7 +439,13 @@
       "blurb": "D-He3 pulsed FRC plant; Microsoft PPA 2028.",
       "description": "Pulsed magneto-inertial fusion using D-He3 reactions. Microsoft signed 50 MW PPA for 2028 delivery — most aggressive commercial timeline.",
       "stage": "pilot",
-      "signal_keywords": ["Helion", "Helion Energy", "Polaris", "D-He3", "David Kirtley"]
+      "signal_keywords": [
+        "Helion",
+        "Helion Energy",
+        "Polaris",
+        "D-He3",
+        "David Kirtley"
+      ]
     },
     {
       "key": "tae",
@@ -338,7 +458,13 @@
       "blurb": "FRC + boron fuel; longest-running private fusion company.",
       "description": "Field-reversed configuration with p-B11 aneutronic fuel ambition. Norman device sustained 30M+ K plasmas; Copernicus next.",
       "stage": "pilot",
-      "signal_keywords": ["TAE Technologies", "Tri Alpha", "Norman", "Copernicus", "FRC"]
+      "signal_keywords": [
+        "TAE Technologies",
+        "Tri Alpha",
+        "Norman",
+        "Copernicus",
+        "FRC"
+      ]
     },
     {
       "key": "tokamak_energy",
@@ -351,7 +477,12 @@
       "blurb": "Spherical tokamak with HTS magnets; ST40 Q-test 2026.",
       "description": "UK spherical tokamak company. ST40 achieved 100M K plasma 2022; ST80-HTS planned 2026.",
       "stage": "pilot",
-      "signal_keywords": ["Tokamak Energy", "ST40", "ST80", "spherical tokamak"]
+      "signal_keywords": [
+        "Tokamak Energy",
+        "ST40",
+        "ST80",
+        "spherical tokamak"
+      ]
     },
     {
       "key": "general_fusion",
@@ -364,7 +495,12 @@
       "blurb": "Magnetized target fusion; LM26 demo in Vancouver.",
       "description": "Canadian MTF approach using liquid lithium vortex + plasma compression. LM26 demo plant under construction at Culham, UK.",
       "stage": "pilot",
-      "signal_keywords": ["General Fusion", "LM26", "magnetized target fusion", "Culham"]
+      "signal_keywords": [
+        "General Fusion",
+        "LM26",
+        "magnetized target fusion",
+        "Culham"
+      ]
     },
     {
       "key": "iter",
@@ -377,7 +513,12 @@
       "blurb": "500 MW intergovernmental tokamak; first plasma slipped to 2035.",
       "description": "International collaboration (EU, US, JP, KR, CN, IN, RU). Cadarache site. Q > 10 demonstrator. TBM test blanket modules expected 2035+.",
       "stage": "research",
-      "signal_keywords": ["ITER", "Cadarache", "ITER Organization", "test blanket module"]
+      "signal_keywords": [
+        "ITER",
+        "Cadarache",
+        "ITER Organization",
+        "test blanket module"
+      ]
     },
     {
       "key": "llnl_nif",
@@ -390,7 +531,13 @@
       "blurb": "NIF achieved Q > 1 inertial confinement, Dec 2022.",
       "description": "National Ignition Facility. Laser-driven inertial confinement. First repeated Q > 1 ignition shots 2022-24 — proved net energy gain is physically possible.",
       "stage": "research",
-      "signal_keywords": ["NIF", "National Ignition Facility", "Livermore", "LLNL", "inertial confinement"]
+      "signal_keywords": [
+        "NIF",
+        "National Ignition Facility",
+        "Livermore",
+        "LLNL",
+        "inertial confinement"
+      ]
     },
     {
       "key": "mit_psfc",
@@ -403,7 +550,12 @@
       "blurb": "Academic anchor; HTS magnet test bed; CFS parent.",
       "description": "Spawned CFS via SPARC concept. Test cell for high-field magnets. Workforce pipeline for US private fusion.",
       "stage": "research",
-      "signal_keywords": ["MIT PSFC", "MIT Plasma Science", "Whyte", "ARC reactor"]
+      "signal_keywords": [
+        "MIT PSFC",
+        "MIT Plasma Science",
+        "Whyte",
+        "ARC reactor"
+      ]
     },
     {
       "key": "kstar",
@@ -416,7 +568,12 @@
       "blurb": "Daejeon tokamak; 100M K sustained 48s record (2024).",
       "description": "Korea Superconducting Tokamak Advanced Research. Operated by KFE. Holds duration record for >100M K plasma.",
       "stage": "research",
-      "signal_keywords": ["KSTAR", "Korea Superconducting Tokamak", "KFE", "Daejeon"]
+      "signal_keywords": [
+        "KSTAR",
+        "Korea Superconducting Tokamak",
+        "KFE",
+        "Daejeon"
+      ]
     },
     {
       "key": "ukaea",
@@ -429,7 +586,12 @@
       "blurb": "JET legacy + STEP prototype targeting 2040.",
       "description": "Operates JET (decommissioning 2024); leads STEP (Spherical Tokamak for Energy Production) prototype targeting net power by 2040.",
       "stage": "research",
-      "signal_keywords": ["UKAEA", "JET", "STEP fusion", "Culham"]
+      "signal_keywords": [
+        "UKAEA",
+        "JET",
+        "STEP fusion",
+        "Culham"
+      ]
     },
     {
       "key": "us_doe_fes",
@@ -442,7 +604,12 @@
       "blurb": "Primary US fusion R&D funder; Milestone-Based Program 2023.",
       "description": "Office of Science FES program. Funded $46M Milestone-Based Fusion Development across 8 private companies in 2023.",
       "stage": "research",
-      "signal_keywords": ["DOE Fusion Energy Sciences", "DOE FES", "milestone fusion", "Inertial Fusion Energy"]
+      "signal_keywords": [
+        "DOE Fusion Energy Sciences",
+        "DOE FES",
+        "milestone fusion",
+        "Inertial Fusion Energy"
+      ]
     },
     {
       "key": "us_nrc_fusion",
@@ -455,7 +622,11 @@
       "blurb": "April 2024 ruling: fusion under Part 30 byproduct material framework.",
       "description": "Issued landmark fusion-regulatory framework decision April 2024 — fusion plants licensed as byproduct material, not Part 50 reactors. Order-of-magnitude faster licensing.",
       "stage": "commercial",
-      "signal_keywords": ["NRC fusion", "Part 30 byproduct", "fusion licensing"]
+      "signal_keywords": [
+        "NRC fusion",
+        "Part 30 byproduct",
+        "fusion licensing"
+      ]
     },
     {
       "key": "faraday_factory",
@@ -468,7 +639,11 @@
       "blurb": "REBCO HTS tape producer; supplies CFS + Tokamak Energy.",
       "description": "Japan-based REBCO tape manufacturer. Doubling capacity 2024-26 to meet fusion demand.",
       "stage": "scaling",
-      "signal_keywords": ["Faraday Factory", "REBCO tape", "HTS tape"]
+      "signal_keywords": [
+        "Faraday Factory",
+        "REBCO tape",
+        "HTS tape"
+      ]
     },
     {
       "key": "amsc",
@@ -481,107 +656,1232 @@
       "blurb": "US REBCO supplier; DOE-funded capacity expansion 2024.",
       "description": "Public US superconductor company. REBCO tape products supply fusion + grid + utility customers. DOE awards 2024 expand domestic capacity.",
       "stage": "commercial",
-      "signal_keywords": ["American Superconductor", "AMSC", "REBCO", "HTS wire"]
+      "signal_keywords": [
+        "American Superconductor",
+        "AMSC",
+        "REBCO",
+        "HTS wire"
+      ]
+    },
+    {
+      "key": "sk_hynix",
+      "name": "SK hynix",
+      "short_name": "SK hynix",
+      "name_local": "SK하이닉스",
+      "iso_country": "KR",
+      "category": "public_corp",
+      "ticker": "000660",
+      "exchange": "KOSPI",
+      "blurb": "HBM market leader; M16 fab + HBM3E 12-Hi yield ramp.",
+      "description": "Korean memory maker; dominant HBM3E supplier to NVIDIA training clusters. M16-2 capacity build-out runs through 2027.",
+      "stage": "scaling",
+      "signal_keywords": [
+        "SK hynix",
+        "SK Hynix",
+        "Hynix",
+        "HBM3E",
+        "M16"
+      ]
+    },
+    {
+      "key": "samsung_semi",
+      "name": "Samsung Semiconductor",
+      "short_name": "Samsung",
+      "name_local": "삼성전자",
+      "iso_country": "KR",
+      "category": "public_corp",
+      "ticker": "005930",
+      "exchange": "KOSPI",
+      "blurb": "HBM3E qualification race + pyeongtaek HBM capex.",
+      "description": "Largest Korean memory maker. HBM3E qualification with second-tier accelerator partner extends supplier mix. Pyeongtaek expansion targets share recovery.",
+      "stage": "scaling",
+      "signal_keywords": [
+        "Samsung",
+        "Samsung Electronics",
+        "Samsung Semiconductor",
+        "Pyeongtaek"
+      ]
+    },
+    {
+      "key": "micron",
+      "name": "Micron Technology",
+      "short_name": "Micron",
+      "iso_country": "US",
+      "category": "public_corp",
+      "ticker": "MU",
+      "exchange": "NASDAQ",
+      "blurb": "US incumbent; 1-gamma node + HBM capex pivot.",
+      "description": "Only US-headquartered DRAM major. Node migration to 1-gamma + capex reallocation toward HBM mix is the durability story.",
+      "stage": "scaling",
+      "signal_keywords": [
+        "Micron",
+        "Micron Technology",
+        "1-gamma DRAM"
+      ]
+    },
+    {
+      "key": "nvidia_memory",
+      "name": "NVIDIA",
+      "short_name": "NVIDIA",
+      "iso_country": "US",
+      "category": "public_corp",
+      "ticker": "NVDA",
+      "exchange": "NASDAQ",
+      "blurb": "HBM consumer-of-record; multi-vendor qualification driver.",
+      "description": "Largest HBM customer worldwide. Multi-vendor HBM4 qualification is the lever that splits pricing power between SK hynix / Samsung / Micron.",
+      "stage": "scaling",
+      "signal_keywords": [
+        "NVIDIA",
+        "Nvidia",
+        "HBM4",
+        "Hopper",
+        "Blackwell"
+      ]
+    },
+    {
+      "key": "tsmc",
+      "name": "TSMC",
+      "short_name": "TSMC",
+      "name_local": "台積電",
+      "iso_country": "TW",
+      "category": "public_corp",
+      "ticker": "TSM",
+      "exchange": "NYSE",
+      "blurb": "Foundry leader; CoWoS packaging is the HBM bottleneck.",
+      "description": "Taiwan foundry. CoWoS advanced packaging capacity gates how many HBM-stacked accelerators ship per quarter.",
+      "stage": "scaling",
+      "signal_keywords": [
+        "TSMC",
+        "CoWoS",
+        "Taiwan Semiconductor"
+      ]
+    },
+    {
+      "key": "intel_memory",
+      "name": "Intel",
+      "short_name": "Intel",
+      "iso_country": "US",
+      "category": "public_corp",
+      "ticker": "INTC",
+      "exchange": "NASDAQ",
+      "blurb": "Foundry pivot; Gaudi accelerator HBM qualifier.",
+      "description": "Intel Foundry Services + Gaudi accelerator portfolio re-enters the HBM consumer pool from a different angle than NVIDIA.",
+      "stage": "scaling",
+      "signal_keywords": [
+        "Intel",
+        "Intel Foundry",
+        "Gaudi"
+      ]
+    },
+    {
+      "key": "amd_memory",
+      "name": "AMD",
+      "short_name": "AMD",
+      "iso_country": "US",
+      "category": "public_corp",
+      "ticker": "AMD",
+      "exchange": "NASDAQ",
+      "blurb": "MI300 / MI400 HBM consumer; share-vs-NVIDIA wedge.",
+      "description": "Instinct MI300/MI400 demand is the second-largest HBM call after NVIDIA. Share gains compound HBM ASP durability.",
+      "stage": "scaling",
+      "signal_keywords": [
+        "AMD",
+        "Instinct MI300",
+        "MI400",
+        "Lisa Su"
+      ]
+    },
+    {
+      "key": "kioxia",
+      "name": "Kioxia",
+      "short_name": "Kioxia",
+      "name_local": "キオクシア",
+      "iso_country": "JP",
+      "category": "public_corp",
+      "ticker": "285A",
+      "exchange": "TSE",
+      "blurb": "NAND-side counterweight; HBM-adjacent flash story.",
+      "description": "Japanese flash major (formerly Toshiba Memory). HBM-adjacent: tighter NAND market raises the relative attractiveness of HBM-focused capex.",
+      "stage": "scaling",
+      "signal_keywords": [
+        "Kioxia",
+        "Toshiba Memory"
+      ]
+    },
+    {
+      "key": "asml",
+      "name": "ASML",
+      "short_name": "ASML",
+      "iso_country": "NL",
+      "category": "public_corp",
+      "ticker": "ASML",
+      "exchange": "AEX",
+      "blurb": "EUV monopoly; node-migration enabler.",
+      "description": "Sole EUV lithography supplier. Tool deliveries gate Korean + US fabs' node-migration cadence.",
+      "stage": "scaling",
+      "signal_keywords": [
+        "ASML",
+        "EUV",
+        "High-NA"
+      ]
+    },
+    {
+      "key": "us_bis",
+      "name": "US Bureau of Industry and Security",
+      "short_name": "BIS",
+      "iso_country": "US",
+      "category": "government_lab",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "Sets US export controls — HBM licensing pivot.",
+      "description": "BIS export-license framework controls HBM shipments to China-listed entities. Rule updates shift TAM materially.",
+      "stage": "commercial",
+      "signal_keywords": [
+        "BIS",
+        "Bureau of Industry and Security",
+        "Commerce"
+      ]
+    },
+    {
+      "key": "sia_memory",
+      "name": "Semiconductor Industry Association",
+      "short_name": "SIA",
+      "iso_country": "US",
+      "category": "ngo",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "Industry policy + monthly billings authority.",
+      "description": "US industry body. Monthly billings releases are the cleanest demand-side leading indicator for the memory cycle.",
+      "stage": "commercial",
+      "signal_keywords": [
+        "SIA",
+        "Semiconductor Industry Association"
+      ]
+    },
+    {
+      "key": "bloom_energy",
+      "name": "Bloom Energy",
+      "short_name": "Bloom",
+      "iso_country": "US",
+      "category": "public_corp",
+      "ticker": "BE",
+      "exchange": "NYSE",
+      "blurb": "Largest commercial SOFC OEM; AI-DC offtake leader.",
+      "description": "US public SOFC manufacturer. Hyperscaler offtake announcements + Fremont expansion are the binding signal for behind-the-meter deployments.",
+      "stage": "scaling",
+      "signal_keywords": [
+        "Bloom Energy",
+        "Bloom"
+      ]
+    },
+    {
+      "key": "doosan_fc",
+      "name": "Doosan Fuel Cell",
+      "short_name": "Doosan FC",
+      "name_local": "두산퓨얼셀",
+      "iso_country": "KR",
+      "category": "public_corp",
+      "ticker": "336260",
+      "exchange": "KOSPI",
+      "blurb": "Korean SOFC market leader; municipal + SE Asia exports.",
+      "description": "Korean public SOFC manufacturer. Domestic municipal contracts + SE Asia export ramp anchor the Asia-side story.",
+      "stage": "scaling",
+      "signal_keywords": [
+        "Doosan Fuel Cell",
+        "Doosan FC",
+        "Doosan"
+      ]
+    },
+    {
+      "key": "ceres_power",
+      "name": "Ceres Power",
+      "short_name": "Ceres",
+      "iso_country": "GB",
+      "category": "public_corp",
+      "ticker": "CWR",
+      "exchange": "LSE",
+      "blurb": "Asset-light licensee model; Bosch + Doosan partners.",
+      "description": "UK SOFC IP licensor (steel-cell stack design). Licensee revenue (Bosch, Doosan, Weichai) is the durability story.",
+      "stage": "commercial",
+      "signal_keywords": [
+        "Ceres Power",
+        "Ceres",
+        "SteelCell"
+      ]
+    },
+    {
+      "key": "fuelcell_energy",
+      "name": "FuelCell Energy",
+      "short_name": "FuelCell",
+      "iso_country": "US",
+      "category": "public_corp",
+      "ticker": "FCEL",
+      "exchange": "NASDAQ",
+      "blurb": "MCFC pivot; DOE-funded SOFC tech path.",
+      "description": "US public fuel-cell company. SOFC R&D + carbon-capture program runs alongside the molten-carbonate (MCFC) commercial base.",
+      "stage": "pilot",
+      "signal_keywords": [
+        "FuelCell Energy",
+        "FuelCell",
+        "FCEL"
+      ]
+    },
+    {
+      "key": "mitsubishi_power",
+      "name": "Mitsubishi Power",
+      "short_name": "MHI Power",
+      "name_local": "三菱パワー",
+      "iso_country": "JP",
+      "category": "public_corp",
+      "ticker": "7011",
+      "exchange": "TSE",
+      "blurb": "Hybrid SOFC-GT systems for industrial / DC.",
+      "description": "MHI subsidiary. SOFC-gas-turbine hybrid systems target industrial + large-scale DC behind-the-meter use cases.",
+      "stage": "commercial",
+      "signal_keywords": [
+        "Mitsubishi Power",
+        "MHI Power",
+        "Mitsubishi Heavy Industries"
+      ]
+    },
+    {
+      "key": "convion",
+      "name": "Convion",
+      "short_name": "Convion",
+      "iso_country": "FI",
+      "category": "private_startup",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "EU SOFC system integrator; biogas + H2 ready.",
+      "description": "Finnish SOFC integrator. Fuel-flex stack designs target biogas + green-H2 hybrid markets.",
+      "stage": "pilot",
+      "signal_keywords": [
+        "Convion",
+        "Convion Fuel Cells"
+      ]
+    },
+    {
+      "key": "sunfire",
+      "name": "Sunfire",
+      "short_name": "Sunfire",
+      "iso_country": "DE",
+      "category": "private_startup",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "Reversible SOFC / electrolyzer; green-H2 bridge.",
+      "description": "German SOFC + SOE company. Reversible stack design ties SOFC commercial path directly to EU green-H2 buildout.",
+      "stage": "pilot",
+      "signal_keywords": [
+        "Sunfire"
+      ]
+    },
+    {
+      "key": "solidpower",
+      "name": "SOLIDpower",
+      "short_name": "SOLIDpower",
+      "iso_country": "IT",
+      "category": "private_startup",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "EU residential / light-commercial SOFC modules.",
+      "description": "Italian SOFC module maker. Residential + light-commercial deployments across EU give a different denominator vs hyperscaler-DC use.",
+      "stage": "pilot",
+      "signal_keywords": [
+        "SOLIDpower",
+        "SOLIDPower",
+        "Solid Power Italy"
+      ]
+    },
+    {
+      "key": "us_doe_eere",
+      "name": "US DOE — EERE Fuel Cells",
+      "short_name": "DOE EERE",
+      "iso_country": "US",
+      "category": "government_lab",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "H2Hubs program + stack-cost-down funding.",
+      "description": "DOE Office of Energy Efficiency & Renewable Energy. H2Hubs + stack-cost-down funding directly subsidizes SOFC OEM bill of materials.",
+      "stage": "commercial",
+      "signal_keywords": [
+        "DOE EERE",
+        "H2Hubs",
+        "Hydrogen and Fuel Cell Technologies Office"
+      ]
+    },
+    {
+      "key": "us_ferc",
+      "name": "Federal Energy Regulatory Commission",
+      "short_name": "FERC",
+      "iso_country": "US",
+      "category": "government_lab",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "Interconnection-queue rulemaking authority.",
+      "description": "US FERC. Queue-reform orders shorten the interconnection wait for behind-the-meter SOFC by months → meaningful LCOE accretion.",
+      "stage": "commercial",
+      "signal_keywords": [
+        "FERC",
+        "Federal Energy Regulatory Commission"
+      ]
+    },
+    {
+      "key": "iea_sofc",
+      "name": "International Energy Agency",
+      "short_name": "IEA",
+      "iso_country": "FR",
+      "category": "ngo",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "Authoritative LCOE + H2 cost curve outlook.",
+      "description": "IEA technical reports on SOFC system cost + green-H2 production cost are the reference outlook investors price against.",
+      "stage": "commercial",
+      "signal_keywords": [
+        "IEA",
+        "International Energy Agency"
+      ]
     }
   ],
   "vision_assignments": {
     "space-data-center": [
-      { "actor_key": "spacex", "relevance": 95, "rationale": "Single biggest cost lever for orbital DCs. Starship V3 validates the -22%/y $/kg trend.", "display_order": 10 },
-      { "actor_key": "lonestar_data", "relevance": 78, "rationale": "First-mover commercial orbital DC operator; lunar + LEO demos planned for 2027.", "display_order": 20 },
-      { "actor_key": "amd", "relevance": 75, "rationale": "Binding-capability lever: rad-hard MI300 qualification is the gate to viable orbital training.", "display_order": 30 },
-      { "actor_key": "starcloud", "relevance": 72, "rationale": "Only commercial actor with proven in-orbit thermal demo at meaningful scale.", "display_order": 40 },
-      { "actor_key": "mynaric", "relevance": 70, "rationale": "Volume optical terminal supplier; lead actor on downlink capability.", "display_order": 50 },
-      { "actor_key": "nvidia", "relevance": 65, "rationale": "Dominant ground GPU player; orbital rad-tolerance announcement would shift binding capability.", "display_order": 60 },
-      { "actor_key": "nasa", "relevance": 60, "rationale": "Anchor lab for in-orbit assembly + radiation testing; OSAM-1 delays shift assembly score.", "display_order": 70 },
-      { "actor_key": "esa", "relevance": 55, "rationale": "Active across downlink + thermal capabilities; lab-scale demos feed commercial pipeline.", "display_order": 80 },
-      { "actor_key": "lloyds", "relevance": 45, "rationale": "Gating factor on orbital DC capex; underwriting depth caps project size.", "display_order": 90 },
-      { "actor_key": "itu", "relevance": 40, "rationale": "Spectrum allocation largely settled; tail coordination matters per constellation.", "display_order": 100 }
+      {
+        "actor_key": "spacex",
+        "relevance": 95,
+        "rationale": "Single biggest cost lever for orbital DCs. Starship V3 validates the -22%/y $/kg trend.",
+        "display_order": 10
+      },
+      {
+        "actor_key": "lonestar_data",
+        "relevance": 78,
+        "rationale": "First-mover commercial orbital DC operator; lunar + LEO demos planned for 2027.",
+        "display_order": 20
+      },
+      {
+        "actor_key": "amd",
+        "relevance": 75,
+        "rationale": "Binding-capability lever: rad-hard MI300 qualification is the gate to viable orbital training.",
+        "display_order": 30
+      },
+      {
+        "actor_key": "starcloud",
+        "relevance": 72,
+        "rationale": "Only commercial actor with proven in-orbit thermal demo at meaningful scale.",
+        "display_order": 40
+      },
+      {
+        "actor_key": "mynaric",
+        "relevance": 70,
+        "rationale": "Volume optical terminal supplier; lead actor on downlink capability.",
+        "display_order": 50
+      },
+      {
+        "actor_key": "nvidia",
+        "relevance": 65,
+        "rationale": "Dominant ground GPU player; orbital rad-tolerance announcement would shift binding capability.",
+        "display_order": 60
+      },
+      {
+        "actor_key": "nasa",
+        "relevance": 60,
+        "rationale": "Anchor lab for in-orbit assembly + radiation testing; OSAM-1 delays shift assembly score.",
+        "display_order": 70
+      },
+      {
+        "actor_key": "esa",
+        "relevance": 55,
+        "rationale": "Active across downlink + thermal capabilities; lab-scale demos feed commercial pipeline.",
+        "display_order": 80
+      },
+      {
+        "actor_key": "lloyds",
+        "relevance": 45,
+        "rationale": "Gating factor on orbital DC capex; underwriting depth caps project size.",
+        "display_order": 90
+      },
+      {
+        "actor_key": "itu",
+        "relevance": 40,
+        "rationale": "Spectrum allocation largely settled; tail coordination matters per constellation.",
+        "display_order": 100
+      }
     ],
     "fusion-power": [
-      { "actor_key": "cfs", "relevance": 95, "rationale": "Most-funded private tokamak; SPARC first plasma 2026 is the demo gate.", "display_order": 10 },
-      { "actor_key": "helion", "relevance": 85, "rationale": "Aggressive commercial timeline; Microsoft PPA 2028 is the most concrete commercial commitment.", "display_order": 20 },
-      { "actor_key": "iter", "relevance": 80, "rationale": "Anchors the international DT roadmap; TBM modules drive tritium-breeding learning.", "display_order": 30 },
-      { "actor_key": "us_nrc_fusion", "relevance": 75, "rationale": "Part 30 framework is the single biggest regulatory tailwind in 20 years.", "display_order": 40 },
-      { "actor_key": "tokamak_energy", "relevance": 70, "rationale": "UK leader in HTS-spherical-tokamak path; ST80-HTS demo 2026.", "display_order": 50 },
-      { "actor_key": "tae", "relevance": 65, "rationale": "Longest-running private fusion player; aneutronic ambition is a wildcard.", "display_order": 60 },
-      { "actor_key": "llnl_nif", "relevance": 60, "rationale": "Q > 1 ignition proof point; not directly commercial but unblocks IFE thinking.", "display_order": 70 },
-      { "actor_key": "general_fusion", "relevance": 55, "rationale": "MTF approach diversifies bet portfolio; LM26 demo at Culham.", "display_order": 80 },
-      { "actor_key": "kstar", "relevance": 50, "rationale": "Korean academic lab; K-DEMO planning underway; workforce pipeline for KR fusion.", "display_order": 90 },
-      { "actor_key": "ukaea", "relevance": 50, "rationale": "STEP program is UK's commercial bet; JET decommissioning frees skilled workforce.", "display_order": 100 },
-      { "actor_key": "us_doe_fes", "relevance": 48, "rationale": "Funder of last resort + workforce pipeline.", "display_order": 110 },
-      { "actor_key": "mit_psfc", "relevance": 45, "rationale": "Academic anchor for HTS magnet science.", "display_order": 120 },
-      { "actor_key": "faraday_factory", "relevance": 40, "rationale": "REBCO supplier; capacity expansion gates magnet manufacturing.", "display_order": 130 },
-      { "actor_key": "amsc", "relevance": 38, "rationale": "US REBCO source; DOE-funded capacity expansion 2024.", "display_order": 140 }
+      {
+        "actor_key": "cfs",
+        "relevance": 95,
+        "rationale": "Most-funded private tokamak; SPARC first plasma 2026 is the demo gate.",
+        "display_order": 10
+      },
+      {
+        "actor_key": "helion",
+        "relevance": 85,
+        "rationale": "Aggressive commercial timeline; Microsoft PPA 2028 is the most concrete commercial commitment.",
+        "display_order": 20
+      },
+      {
+        "actor_key": "iter",
+        "relevance": 80,
+        "rationale": "Anchors the international DT roadmap; TBM modules drive tritium-breeding learning.",
+        "display_order": 30
+      },
+      {
+        "actor_key": "us_nrc_fusion",
+        "relevance": 75,
+        "rationale": "Part 30 framework is the single biggest regulatory tailwind in 20 years.",
+        "display_order": 40
+      },
+      {
+        "actor_key": "tokamak_energy",
+        "relevance": 70,
+        "rationale": "UK leader in HTS-spherical-tokamak path; ST80-HTS demo 2026.",
+        "display_order": 50
+      },
+      {
+        "actor_key": "tae",
+        "relevance": 65,
+        "rationale": "Longest-running private fusion player; aneutronic ambition is a wildcard.",
+        "display_order": 60
+      },
+      {
+        "actor_key": "llnl_nif",
+        "relevance": 60,
+        "rationale": "Q > 1 ignition proof point; not directly commercial but unblocks IFE thinking.",
+        "display_order": 70
+      },
+      {
+        "actor_key": "general_fusion",
+        "relevance": 55,
+        "rationale": "MTF approach diversifies bet portfolio; LM26 demo at Culham.",
+        "display_order": 80
+      },
+      {
+        "actor_key": "kstar",
+        "relevance": 50,
+        "rationale": "Korean academic lab; K-DEMO planning underway; workforce pipeline for KR fusion.",
+        "display_order": 90
+      },
+      {
+        "actor_key": "ukaea",
+        "relevance": 50,
+        "rationale": "STEP program is UK's commercial bet; JET decommissioning frees skilled workforce.",
+        "display_order": 100
+      },
+      {
+        "actor_key": "us_doe_fes",
+        "relevance": 48,
+        "rationale": "Funder of last resort + workforce pipeline.",
+        "display_order": 110
+      },
+      {
+        "actor_key": "mit_psfc",
+        "relevance": 45,
+        "rationale": "Academic anchor for HTS magnet science.",
+        "display_order": 120
+      },
+      {
+        "actor_key": "faraday_factory",
+        "relevance": 40,
+        "rationale": "REBCO supplier; capacity expansion gates magnet manufacturing.",
+        "display_order": 130
+      },
+      {
+        "actor_key": "amsc",
+        "relevance": 38,
+        "rationale": "US REBCO source; DOE-funded capacity expansion 2024.",
+        "display_order": 140
+      }
+    ],
+    "memory-semi": [
+      {
+        "actor_key": "sk_hynix",
+        "relevance": 95,
+        "rationale": "HBM3E leader → primary durability lever; 12-Hi yield is the single most-watched signal.",
+        "display_order": 10
+      },
+      {
+        "actor_key": "samsung_semi",
+        "relevance": 88,
+        "rationale": "Closest #2; HBM3E qualification cadence + Pyeongtaek capex stage share recovery.",
+        "display_order": 20
+      },
+      {
+        "actor_key": "micron",
+        "relevance": 82,
+        "rationale": "Only US incumbent; node migration + HBM mix shift sets the floor on US-side capacity.",
+        "display_order": 30
+      },
+      {
+        "actor_key": "nvidia_memory",
+        "relevance": 78,
+        "rationale": "Demand-side anchor; multi-vendor qualification choices flow straight into vendor pricing power.",
+        "display_order": 40
+      },
+      {
+        "actor_key": "tsmc",
+        "relevance": 72,
+        "rationale": "CoWoS packaging gates HBM-stacked accelerator shipments; capacity is the upstream bottleneck.",
+        "display_order": 50
+      },
+      {
+        "actor_key": "amd_memory",
+        "relevance": 60,
+        "rationale": "Second-largest HBM customer; share gains vs NVIDIA compound ASP durability.",
+        "display_order": 60
+      },
+      {
+        "actor_key": "intel_memory",
+        "relevance": 50,
+        "rationale": "Foundry pivot + Gaudi line adds a third HBM-consumer cluster, marginal but real.",
+        "display_order": 70
+      },
+      {
+        "actor_key": "asml",
+        "relevance": 55,
+        "rationale": "EUV monopoly. Tool delivery cadence is the upstream lever for node migration timing.",
+        "display_order": 80
+      },
+      {
+        "actor_key": "kioxia",
+        "relevance": 35,
+        "rationale": "NAND counterweight; tighter NAND raises HBM-focused capex appetite indirectly.",
+        "display_order": 90
+      },
+      {
+        "actor_key": "us_bis",
+        "relevance": 70,
+        "rationale": "BIS export-license rules set the HBM-to-China TAM. Rule changes move the cycle.",
+        "display_order": 100
+      },
+      {
+        "actor_key": "sia_memory",
+        "relevance": 30,
+        "rationale": "Monthly billings = cleanest demand-side leading indicator.",
+        "display_order": 110
+      }
+    ],
+    "sofc": [
+      {
+        "actor_key": "bloom_energy",
+        "relevance": 95,
+        "rationale": "Commercial SOFC market leader; hyperscaler offtake announcements are the binding signal.",
+        "display_order": 10
+      },
+      {
+        "actor_key": "doosan_fc",
+        "relevance": 80,
+        "rationale": "Korean SOFC market leader; municipal + SE Asia exports.",
+        "display_order": 20
+      },
+      {
+        "actor_key": "ceres_power",
+        "relevance": 72,
+        "rationale": "Asset-light licensee model — Bosch + Doosan partner royalties carry IP-side upside.",
+        "display_order": 30
+      },
+      {
+        "actor_key": "mitsubishi_power",
+        "relevance": 68,
+        "rationale": "Hybrid SOFC-GT systems target large industrial + DC use cases differently than residential players.",
+        "display_order": 40
+      },
+      {
+        "actor_key": "fuelcell_energy",
+        "relevance": 55,
+        "rationale": "US SOFC R&D + carbon capture; pilot-stage with DOE support.",
+        "display_order": 50
+      },
+      {
+        "actor_key": "sunfire",
+        "relevance": 60,
+        "rationale": "Reversible SOFC/SOE → bridge between EU green-H2 build and SOFC commercial path.",
+        "display_order": 60
+      },
+      {
+        "actor_key": "convion",
+        "relevance": 45,
+        "rationale": "EU fuel-flex integrator; biogas + H2 pivot.",
+        "display_order": 70
+      },
+      {
+        "actor_key": "solidpower",
+        "relevance": 40,
+        "rationale": "Residential / light-commercial deployments expand the SOFC TAM beyond hyperscaler DC.",
+        "display_order": 80
+      },
+      {
+        "actor_key": "us_doe_eere",
+        "relevance": 78,
+        "rationale": "DOE H2Hubs + stack-cost-down programs directly subsidize SOFC OEM BOM.",
+        "display_order": 90
+      },
+      {
+        "actor_key": "us_ferc",
+        "relevance": 70,
+        "rationale": "Interconnection-queue rulemaking shifts SOFC LCOE through deployment timing.",
+        "display_order": 100
+      },
+      {
+        "actor_key": "iea_sofc",
+        "relevance": 35,
+        "rationale": "IEA cost outlooks anchor investor pricing.",
+        "display_order": 110
+      }
     ]
   },
   "capability_assignments": {
     "space-data-center": [
-      { "capability_key": "rad_hard_compute", "actor_key": "cobham", "role": "lead", "rationale": "Default rad-hard logic supplier." },
-      { "capability_key": "rad_hard_compute", "actor_key": "amd", "role": "competitor", "rationale": "MI300 rad-qual in flight." },
-      { "capability_key": "rad_hard_compute", "actor_key": "nvidia", "role": "competitor", "rationale": "Roadmap announcement would shift score." },
-
-      { "capability_key": "in_orbit_assembly", "actor_key": "nasa", "role": "lead", "rationale": "OSAM-1 demonstrator." },
-      { "capability_key": "in_orbit_assembly", "actor_key": "made_in_space", "role": "competitor", "rationale": "Redwire-owned commercial OSAM." },
-      { "capability_key": "in_orbit_assembly", "actor_key": "northrop_grumman", "role": "competitor", "rationale": "MEV servicing heritage." },
-
-      { "capability_key": "insurance_availability", "actor_key": "lloyds", "role": "regulator", "rationale": "Dominant orbital underwriter." },
-      { "capability_key": "insurance_availability", "actor_key": "axa_xl", "role": "regulator", "rationale": "Second-tier carrier." },
-
-      { "capability_key": "tier3_reliability", "actor_key": "uptime_institute", "role": "regulator", "rationale": "Sets Tier-N standards." },
-
-      { "capability_key": "thermal_rejection", "actor_key": "starcloud", "role": "lead", "rationale": "1kW demo in LEO." },
-      { "capability_key": "thermal_rejection", "actor_key": "esa", "role": "competitor", "rationale": "Radiator R&D." },
-      { "capability_key": "thermal_rejection", "actor_key": "jpl", "role": "competitor", "rationale": "Thermal control heritage." },
-
-      { "capability_key": "in_orbit_power", "actor_key": "solaero", "role": "supplier", "rationale": "Space-grade solar cells." },
-      { "capability_key": "in_orbit_power", "actor_key": "maxar", "role": "supplier", "rationale": "Power systems integration." },
-
-      { "capability_key": "downlink_bandwidth", "actor_key": "mynaric", "role": "lead", "rationale": "Volume optical terminals." },
-      { "capability_key": "downlink_bandwidth", "actor_key": "esa", "role": "supplier", "rationale": "Optical comms milestones." },
-      { "capability_key": "downlink_bandwidth", "actor_key": "jaxa", "role": "competitor", "rationale": "Optical comms partner." },
-
-      { "capability_key": "spectrum_allocation", "actor_key": "itu", "role": "regulator", "rationale": "UN spectrum coordination." },
-      { "capability_key": "spectrum_allocation", "actor_key": "fcc", "role": "regulator", "rationale": "US spectrum licensing." },
-
-      { "capability_key": "launch_economics", "actor_key": "spacex", "role": "lead", "rationale": "Falcon 9 + Starship cost curve." },
-      { "capability_key": "launch_economics", "actor_key": "rocket_lab", "role": "competitor", "rationale": "Neutron medium-lift." },
-      { "capability_key": "launch_economics", "actor_key": "blue_origin", "role": "competitor", "rationale": "New Glenn heavy-lift." }
+      {
+        "capability_key": "rad_hard_compute",
+        "actor_key": "cobham",
+        "role": "lead",
+        "rationale": "Default rad-hard logic supplier."
+      },
+      {
+        "capability_key": "rad_hard_compute",
+        "actor_key": "amd",
+        "role": "competitor",
+        "rationale": "MI300 rad-qual in flight."
+      },
+      {
+        "capability_key": "rad_hard_compute",
+        "actor_key": "nvidia",
+        "role": "competitor",
+        "rationale": "Roadmap announcement would shift score."
+      },
+      {
+        "capability_key": "in_orbit_assembly",
+        "actor_key": "nasa",
+        "role": "lead",
+        "rationale": "OSAM-1 demonstrator."
+      },
+      {
+        "capability_key": "in_orbit_assembly",
+        "actor_key": "made_in_space",
+        "role": "competitor",
+        "rationale": "Redwire-owned commercial OSAM."
+      },
+      {
+        "capability_key": "in_orbit_assembly",
+        "actor_key": "northrop_grumman",
+        "role": "competitor",
+        "rationale": "MEV servicing heritage."
+      },
+      {
+        "capability_key": "insurance_availability",
+        "actor_key": "lloyds",
+        "role": "regulator",
+        "rationale": "Dominant orbital underwriter."
+      },
+      {
+        "capability_key": "insurance_availability",
+        "actor_key": "axa_xl",
+        "role": "regulator",
+        "rationale": "Second-tier carrier."
+      },
+      {
+        "capability_key": "tier3_reliability",
+        "actor_key": "uptime_institute",
+        "role": "regulator",
+        "rationale": "Sets Tier-N standards."
+      },
+      {
+        "capability_key": "thermal_rejection",
+        "actor_key": "starcloud",
+        "role": "lead",
+        "rationale": "1kW demo in LEO."
+      },
+      {
+        "capability_key": "thermal_rejection",
+        "actor_key": "esa",
+        "role": "competitor",
+        "rationale": "Radiator R&D."
+      },
+      {
+        "capability_key": "thermal_rejection",
+        "actor_key": "jpl",
+        "role": "competitor",
+        "rationale": "Thermal control heritage."
+      },
+      {
+        "capability_key": "in_orbit_power",
+        "actor_key": "solaero",
+        "role": "supplier",
+        "rationale": "Space-grade solar cells."
+      },
+      {
+        "capability_key": "in_orbit_power",
+        "actor_key": "maxar",
+        "role": "supplier",
+        "rationale": "Power systems integration."
+      },
+      {
+        "capability_key": "downlink_bandwidth",
+        "actor_key": "mynaric",
+        "role": "lead",
+        "rationale": "Volume optical terminals."
+      },
+      {
+        "capability_key": "downlink_bandwidth",
+        "actor_key": "esa",
+        "role": "supplier",
+        "rationale": "Optical comms milestones."
+      },
+      {
+        "capability_key": "downlink_bandwidth",
+        "actor_key": "jaxa",
+        "role": "competitor",
+        "rationale": "Optical comms partner."
+      },
+      {
+        "capability_key": "spectrum_allocation",
+        "actor_key": "itu",
+        "role": "regulator",
+        "rationale": "UN spectrum coordination."
+      },
+      {
+        "capability_key": "spectrum_allocation",
+        "actor_key": "fcc",
+        "role": "regulator",
+        "rationale": "US spectrum licensing."
+      },
+      {
+        "capability_key": "launch_economics",
+        "actor_key": "spacex",
+        "role": "lead",
+        "rationale": "Falcon 9 + Starship cost curve."
+      },
+      {
+        "capability_key": "launch_economics",
+        "actor_key": "rocket_lab",
+        "role": "competitor",
+        "rationale": "Neutron medium-lift."
+      },
+      {
+        "capability_key": "launch_economics",
+        "actor_key": "blue_origin",
+        "role": "competitor",
+        "rationale": "New Glenn heavy-lift."
+      }
     ],
     "fusion-power": [
-      { "capability_key": "tritium_breeding", "actor_key": "iter", "role": "lead", "rationale": "TBM test blanket modules — the canonical breeding learning ground." },
-      { "capability_key": "tritium_breeding", "actor_key": "cfs", "role": "competitor", "rationale": "ARC FLiBe immersion blanket concept; private TBR push." },
-      { "capability_key": "tritium_breeding", "actor_key": "ukaea", "role": "competitor", "rationale": "STEP blanket R&D." },
-
-      { "capability_key": "plasma_confinement", "actor_key": "cfs", "role": "lead", "rationale": "SPARC targets sustained Q > 10 at high field." },
-      { "capability_key": "plasma_confinement", "actor_key": "iter", "role": "competitor", "rationale": "Q ≥ 10 long-pulse goal." },
-      { "capability_key": "plasma_confinement", "actor_key": "kstar", "role": "competitor", "rationale": "Duration record at 100M K." },
-      { "capability_key": "plasma_confinement", "actor_key": "tokamak_energy", "role": "competitor", "rationale": "Spherical tokamak high-beta route." },
-      { "capability_key": "plasma_confinement", "actor_key": "helion", "role": "competitor", "rationale": "Pulsed FRC alternative." },
-
-      { "capability_key": "first_wall_materials", "actor_key": "iter", "role": "lead", "rationale": "Be/W wall reference design." },
-      { "capability_key": "first_wall_materials", "actor_key": "us_doe_fes", "role": "supplier", "rationale": "Funds IFMIF-DONES + materials irradiation testing." },
-      { "capability_key": "first_wall_materials", "actor_key": "mit_psfc", "role": "competitor", "rationale": "FLiBe liquid wall concept." },
-
-      { "capability_key": "hts_magnets", "actor_key": "cfs", "role": "lead", "rationale": "20T REBCO magnet test 2021 — the breakthrough." },
-      { "capability_key": "hts_magnets", "actor_key": "tokamak_energy", "role": "competitor", "rationale": "UK HTS magnet for ST80-HTS." },
-      { "capability_key": "hts_magnets", "actor_key": "mit_psfc", "role": "supplier", "rationale": "Academic test cell + co-development." },
-
-      { "capability_key": "plant_economics", "actor_key": "helion", "role": "lead", "rationale": "Microsoft PPA at $/MWh — first commercial price point." },
-      { "capability_key": "plant_economics", "actor_key": "cfs", "role": "competitor", "rationale": "ARC commercial business case targets $100/MWh." },
-      { "capability_key": "plant_economics", "actor_key": "ukaea", "role": "competitor", "rationale": "STEP commercial pathway." },
-
-      { "capability_key": "regulatory_pathway", "actor_key": "us_nrc_fusion", "role": "regulator", "rationale": "Part 30 byproduct framework, April 2024." },
-      { "capability_key": "regulatory_pathway", "actor_key": "ukaea", "role": "regulator", "rationale": "UK fusion regulatory framework (ONR + EA)." },
-
-      { "capability_key": "supply_chain_rebco", "actor_key": "faraday_factory", "role": "supplier", "rationale": "Japan REBCO tape capacity." },
-      { "capability_key": "supply_chain_rebco", "actor_key": "amsc", "role": "supplier", "rationale": "US REBCO; DOE-funded capacity expansion." },
-
-      { "capability_key": "workforce_skills", "actor_key": "mit_psfc", "role": "lead", "rationale": "Academic pipeline; spinoff CFS." },
-      { "capability_key": "workforce_skills", "actor_key": "ukaea", "role": "supplier", "rationale": "JET workforce graduating into STEP." },
-      { "capability_key": "workforce_skills", "actor_key": "kstar", "role": "competitor", "rationale": "Korean fusion workforce pipeline." },
-      { "capability_key": "workforce_skills", "actor_key": "us_doe_fes", "role": "supplier", "rationale": "Funds postdoc + workforce programs." },
-
-      { "capability_key": "grid_integration", "actor_key": "helion", "role": "lead", "rationale": "First commercial PPA forces grid integration to be solved." }
+      {
+        "capability_key": "tritium_breeding",
+        "actor_key": "iter",
+        "role": "lead",
+        "rationale": "TBM test blanket modules — the canonical breeding learning ground."
+      },
+      {
+        "capability_key": "tritium_breeding",
+        "actor_key": "cfs",
+        "role": "competitor",
+        "rationale": "ARC FLiBe immersion blanket concept; private TBR push."
+      },
+      {
+        "capability_key": "tritium_breeding",
+        "actor_key": "ukaea",
+        "role": "competitor",
+        "rationale": "STEP blanket R&D."
+      },
+      {
+        "capability_key": "plasma_confinement",
+        "actor_key": "cfs",
+        "role": "lead",
+        "rationale": "SPARC targets sustained Q > 10 at high field."
+      },
+      {
+        "capability_key": "plasma_confinement",
+        "actor_key": "iter",
+        "role": "competitor",
+        "rationale": "Q ≥ 10 long-pulse goal."
+      },
+      {
+        "capability_key": "plasma_confinement",
+        "actor_key": "kstar",
+        "role": "competitor",
+        "rationale": "Duration record at 100M K."
+      },
+      {
+        "capability_key": "plasma_confinement",
+        "actor_key": "tokamak_energy",
+        "role": "competitor",
+        "rationale": "Spherical tokamak high-beta route."
+      },
+      {
+        "capability_key": "plasma_confinement",
+        "actor_key": "helion",
+        "role": "competitor",
+        "rationale": "Pulsed FRC alternative."
+      },
+      {
+        "capability_key": "first_wall_materials",
+        "actor_key": "iter",
+        "role": "lead",
+        "rationale": "Be/W wall reference design."
+      },
+      {
+        "capability_key": "first_wall_materials",
+        "actor_key": "us_doe_fes",
+        "role": "supplier",
+        "rationale": "Funds IFMIF-DONES + materials irradiation testing."
+      },
+      {
+        "capability_key": "first_wall_materials",
+        "actor_key": "mit_psfc",
+        "role": "competitor",
+        "rationale": "FLiBe liquid wall concept."
+      },
+      {
+        "capability_key": "hts_magnets",
+        "actor_key": "cfs",
+        "role": "lead",
+        "rationale": "20T REBCO magnet test 2021 — the breakthrough."
+      },
+      {
+        "capability_key": "hts_magnets",
+        "actor_key": "tokamak_energy",
+        "role": "competitor",
+        "rationale": "UK HTS magnet for ST80-HTS."
+      },
+      {
+        "capability_key": "hts_magnets",
+        "actor_key": "mit_psfc",
+        "role": "supplier",
+        "rationale": "Academic test cell + co-development."
+      },
+      {
+        "capability_key": "plant_economics",
+        "actor_key": "helion",
+        "role": "lead",
+        "rationale": "Microsoft PPA at $/MWh — first commercial price point."
+      },
+      {
+        "capability_key": "plant_economics",
+        "actor_key": "cfs",
+        "role": "competitor",
+        "rationale": "ARC commercial business case targets $100/MWh."
+      },
+      {
+        "capability_key": "plant_economics",
+        "actor_key": "ukaea",
+        "role": "competitor",
+        "rationale": "STEP commercial pathway."
+      },
+      {
+        "capability_key": "regulatory_pathway",
+        "actor_key": "us_nrc_fusion",
+        "role": "regulator",
+        "rationale": "Part 30 byproduct framework, April 2024."
+      },
+      {
+        "capability_key": "regulatory_pathway",
+        "actor_key": "ukaea",
+        "role": "regulator",
+        "rationale": "UK fusion regulatory framework (ONR + EA)."
+      },
+      {
+        "capability_key": "supply_chain_rebco",
+        "actor_key": "faraday_factory",
+        "role": "supplier",
+        "rationale": "Japan REBCO tape capacity."
+      },
+      {
+        "capability_key": "supply_chain_rebco",
+        "actor_key": "amsc",
+        "role": "supplier",
+        "rationale": "US REBCO; DOE-funded capacity expansion."
+      },
+      {
+        "capability_key": "workforce_skills",
+        "actor_key": "mit_psfc",
+        "role": "lead",
+        "rationale": "Academic pipeline; spinoff CFS."
+      },
+      {
+        "capability_key": "workforce_skills",
+        "actor_key": "ukaea",
+        "role": "supplier",
+        "rationale": "JET workforce graduating into STEP."
+      },
+      {
+        "capability_key": "workforce_skills",
+        "actor_key": "kstar",
+        "role": "competitor",
+        "rationale": "Korean fusion workforce pipeline."
+      },
+      {
+        "capability_key": "workforce_skills",
+        "actor_key": "us_doe_fes",
+        "role": "supplier",
+        "rationale": "Funds postdoc + workforce programs."
+      },
+      {
+        "capability_key": "grid_integration",
+        "actor_key": "helion",
+        "role": "lead",
+        "rationale": "First commercial PPA forces grid integration to be solved."
+      }
+    ],
+    "memory-semi": [
+      {
+        "capability_key": "ai_hbm_demand_durability",
+        "actor_key": "nvidia_memory",
+        "role": "customer",
+        "rationale": "Largest HBM consumer; vendor qualification choices shape pricing power."
+      },
+      {
+        "capability_key": "ai_hbm_demand_durability",
+        "actor_key": "amd_memory",
+        "role": "customer",
+        "rationale": "Second-largest HBM consumer."
+      },
+      {
+        "capability_key": "ai_hbm_demand_durability",
+        "actor_key": "sia_memory",
+        "role": "regulator",
+        "rationale": "Industry body — monthly billings authority for the demand call."
+      },
+      {
+        "capability_key": "hbm_yield_curve",
+        "actor_key": "sk_hynix",
+        "role": "lead",
+        "rationale": "HBM3E 12-Hi yield leader; primary driver of per-bit cost trajectory."
+      },
+      {
+        "capability_key": "hbm_yield_curve",
+        "actor_key": "samsung_semi",
+        "role": "competitor",
+        "rationale": "Closing yield gap; second-source qualifier."
+      },
+      {
+        "capability_key": "hbm_yield_curve",
+        "actor_key": "micron",
+        "role": "competitor",
+        "rationale": "US-side competitor; 12-Hi qualification on a different timeline."
+      },
+      {
+        "capability_key": "hbm_yield_curve",
+        "actor_key": "tsmc",
+        "role": "supplier",
+        "rationale": "CoWoS packaging is the post-stack bottleneck — yield-side dependency."
+      },
+      {
+        "capability_key": "ddr_pricing_power",
+        "actor_key": "sk_hynix",
+        "role": "lead",
+        "rationale": "Korean duopoly contract-pricing setter."
+      },
+      {
+        "capability_key": "ddr_pricing_power",
+        "actor_key": "samsung_semi",
+        "role": "competitor",
+        "rationale": "Second pole of the duopoly."
+      },
+      {
+        "capability_key": "ddr_pricing_power",
+        "actor_key": "micron",
+        "role": "competitor",
+        "rationale": "US-side counterweight; capex pivot impacts supply curve."
+      },
+      {
+        "capability_key": "ddr_pricing_power",
+        "actor_key": "kioxia",
+        "role": "supplier",
+        "rationale": "NAND price tightness shifts memory-maker capex allocation."
+      },
+      {
+        "capability_key": "node_migration",
+        "actor_key": "micron",
+        "role": "lead",
+        "rationale": "1-gamma DRAM ramp = canonical migration."
+      },
+      {
+        "capability_key": "node_migration",
+        "actor_key": "samsung_semi",
+        "role": "competitor",
+        "rationale": "Node leadership reclaim attempt."
+      },
+      {
+        "capability_key": "node_migration",
+        "actor_key": "sk_hynix",
+        "role": "competitor",
+        "rationale": "Process node + HBM stack co-optimization."
+      },
+      {
+        "capability_key": "node_migration",
+        "actor_key": "asml",
+        "role": "supplier",
+        "rationale": "EUV tooling cadence gates everyone."
+      },
+      {
+        "capability_key": "korea_supply_concentration",
+        "actor_key": "sk_hynix",
+        "role": "lead",
+        "rationale": "Korea concentration risk's primary asset."
+      },
+      {
+        "capability_key": "korea_supply_concentration",
+        "actor_key": "samsung_semi",
+        "role": "lead",
+        "rationale": "Second pole of Korea concentration."
+      },
+      {
+        "capability_key": "korea_supply_concentration",
+        "actor_key": "us_bis",
+        "role": "regulator",
+        "rationale": "Export controls amplify single-country-dependency risk."
+      },
+      {
+        "capability_key": "capex_efficiency",
+        "actor_key": "micron",
+        "role": "lead",
+        "rationale": "Capex-per-bit pivot toward HBM mix is the case study."
+      },
+      {
+        "capability_key": "capex_efficiency",
+        "actor_key": "sk_hynix",
+        "role": "competitor",
+        "rationale": "M16-2 expansion vs. capital discipline."
+      },
+      {
+        "capability_key": "capex_efficiency",
+        "actor_key": "samsung_semi",
+        "role": "competitor",
+        "rationale": "Pyeongtaek capex absorbs share-recovery investment."
+      },
+      {
+        "capability_key": "capex_efficiency",
+        "actor_key": "intel_memory",
+        "role": "competitor",
+        "rationale": "Foundry pivot consumes capex budget elsewhere — opportunity cost."
+      }
+    ],
+    "sofc": [
+      {
+        "capability_key": "stack_durability",
+        "actor_key": "bloom_energy",
+        "role": "lead",
+        "rationale": "Field-data leader; warranty extensions reflect stack-life confidence."
+      },
+      {
+        "capability_key": "stack_durability",
+        "actor_key": "doosan_fc",
+        "role": "competitor",
+        "rationale": "Stack-life warranty extension matches Bloom's curve."
+      },
+      {
+        "capability_key": "stack_durability",
+        "actor_key": "ceres_power",
+        "role": "supplier",
+        "rationale": "Steel-cell IP licensed to Bosch + Doosan; durability inherits from IP."
+      },
+      {
+        "capability_key": "stack_durability",
+        "actor_key": "mitsubishi_power",
+        "role": "competitor",
+        "rationale": "Hybrid SOFC-GT design extends thermal cycling lifetime."
+      },
+      {
+        "capability_key": "system_cost_curve",
+        "actor_key": "bloom_energy",
+        "role": "lead",
+        "rationale": "Public 10-Q segment cost trend is the cleanest cost-curve datapoint."
+      },
+      {
+        "capability_key": "system_cost_curve",
+        "actor_key": "doosan_fc",
+        "role": "competitor",
+        "rationale": "Asia-side cost curve drives global benchmarks."
+      },
+      {
+        "capability_key": "system_cost_curve",
+        "actor_key": "us_doe_eere",
+        "role": "regulator",
+        "rationale": "H2Hubs cost-down funding directly affects OEM BOM."
+      },
+      {
+        "capability_key": "system_cost_curve",
+        "actor_key": "iea_sofc",
+        "role": "regulator",
+        "rationale": "IEA cost outlook is the reference series."
+      },
+      {
+        "capability_key": "datacenter_power_demand",
+        "actor_key": "bloom_energy",
+        "role": "lead",
+        "rationale": "Hyperscaler offtake announcements; AI-DC + SOFC pairing."
+      },
+      {
+        "capability_key": "datacenter_power_demand",
+        "actor_key": "mitsubishi_power",
+        "role": "competitor",
+        "rationale": "Hybrid SOFC-GT targets the same hyperscaler DC use case."
+      },
+      {
+        "capability_key": "datacenter_power_demand",
+        "actor_key": "doosan_fc",
+        "role": "competitor",
+        "rationale": "APAC hyperscaler offtake — secondary channel."
+      },
+      {
+        "capability_key": "fuel_economics",
+        "actor_key": "sunfire",
+        "role": "lead",
+        "rationale": "Reversible stack lets SOFC ride the green-H2 cost curve down."
+      },
+      {
+        "capability_key": "fuel_economics",
+        "actor_key": "iea_sofc",
+        "role": "regulator",
+        "rationale": "IEA green-H2 production cost outlook anchors fuel-cost calc."
+      },
+      {
+        "capability_key": "fuel_economics",
+        "actor_key": "bloom_energy",
+        "role": "competitor",
+        "rationale": "NG-dominant fuel mix today; H2 optionality on roadmap."
+      },
+      {
+        "capability_key": "manufacturing_capacity",
+        "actor_key": "bloom_energy",
+        "role": "lead",
+        "rationale": "Fremont expansion commissioning is the cleanest capacity datapoint."
+      },
+      {
+        "capability_key": "manufacturing_capacity",
+        "actor_key": "doosan_fc",
+        "role": "competitor",
+        "rationale": "Second SOFC manufacturing line; APAC capacity floor."
+      },
+      {
+        "capability_key": "manufacturing_capacity",
+        "actor_key": "ceres_power",
+        "role": "supplier",
+        "rationale": "Licensee model multiplies capacity via Bosch / Doosan."
+      },
+      {
+        "capability_key": "manufacturing_capacity",
+        "actor_key": "fuelcell_energy",
+        "role": "competitor",
+        "rationale": "US-side commercial-scale alt-pole."
+      },
+      {
+        "capability_key": "permitting_interconnection",
+        "actor_key": "us_ferc",
+        "role": "regulator",
+        "rationale": "FERC queue-reform orders directly shorten behind-the-meter SOFC LCOE timeline."
+      },
+      {
+        "capability_key": "permitting_interconnection",
+        "actor_key": "bloom_energy",
+        "role": "customer",
+        "rationale": "Largest beneficiary of queue-reform timeline compression."
+      },
+      {
+        "capability_key": "permitting_interconnection",
+        "actor_key": "us_doe_eere",
+        "role": "regulator",
+        "rationale": "DOE H2Hubs siting affects state-level permitting cadence."
+      }
     ]
   }
 }

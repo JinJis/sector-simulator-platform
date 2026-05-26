@@ -43,9 +43,7 @@ Six product-level outcomes Phase 4 ships:
 ## Milestones
 
 ```
-M48 ──► M49a ──► M49b ──► [MP1✅…MP7✅] ──► M49c✅ ─► M49d✅ ─► M49f✅ ─► M50✅ ─► M52✅ ─► M53✅
-                                                                                                │
-                                                                                                └─► M54
+M48 ──► M49a ──► M49b ──► [MP1✅…MP7✅] ──► M49c✅ ─► M49d✅ ─► M49f✅ ─► M50✅ ─► M52✅ ─► M53✅ ─► M54✅
  │        │        │
  │        │        └─ ActorFetcher (per-actor 90-day DR → actor-tagged Signal)
  │        └─ CapabilityFetcher (per-cap DR → SignalExtractor → Signal)
@@ -608,7 +606,42 @@ here without those interactions.
 visualizations render with real data, tooltips link sources,
 both themes look clean.
 
-### M54 — Full 4-vision seeding  (4–6d)
+### M54 — Full 4-vision seeding  (4–6d) ✅ — **Phase 4 closed**
+
+Shipped 2026-05-26. All four reference visions hit the M54 verify
+baseline after `pnpm db:seed:all`:
+
+| vision | caps | actors | risks | economics | signals | distinct sources |
+|---|---|---|---|---|---|---|
+| target | ≥6 | ≥10 | ≥5 | ≥3 | ≥30 | ≥20 |
+| space-data-center | 9 | 10 | 5 | 13 | 30 | 29 |
+| fusion-power | 9 | 14 | 6 | 15 | 30 | 23 |
+| memory-semi | 6 | 11 | 5 | 14 | 31 | 23 |
+| sofc | 6 | 11 | 5 | 15 | 30 | 25 |
+
+Shipped:
+- `packages/db/prisma/seed-data/actors.json` extended with 22 new
+  actors covering memory-semi (SK hynix / Samsung / Micron /
+  NVIDIA / TSMC / AMD / Intel / Kioxia / ASML / US BIS / SIA) and
+  sofc (Bloom Energy / Doosan FC / Ceres Power / FuelCell Energy /
+  Mitsubishi Power / Convion / Sunfire / SOLIDpower / DOE EERE /
+  FERC / IEA). Per-vision relevance, rationale, capability_actor
+  assignments with role priority (lead → supplier → customer →
+  competitor → regulator).
+- `packages/db/prisma/seed-data/visions/memory-semi.json` +
+  `sofc.json` gained 2 risks each (5 total each) with MP4 source
+  attribution (BIS / TrendForce / FERC / DOE).
+- `packages/db/prisma/seed-signals.ts` densified — 47 new entries
+  across the 4 visions (134 upserts, 121 unique rows after
+  (source_url, capability_id) dedup) so every vision reads
+  screenshot-quality.
+
+**Phase 4 result**: the full real-time intelligence pipeline ships.
+Crawler (M48) → fetcher set (M49a-f) → discovery loop (M50) →
+admin cockpit (M52) → visualization pack (M53) → 4-vision full
+seeding (M54). Twitter-demo-thread-shootable end-to-end. Live
+crawler running per vision keeps the surface auto-fresh going
+forward; admin can dispatch / approve / govern from /admin/crawler.
 
 Pressure-tests the whole stack on 4 visions in parallel.
 

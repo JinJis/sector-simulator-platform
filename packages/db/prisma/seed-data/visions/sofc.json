@@ -215,6 +215,42 @@
       "source_url": "https://patents.google.com/?q=solid+oxide+fuel+cell+electrolyte",
       "source_kind": "patent",
       "source_title": "Solid-oxide electrolyte patent landscape"
+    },
+    {
+      "key": "ferc_queue_slip",
+      "category": "political",
+      "name": "FERC interconnection-queue rule delay",
+      "description": "Implementation of FERC Order 2023 interconnection-queue reform slips; behind-the-meter SOFC LCOE accretion fails to materialize on schedule.",
+      "severity": "medium",
+      "likelihood": "medium",
+      "time_horizon": "1y",
+      "mitigations": "Direct utility partnerships (microgrid); state-level fast-track permits; sovereign-immunity backstop programs.",
+      "affected_capability_keys": [
+        "permitting_interconnection",
+        "system_cost_curve"
+      ],
+      "display_order": 40,
+      "source_url": "https://www.ferc.gov/news-events/news/news-releases",
+      "source_kind": "gov_report",
+      "source_title": "FERC — Order 2023 implementation timeline"
+    },
+    {
+      "key": "doe_funding_uncertainty",
+      "category": "financial",
+      "name": "DOE H2Hubs funding rescission risk",
+      "description": "H2Hubs program funding clawback under congressional appropriations review; stack-cost-down trajectory loses scheduled subsidy.",
+      "severity": "high",
+      "likelihood": "low",
+      "time_horizon": "1y",
+      "mitigations": "Diversify funding sources (DOE LPO, IRA tax credits); EU H2 backbone funding fallback; private-equity replacement capital.",
+      "affected_capability_keys": [
+        "system_cost_curve",
+        "manufacturing_capacity"
+      ],
+      "display_order": 50,
+      "source_url": "https://www.energy.gov/eere/fuelcells",
+      "source_kind": "gov_report",
+      "source_title": "DOE EERE — H2Hubs program status"
     }
   ]
 }

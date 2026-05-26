@@ -335,6 +335,71 @@ const SDC: SignalSeed[] = [
     days_ago: 36,
     deltas: { economic: 1 },
   },
+  // M54 — densify to ≥30 signals per vision.
+  {
+    capability_key: "in_orbit_power",
+    source_kind: "paper",
+    source_url: "https://arxiv.org/list/astro-ph.IM/recent",
+    title: "Roll-out solar array reliability tested under thermal cycling",
+    summary:
+      "JPL test campaign confirms next-gen ROSA panels survive 5x previous thermal-cycle counts without measurable efficiency loss.",
+    days_ago: 9,
+    deltas: { technical: 2 },
+  },
+  {
+    capability_key: "downlink_bandwidth",
+    actor_key: "nasa",
+    source_kind: "gov_report",
+    source_url: "https://www.nasa.gov/communicating-with-missions/space-relay-partnership/",
+    title: "NASA Communications Services Project finalist round",
+    summary:
+      "Commercial relay service downselect narrows to 3 finalists; orbital DC downlink leverages the same Ka-band ground network.",
+    days_ago: 15,
+    deltas: { technical: 1, regulatory: 2 },
+  },
+  {
+    capability_key: "tier3_reliability",
+    source_kind: "vendor_doc",
+    source_url: "https://www.cisco.com/c/en/us/products/cloud-systems-management/",
+    title: "Vendor whitepaper: orchestration patterns for unreachable nodes",
+    summary:
+      "Industry reference architecture for managing nodes with hours-long repair latency. Applies cleanly to orbital DC fleet operations.",
+    days_ago: 22,
+    deltas: { technical: 1 },
+  },
+  {
+    capability_key: "spectrum_allocation",
+    source_kind: "news",
+    source_url: "https://www.reuters.com/business/aerospace-defense/",
+    title: "Q-band coordination dispute escalates between megaconstellations",
+    summary:
+      "Multiple operators file conflicting Q-band coordination requests at ITU; resolution timeline slips by quarters.",
+    days_ago: 26,
+    deltas: { regulatory: -2, supply: -1 },
+  },
+  {
+    capability_key: "launch_economics",
+    actor_key: "blue_origin",
+    source_kind: "press",
+    source_url: "https://www.blueorigin.com/news",
+    title: "Blue Origin New Glenn first commercial payload contract",
+    summary:
+      "Second medium-heavy launch option locks in commercial contract; supplier diversification continues to compress $/kg outlook.",
+    days_ago: 32,
+    deltas: { economic: 1, supply: 2 },
+  },
+  {
+    capability_key: "rad_hard_compute",
+    actor_key: "intel",
+    source_kind: "press",
+    source_url: "https://www.intel.com/content/www/us/en/newsroom/news/",
+    title: "Intel Foundry Services adds space-grade qualification line",
+    summary:
+      "IFS opens dedicated space-grade IC qualification capacity; second-source path emerging beyond AMD + Cobham for orbital DC silicon.",
+    days_ago: 38,
+    deltas: { supply: 3, technical: 1 },
+    is_highlight: true,
+  },
 ];
 
 const FUSION: SignalSeed[] = [
@@ -579,6 +644,151 @@ const FUSION: SignalSeed[] = [
     days_ago: 16,
     deltas: { technical: 2 },
   },
+  // M54 — densify to ≥30 signals per vision.
+  {
+    capability_key: "plasma_confinement",
+    actor_key: "cfs",
+    source_kind: "paper",
+    source_url: "https://arxiv.org/list/physics.plasm-ph/recent",
+    title: "SPARC scenario modeling extends operating-point envelope",
+    summary:
+      "Updated 0-D and 1-D modeling for the SPARC point-design expands the predicted H-mode operating envelope, increasing margins.",
+    days_ago: 27,
+    deltas: { technical: 2 },
+  },
+  {
+    capability_key: "tritium_breeding",
+    actor_key: "iter",
+    source_kind: "press",
+    source_url: "https://www.iter.org/news",
+    title: "ITER TBM port-plug fabrication milestone",
+    summary:
+      "Test blanket module port-plug fabrication clears welding qualification; integration ahead of schedule by a quarter.",
+    days_ago: 33,
+    deltas: { technical: 2, supply: 1 },
+  },
+  {
+    capability_key: "hts_magnets",
+    actor_key: "cfs",
+    source_kind: "press",
+    source_url: "https://cfs.energy/news-and-media",
+    title: "CFS magnet test bench achieves 21T peak field",
+    summary:
+      "Test-bench validation confirms HTS coil design capable of 21T peak field; commercial-scale magnet path de-risked.",
+    days_ago: 18,
+    deltas: { technical: 3 },
+    is_highlight: true,
+  },
+  {
+    capability_key: "first_wall_materials",
+    actor_key: "ukaea",
+    source_kind: "gov_report",
+    source_url: "https://www.gov.uk/government/organisations/uk-atomic-energy-authority",
+    title: "UKAEA MAST-U materials irradiation campaign extended",
+    summary:
+      "Test campaign on advanced tungsten alloys + reduced-activation steels extends through next operating window.",
+    days_ago: 23,
+    deltas: { technical: 1 },
+  },
+  {
+    capability_key: "plant_economics",
+    actor_key: "us_doe_fes",
+    source_kind: "gov_report",
+    source_url: "https://science.osti.gov/fes",
+    title: "DOE FES milestone awardees clear technical gate review",
+    summary:
+      "Second-tranche review confirms 6 of 8 awardees pass technical milestones; cost-share unlocks for next phase.",
+    days_ago: 28,
+    deltas: { economic: 2, technical: 1 },
+  },
+  {
+    capability_key: "regulatory_pathway",
+    actor_key: "us_nrc_fusion",
+    source_kind: "filing",
+    source_url: "https://www.nrc.gov/reactors/new-reactors/advanced/fusion-energy.html",
+    title: "NRC publishes Part 53 byproduct material licensing framework",
+    summary:
+      "Final framework published; commercial fusion licensees can apply under the streamlined Part 53 process beginning Q1.",
+    days_ago: 31,
+    deltas: { regulatory: 4 },
+    is_highlight: true,
+  },
+  {
+    capability_key: "supply_chain_rebco",
+    actor_key: "amsc",
+    source_kind: "press",
+    source_url: "https://www.amsc.com/news-events/",
+    title: "AMSC qualifies second REBCO conductor line",
+    summary:
+      "Second-source REBCO conductor qualification reduces single-line dependency for US fusion programs.",
+    days_ago: 35,
+    deltas: { supply: 2 },
+  },
+  {
+    capability_key: "workforce_skills",
+    actor_key: "mit_psfc",
+    source_kind: "press",
+    source_url: "https://www.psfc.mit.edu/news",
+    title: "MIT PSFC opens fusion engineering MS program enrollment",
+    summary:
+      "New degree program addresses the workforce-skills bottleneck; first cohort enrolls for the following academic year.",
+    days_ago: 41,
+    deltas: { supply: 2 },
+  },
+  {
+    capability_key: "grid_integration",
+    source_kind: "analyst_report",
+    source_url: "https://www.iea.org/topics/electricity",
+    title: "IEA grid-integration brief on fusion baseload pathways",
+    summary:
+      "Technical brief surveys interconnection studies for first-of-a-kind fusion units; key blocker identified as locational queue depth.",
+    days_ago: 44,
+    deltas: { regulatory: 1 },
+  },
+  {
+    capability_key: "plasma_confinement",
+    actor_key: "kstar",
+    source_kind: "news",
+    source_url: "https://www.kfe.re.kr/eng/",
+    title: "KSTAR achieves new long-pulse H-mode record",
+    summary:
+      "Korean Superconducting Tokamak Advanced Research extends long-pulse H-mode duration by 30%, validating steady-state operating modes.",
+    days_ago: 25,
+    deltas: { technical: 2 },
+  },
+  {
+    capability_key: "regulatory_pathway",
+    actor_key: "ukaea",
+    source_kind: "gov_report",
+    source_url: "https://www.gov.uk/government/news",
+    title: "UK ONR publishes fusion plant licensing framework consultation",
+    summary:
+      "Public consultation opens on UK's fusion-plant licensing pathway; industry expects framework finalization within 18 months.",
+    days_ago: 47,
+    deltas: { regulatory: 2 },
+  },
+  {
+    capability_key: "hts_magnets",
+    actor_key: "tokamak_energy",
+    source_kind: "press",
+    source_url: "https://www.tokamakenergy.com/insights",
+    title: "Tokamak Energy completes ST80-HTS magnet integration testing",
+    summary:
+      "Integration test of HTS magnet assembly clears cool-down + ramp-up validation; one milestone away from first plasma campaign.",
+    days_ago: 50,
+    deltas: { technical: 2 },
+  },
+  {
+    capability_key: "plant_economics",
+    actor_key: "general_fusion",
+    source_kind: "news",
+    source_url: "https://www.bloomberg.com/news/articles",
+    title: "Bloomberg — General Fusion completes Series F at uptick",
+    summary:
+      "Latest funding round closes above prior round; magnetized-target-fusion path retains investor confidence post-LM26 update.",
+    days_ago: 53,
+    deltas: { economic: 2 },
+  },
 ];
 
 const MEMSEMI: SignalSeed[] = [
@@ -795,6 +1005,160 @@ const MEMSEMI: SignalSeed[] = [
     days_ago: 10,
     deltas: { technical: 2, economic: 1 },
   },
+  // M54 — densify to ≥30 signals per vision.
+  {
+    capability_key: "hbm_yield_curve",
+    actor_key: "tsmc",
+    source_kind: "press",
+    source_url: "https://pr.tsmc.com/english/news",
+    title: "TSMC announces CoWoS-L capacity addition for FY26",
+    summary:
+      "Advanced packaging capacity expansion clears board approval; CoWoS-L line supports next-generation HBM stack volumes through FY26.",
+    days_ago: 4,
+    deltas: { supply: 3 },
+    is_highlight: true,
+  },
+  {
+    capability_key: "node_migration",
+    actor_key: "asml",
+    source_kind: "press",
+    source_url: "https://www.asml.com/en/news",
+    title: "ASML High-NA EUV first commercial tool shipment",
+    summary:
+      "First High-NA EUV tool ships to a Korean fab; node-migration cadence for sub-1-gamma DRAM unlocked on a new timeline.",
+    days_ago: 11,
+    deltas: { technical: 3, supply: 2 },
+  },
+  {
+    capability_key: "ai_hbm_demand_durability",
+    actor_key: "amd_memory",
+    source_kind: "press",
+    source_url: "https://www.amd.com/en/newsroom.html",
+    title: "AMD MI400 series multi-customer design wins disclosed",
+    summary:
+      "MI400 Instinct line announces multi-hyperscaler design wins. AMD HBM consumption guidance revised upward through FY26.",
+    days_ago: 14,
+    deltas: { economic: 2, supply: 1 },
+  },
+  {
+    capability_key: "ddr_pricing_power",
+    actor_key: "kioxia",
+    source_kind: "press",
+    source_url: "https://www.kioxia.com/en-jp/about/news/",
+    title: "Kioxia adjusts NAND capacity guidance after demand pickup",
+    summary:
+      "Tighter NAND pricing pushes memory-maker capex priority toward HBM relative to commodity DRAM — second-order DDR ASP support.",
+    days_ago: 17,
+    deltas: { economic: 1, supply: 1 },
+  },
+  {
+    capability_key: "korea_supply_concentration",
+    actor_key: "tsmc",
+    source_kind: "analyst_report",
+    source_url: "https://www.trendforce.com/news",
+    title: "TrendForce — Taiwan exposure adds secondary single-country concentration",
+    summary:
+      "Memory + packaging supply chain has two single-country chokepoints (KR + TW). Diversification path is multi-year.",
+    days_ago: 20,
+    deltas: { supply: -1 },
+  },
+  {
+    capability_key: "capex_efficiency",
+    actor_key: "intel_memory",
+    source_kind: "press",
+    source_url: "https://www.intc.com/news-events",
+    title: "Intel Foundry Services Q3 update — packaging-first capex profile",
+    summary:
+      "IFS prioritizes packaging capacity expansion over leading-edge node investment; reads as compounding HBM packaging supply.",
+    days_ago: 24,
+    deltas: { supply: 2 },
+  },
+  {
+    capability_key: "hbm_yield_curve",
+    actor_key: "micron",
+    source_kind: "filing",
+    source_url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=micron",
+    title: "Micron Form 8-K — 12-Hi HBM3E qualification milestone",
+    summary:
+      "SEC filing confirms Micron 12-Hi HBM3E qualification on schedule; second US-side source against the Korean duopoly.",
+    days_ago: 28,
+    deltas: { supply: 2, technical: 2 },
+  },
+  {
+    capability_key: "ai_hbm_demand_durability",
+    source_kind: "news",
+    source_url: "https://www.ft.com/companies/technology",
+    title: "FT — AI training infrastructure spend reaccelerates",
+    summary:
+      "Recent earnings prints across hyperscalers point to upward revision of AI training capex through FY27.",
+    days_ago: 32,
+    deltas: { economic: 2 },
+  },
+  {
+    capability_key: "node_migration",
+    source_kind: "paper",
+    source_url: "https://arxiv.org/list/cs.AR/recent",
+    title: "Review: 3D DRAM stacking thermal management approaches",
+    summary:
+      "Academic survey identifies near-term scaling ceiling at the thermal-management layer, not the lithography layer.",
+    days_ago: 36,
+    deltas: { technical: 1 },
+  },
+  {
+    capability_key: "korea_supply_concentration",
+    actor_key: "samsung_semi",
+    source_kind: "press",
+    source_url: "https://news.samsung.com/global/category/business",
+    title: "Samsung announces US-side HBM packaging investment",
+    summary:
+      "US packaging investment reduces Korea-only dependency for downstream packaging steps; multi-year capacity ramp.",
+    days_ago: 39,
+    deltas: { supply: 1, regulatory: 1 },
+  },
+  {
+    capability_key: "capex_efficiency",
+    actor_key: "sia_memory",
+    source_kind: "analyst_report",
+    source_url: "https://www.semiconductors.org/news/",
+    title: "SIA — memory billings outpace industry trend two quarters running",
+    summary:
+      "Industry billings data shows memory revenue outpacing broader semiconductor growth; capex efficiency on HBM side dominant driver.",
+    days_ago: 43,
+    deltas: { economic: 2 },
+  },
+  {
+    capability_key: "korea_supply_concentration",
+    actor_key: "us_bis",
+    source_kind: "filing",
+    source_url: "https://www.federalregister.gov/agencies/industry-and-security-bureau",
+    title: "BIS Federal Register notice on HBM export controls",
+    summary:
+      "Federal Register notice proposes expanding HBM export-control coverage to mid-tier products; comment period opens.",
+    days_ago: 47,
+    deltas: { regulatory: -2 },
+  },
+  {
+    capability_key: "ai_hbm_demand_durability",
+    actor_key: "nvidia_memory",
+    source_kind: "press",
+    source_url: "https://nvidianews.nvidia.com/news",
+    title: "NVIDIA forward-guidance update strengthens HBM consumption story",
+    summary:
+      "Investor day disclosures lift FY27 HBM consumption estimates; second-derivative also positive.",
+    days_ago: 50,
+    deltas: { economic: 2, supply: 1 },
+  },
+  {
+    capability_key: "ddr_pricing_power",
+    actor_key: "samsung_semi",
+    source_kind: "press",
+    source_url: "https://semiconductor.samsung.com/news-events",
+    title: "Samsung Semiconductor DDR5 product roadmap update",
+    summary:
+      "Samsung publishes DDR5 product roadmap including new densities; pricing power signaled by deliberate cadence.",
+    days_ago: 53,
+    deltas: { economic: 1 },
+  },
 ];
 
 const SOFC: SignalSeed[] = [
@@ -1005,6 +1369,160 @@ const SOFC: SignalSeed[] = [
       "Cross-border manufacturing partnership reduces single-vendor dependency; supplier diversity narrative improves.",
     days_ago: 27,
     deltas: { supply: 2 },
+  },
+  // M54 — densify to ≥30 signals per vision.
+  {
+    capability_key: "datacenter_power_demand",
+    actor_key: "bloom_energy",
+    source_kind: "press",
+    source_url: "https://www.bloomenergy.com/news/",
+    title: "Bloom Energy + hyperscaler announce multi-site SOFC PPA",
+    summary:
+      "Multi-site behind-the-meter PPA across NA + EU — single largest commercial SOFC commitment to date.",
+    days_ago: 2,
+    deltas: { economic: 3, supply: 2 },
+    is_highlight: true,
+  },
+  {
+    capability_key: "stack_durability",
+    actor_key: "ceres_power",
+    source_kind: "press",
+    source_url: "https://www.ceres.tech/news/",
+    title: "Ceres SteelCell stack achieves new 50,000-hour milestone",
+    summary:
+      "Independent test rig confirms SteelCell stack durability beyond 50,000-hour mark with measurable margin remaining.",
+    days_ago: 6,
+    deltas: { technical: 3 },
+  },
+  {
+    capability_key: "system_cost_curve",
+    actor_key: "doosan_fc",
+    source_kind: "press",
+    source_url: "https://www.doosanfuelcell.com/en/notice/news",
+    title: "Doosan Fuel Cell unit-cost guidance revised downward",
+    summary:
+      "Quarterly guidance reflects faster-than-expected unit-cost decline; APAC-side system cost curve crosses key threshold.",
+    days_ago: 10,
+    deltas: { economic: 3 },
+  },
+  {
+    capability_key: "fuel_economics",
+    actor_key: "sunfire",
+    source_kind: "press",
+    source_url: "https://www.sunfire.de/en/news",
+    title: "Sunfire reversible stack demo achieves dual-mode efficiency targets",
+    summary:
+      "Reversible SOFC/SOE stack demo hits dual-mode efficiency targets; bridges SOFC commercial path with green-H2 buildout.",
+    days_ago: 13,
+    deltas: { technical: 2, economic: 1 },
+  },
+  {
+    capability_key: "manufacturing_capacity",
+    actor_key: "mitsubishi_power",
+    source_kind: "press",
+    source_url: "https://power.mhi.com/news",
+    title: "Mitsubishi Power expands hybrid SOFC-GT integration line",
+    summary:
+      "Industrial-scale hybrid SOFC-GT integration line expansion targets DC + steel-mill cogeneration customers.",
+    days_ago: 18,
+    deltas: { supply: 2 },
+  },
+  {
+    capability_key: "datacenter_power_demand",
+    source_kind: "analyst_report",
+    source_url: "https://www.iea.org/topics/electricity",
+    title: "IEA — data-center electricity demand revised upward",
+    summary:
+      "Updated IEA outlook revises 2027 data-center electricity demand upward by 15%; behind-the-meter generation attractiveness compounds.",
+    days_ago: 22,
+    deltas: { economic: 2 },
+  },
+  {
+    capability_key: "permitting_interconnection",
+    source_kind: "news",
+    source_url: "https://www.utilitydive.com/topic/distributed-energy/",
+    title: "Multiple state PUCs publish queue-reform implementation timelines",
+    summary:
+      "Coordinated state-level implementation cadence shortens behind-the-meter SOFC interconnection by months on average.",
+    days_ago: 28,
+    deltas: { regulatory: 3 },
+    is_highlight: true,
+  },
+  {
+    capability_key: "fuel_economics",
+    actor_key: "iea_sofc",
+    source_kind: "analyst_report",
+    source_url: "https://www.iea.org/topics/hydrogen",
+    title: "IEA — Green-H2 production cost outlook revised downward",
+    summary:
+      "Green-H2 production cost forecast pulled forward by ~2 years; SOFC fuel optionality strengthens through the 2030s.",
+    days_ago: 33,
+    deltas: { economic: 2 },
+  },
+  {
+    capability_key: "stack_durability",
+    source_kind: "paper",
+    source_url: "https://arxiv.org/list/cond-mat.mtrl-sci/recent",
+    title: "Materials science survey on SOFC interconnect coating durability",
+    summary:
+      "Survey paper benchmarks alternative interconnect coating chemistries; identifies most promising path to 80,000-hour stack life.",
+    days_ago: 36,
+    deltas: { technical: 1 },
+  },
+  {
+    capability_key: "manufacturing_capacity",
+    actor_key: "solidpower",
+    source_kind: "press",
+    source_url: "https://www.solidpower.com/news/",
+    title: "SOLIDpower commissions second EU residential SOFC line",
+    summary:
+      "Capacity addition targets EU residential / light-commercial — diversifies SOFC TAM beyond hyperscaler DC.",
+    days_ago: 41,
+    deltas: { supply: 2 },
+  },
+  {
+    capability_key: "system_cost_curve",
+    actor_key: "fuelcell_energy",
+    source_kind: "filing",
+    source_url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=fuelcell+energy",
+    title: "FuelCell Energy 10-Q segment update on SOFC pilot economics",
+    summary:
+      "SEC filing breaks out SOFC pilot-line per-kW cost vs. molten-carbonate base; pilot economics trend toward Bloom Energy curve.",
+    days_ago: 45,
+    deltas: { economic: 1, technical: 1 },
+  },
+  {
+    capability_key: "permitting_interconnection",
+    actor_key: "us_ferc",
+    source_kind: "gov_report",
+    source_url: "https://www.ferc.gov/industries-data/electric",
+    title: "FERC quarterly interconnection report — queue depth flattening",
+    summary:
+      "Queue depth flattens for the first time in three years post-reform implementation; downstream LCOE compression visible.",
+    days_ago: 48,
+    deltas: { regulatory: 2 },
+  },
+  {
+    capability_key: "datacenter_power_demand",
+    actor_key: "mitsubishi_power",
+    source_kind: "press",
+    source_url: "https://power.mhi.com/regions/asia",
+    title: "Mitsubishi Power APAC SOFC deployment update",
+    summary:
+      "Asia-Pacific behind-the-meter SOFC deployments reach commercial scale at multiple sites; replicable design pattern.",
+    days_ago: 52,
+    deltas: { supply: 2 },
+  },
+  {
+    capability_key: "stack_durability",
+    actor_key: "us_doe_eere",
+    source_kind: "gov_report",
+    source_url: "https://www.energy.gov/eere/fuelcells/stationary-fuel-cell-systems",
+    title: "DOE EERE — stationary fuel cell stack durability roadmap update",
+    summary:
+      "Roadmap targets 80,000-hour stack life by 2028. Funded test stands at NREL + ANL accelerating empirical baseline.",
+    days_ago: 55,
+    deltas: { technical: 2 },
   },
 ];
 

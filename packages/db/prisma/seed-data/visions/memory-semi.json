@@ -216,6 +216,42 @@
       "source_url": "https://www.bloomberg.com/news/articles",
       "source_kind": "news",
       "source_title": "Bloomberg — hyperscaler capex commentary"
+    },
+    {
+      "key": "korea_logistics_disruption",
+      "category": "supply",
+      "name": "Korea single-country logistics disruption",
+      "description": "Strike, earthquake, or geopolitical event in Korea halts >80% of global HBM shipments for days-to-weeks.",
+      "severity": "high",
+      "likelihood": "low",
+      "time_horizon": "5y",
+      "mitigations": "Multi-site buffer inventory; US/JP secondary capacity; diplomatic engagement.",
+      "affected_capability_keys": [
+        "korea_supply_concentration",
+        "hbm_yield_curve"
+      ],
+      "display_order": 40,
+      "source_url": "https://www.reuters.com/technology/",
+      "source_kind": "news",
+      "source_title": "Reuters — Korean logistics disruption coverage"
+    },
+    {
+      "key": "cowos_bottleneck",
+      "category": "supply",
+      "name": "CoWoS packaging capacity bottleneck",
+      "description": "TSMC's CoWoS advanced-packaging line is the single chokepoint for HBM-stacked accelerator shipments; capacity expansion lagging demand.",
+      "severity": "high",
+      "likelihood": "medium",
+      "time_horizon": "1y",
+      "mitigations": "Alternative packaging (SoIC, ABF substrates); diversified packaging partners (Intel Foundry); inventory buffering.",
+      "affected_capability_keys": [
+        "hbm_yield_curve",
+        "ai_hbm_demand_durability"
+      ],
+      "display_order": 50,
+      "source_url": "https://www.trendforce.com/news",
+      "source_kind": "analyst_report",
+      "source_title": "TrendForce — CoWoS capacity outlook"
     }
   ]
 }
