@@ -8,10 +8,17 @@
  * `actor.listForVision` tRPC query once seed data lands.
  */
 
-import { ActorCard, type ActorCategory, type ActorStage } from "@platform/ui";
+import {
+  ActorCard,
+  ActorRelevanceBubble,
+  type ActorBubblePoint,
+  type ActorBubbleStage,
+  type ActorCategory,
+  type ActorStage,
+} from "@platform/ui";
 import { notFound } from "next/navigation";
 
-import { fetchVisions } from "@/lib/vision-client";
+import { getT } from "@/lib/i18n/server";
 import { trpc } from "@/lib/sim-client";
 
 import { getVisionFixture } from "../../_fixtures";
@@ -42,6 +49,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 
 export default async function ActorsIndexPage({ params }: Props) {
   const { slug } = await params;
+  const t = await getT();
 
   // Try DB first via actor.listForVision; fall back to fixture if the
   // tRPC client can't reach sector-service. Maps the VisionActor join
@@ -82,6 +90,24 @@ export default async function ActorsIndexPage({ params }: Props) {
     actors = fixture.overview.actors;
   }
 
+  // M53 — pull 90d signal counts per actor for the bubble plot.
+  // Fail soft: chart hides itself when the query is empty.
+  let signalCounts: Array<{
+    actor_id: string;
+    actor_key: string;
+    actor_name: string;
+    count: number;
+  }> = [];
+  try {
+    signalCounts = await trpc.signal.countByActor.query({
+      sector_slug: slug,
+      days: 90,
+    });
+  } catch {
+    signalCounts = [];
+  }
+  const countByActorKey = new Map(signalCounts.map((c) => [c.actor_key, c.count]));
+
   if (actors.length === 0) {
     return (
       <section className="rounded-xl border border-dashed border-neutral-800 bg-neutral-900/30 p-8 text-center">
@@ -110,6 +136,20 @@ export default async function ActorsIndexPage({ params }: Props) {
     });
   }
 
+  // Derive bubble points: only actors with relevance + non-zero
+  // signals make the chart legible. Empty → render an empty-state note.
+  const bubblePoints: ActorBubblePoint[] = actors
+    .filter((a) => a.relevance != null)
+    .map((a) => ({
+      actor_key: a.actor_key,
+      label: a.short_name ?? a.name,
+      relevance: a.relevance!,
+      signal_count: countByActorKey.get(a.actor_key) ?? 0,
+      stage: a.stage as ActorBubbleStage,
+      category: a.category,
+      href: `/visions/${slug}/actors/${a.actor_key}`,
+    }));
+
   return (
     <div className="space-y-8">
       <div>
@@ -123,6 +163,29 @@ export default async function ActorsIndexPage({ params }: Props) {
           when extractor confidence ≥ 0.8.
         </p>
       </div>
+
+      {/* M53 — Actor relevance × signal-volume bubble plot. */}
+      <section className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-5">
+        <div className="mb-1 flex items-baseline justify-between">
+          <h3 className="text-sm font-medium uppercase tracking-wider text-neutral-400">
+            {t("actors.bubble.title")}
+          </h3>
+          <span className="text-[10px] text-neutral-500">
+            x relevance · y 90d signals · size stage · color category
+          </span>
+        </div>
+        {bubblePoints.length === 0 || bubblePoints.every((p) => p.signal_count === 0) ? (
+          <p className="text-xs text-neutral-500">{t("actors.bubble.empty")}</p>
+        ) : (
+          <ActorRelevanceBubble
+            items={bubblePoints}
+            width={720}
+            height={320}
+            className="w-full"
+            ariaLabel="Actor relevance vs signal volume"
+          />
+        )}
+      </section>
 
       {CATEGORY_ORDER.map((cat) => {
         const bucket = grouped.get(cat);

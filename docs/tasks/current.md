@@ -43,9 +43,9 @@ Six product-level outcomes Phase 4 ships:
 ## Milestones
 
 ```
-M48 ──► M49a ──► M49b ──► [MP1✅…MP7✅] ──► M49c✅ ─► M49d✅ ─► M49f✅ ─► M50✅ ─► M52✅
-                                                                                      │
-                                                                                      └─► M53 ─► M54
+M48 ──► M49a ──► M49b ──► [MP1✅…MP7✅] ──► M49c✅ ─► M49d✅ ─► M49f✅ ─► M50✅ ─► M52✅ ─► M53✅
+                                                                                                │
+                                                                                                └─► M54
  │        │        │
  │        │        └─ ActorFetcher (per-actor 90-day DR → actor-tagged Signal)
  │        └─ CapabilityFetcher (per-cap DR → SignalExtractor → Signal)
@@ -543,7 +543,44 @@ proposal, all without leaving the cockpit. ✓
 see its cost meter increment, then approve the resulting bot
 proposal — all without leaving the cockpit.
 
-### M53 — Vision Visualization pack  (5–7d)
+### M53 — Vision Visualization pack  (5–7d) ✅
+
+Shipped 2026-05-26. composition.md §9's five chart components in
+place; two of the five were already in tree from earlier MP work
+(EconomicsCurveChart from MP5, RiskMatrix from MP4) so this slice
+shipped the three remaining ones plus the data plumbing.
+
+Shipped this slice:
+- `packages/ui/src/capability-radar.tsx` — pure SVG 4-axis radar
+  (technical / economic / regulatory / supply, 0..100 scale) with
+  current polygon (emerald fill) + optional baseline polygon (90d
+  ago, neutral dashed). Embedded on Overview as a vision-aggregate
+  view averaged across the vision's capabilities.
+- `packages/ui/src/feasibility-timeline.tsx` — pure SVG dual-axis:
+  composite-score line + optional p10/p90 confidence band (left
+  axis) over daily signal-volume bars (right axis). Embedded on
+  Overview to make the "signal spikes match score moves" story
+  read at a glance.
+- `packages/ui/src/actor-relevance-bubble.tsx` — pure SVG bubble
+  plot. x = per-vision relevance, y = 90-day signal count, size by
+  stage (research → scaling), color by category. Each bubble is a
+  router link to the actor detail page. Embedded on the Actors tab.
+
+Data plumbing:
+- `signal.dailyVolume({sector_slug, days})` — Postgres date_trunc
+  rollup; feeds the timeline's bars.
+- `signal.countByActor({sector_slug, days})` — Prisma groupBy on
+  actor_id joined with actor names; feeds the bubble plot.
+
+Pre-existing (per composition.md §9 inventory — not re-shipped):
+- ✅ `EconomicsCurveChart` (MP5) covers item 3 "CostCurveCrossover"
+  — dual-line + crossover marker + per-datapoint SourceChip table.
+- ✅ `RiskMatrix` (MP4) covers item 5 "RiskHeatmap" —
+  severity × likelihood grid with onCellClick filter.
+
+Per-capability radar on the capability detail page + click-to-source
+hover on the timeline are M51 follow-ups; the visual baseline ships
+here without those interactions.
 
 5 chart components from composition.md §9.
 

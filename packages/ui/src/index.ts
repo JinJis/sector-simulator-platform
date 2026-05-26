@@ -11,6 +11,23 @@ export {
   type ActorStage,
 } from "./actor-card";
 export { ActorPill, type ActorPillProps } from "./actor-pill";
+export {
+  ActorRelevanceBubble,
+  type ActorBubblePoint,
+  type ActorBubbleStage,
+  type ActorRelevanceBubbleProps,
+} from "./actor-relevance-bubble";
+export {
+  CapabilityRadar,
+  type CapabilityRadarDims,
+  type CapabilityRadarProps,
+} from "./capability-radar";
+export {
+  FeasibilityTimeline,
+  type FeasibilityTimelineProps,
+  type TimelinePoint,
+  type TimelineVolumePoint,
+} from "./feasibility-timeline";
 export { CapabilityCard, type CapabilityCardProps } from "./capability-card";
 export {
   CapabilityHeatmap,

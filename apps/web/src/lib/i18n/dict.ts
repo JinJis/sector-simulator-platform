@@ -679,6 +679,13 @@ export const DICT: Record<string, Entry> = {
   "hero.section.economics": { ko: "경제성", en: "Economics" },
   "hero.section.riskBoard": { ko: "리스크 보드", en: "Risk board" },
   "hero.section.liveSignals": { ko: "라이브 신호", en: "Live signals" },
+  "hero.section.capabilityRadar": { ko: "Capability 레이더", en: "Capability radar" },
+  "hero.section.timeline": { ko: "Feasibility 추이", en: "Feasibility timeline" },
+  "actors.bubble.title": { ko: "Actor 분포", en: "Actor relevance × signal volume" },
+  "actors.bubble.empty": {
+    ko: "차트 가능한 데이터가 없습니다 (relevance + 90d 신호 필요).",
+    en: "Not enough chartable data yet (needs relevance + 90d signals).",
+  },
   "hero.viewAll": { ko: "전체 보기 →", en: "View all →" },
   "hero.fullBoard": { ko: "전체 보드 →", en: "Full board →" },
   "hero.fullCurves": { ko: "전체 곡선 →", en: "Full curves →" },

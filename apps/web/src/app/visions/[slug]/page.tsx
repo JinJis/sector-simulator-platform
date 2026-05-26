@@ -16,9 +16,14 @@ import {
   ActorCard,
   ActorPill,
   CapabilityCard,
+  CapabilityRadar,
+  type CapabilityRadarDims,
   EconomicsCurveChart,
   EtaWindow,
   FeasibilityGauge,
+  FeasibilityTimeline,
+  type TimelinePoint,
+  type TimelineVolumePoint,
   RiskRow,
   SignalRow,
   type ActorCategory,
@@ -160,6 +165,61 @@ export default async function VisionOverviewPage({ params }: Props) {
     composite: h.composite,
     p10: h.composite_p10,
     p90: h.composite_p90,
+  }));
+
+  // M53 — vision-aggregate radar from per-cap current_score. Average
+  // across capabilities so the radar reads "where the vision is binding
+  // overall". Per-capability radar lives on the capability detail page
+  // in a follow-up slice.
+  const radarCurrent: CapabilityRadarDims = (() => {
+    const dims: Array<keyof CapabilityRadarDims> = [
+      "technical",
+      "economic",
+      "regulatory",
+      "supply",
+    ];
+    const acc: Record<string, { sum: number; n: number }> = {
+      technical: { sum: 0, n: 0 },
+      economic: { sum: 0, n: 0 },
+      regulatory: { sum: 0, n: 0 },
+      supply: { sum: 0, n: 0 },
+    };
+    for (const c of capabilities) {
+      const s = c.current_score;
+      if (!s) continue;
+      for (const d of dims) {
+        const v = s[d];
+        if (typeof v === "number") {
+          acc[d]!.sum += v;
+          acc[d]!.n += 1;
+        }
+      }
+    }
+    return {
+      technical: acc.technical!.n > 0 ? acc.technical!.sum / acc.technical!.n : null,
+      economic: acc.economic!.n > 0 ? acc.economic!.sum / acc.economic!.n : null,
+      regulatory: acc.regulatory!.n > 0 ? acc.regulatory!.sum / acc.regulatory!.n : null,
+      supply: acc.supply!.n > 0 ? acc.supply!.sum / acc.supply!.n : null,
+    };
+  })();
+
+  // M53 — FeasibilityTimeline data. Trajectory already loaded; pull
+  // daily signal volume via the new tRPC. Fail soft — chart renders
+  // line-only if volume query is empty.
+  let dailyVolume: TimelineVolumePoint[] = [];
+  try {
+    dailyVolume = await trpc.signal.dailyVolume.query({
+      sector_slug: slug,
+      days: 180,
+    });
+  } catch {
+    dailyVolume = [];
+  }
+  const timelinePoints: TimelinePoint[] = trajectory.map((p) => ({
+    date: p.as_of,
+    composite: p.composite,
+    p10: p.p10 ?? null,
+    p90: p.p90 ?? null,
   }));
 
   return (
@@ -365,6 +425,44 @@ export default async function VisionOverviewPage({ params }: Props) {
           </div>
         </section>
       )}
+
+      {/* ----- M53 — capability radar + feasibility timeline ----- */}
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-5 lg:col-span-1">
+          <h2 className="mb-2 text-sm font-medium uppercase tracking-wider text-neutral-400">
+            {t("hero.section.capabilityRadar")}
+          </h2>
+          <p className="text-[11px] text-neutral-500">
+            4-dim average across the vision's capabilities.
+          </p>
+          <div className="mt-2 flex justify-center">
+            <CapabilityRadar
+              current={radarCurrent}
+              width={260}
+              height={260}
+              ariaLabel={`${vision.name} capability radar`}
+            />
+          </div>
+        </div>
+        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-5 lg:col-span-2">
+          <div className="mb-1 flex items-baseline justify-between">
+            <h2 className="text-sm font-medium uppercase tracking-wider text-neutral-400">
+              {t("hero.section.timeline")}
+            </h2>
+            <span className="text-[10px] text-neutral-500">
+              composite line · daily signal volume bars
+            </span>
+          </div>
+          <FeasibilityTimeline
+            trajectory={timelinePoints}
+            volume={dailyVolume}
+            width={720}
+            height={240}
+            className="w-full"
+            ariaLabel={`${vision.name} feasibility timeline`}
+          />
+        </div>
+      </section>
 
       {/* ----- Economics preview — small. Detail + tables live on the dedicated tab. ----- */}
       {economics && (

@@ -182,6 +182,99 @@ export const signalRouter = router({
       };
     }),
 
+  /**
+   * Daily signal volume per vision. Feeds M53 FeasibilityTimeline's
+   * bottom-axis bars so signal spikes line up with the composite line.
+   * Date returned as ISO "YYYY-MM-DD" (UTC) so client-side date math
+   * is timezone-stable.
+   */
+  dailyVolume: publicProcedure
+    .input(
+      z.object({
+        sector_slug: z.string().min(1),
+        days: z.number().int().positive().max(365).default(180),
+      }),
+    )
+    .output(
+      z.array(z.object({ date: z.string(), count: z.number().int() })),
+    )
+    .query(async ({ ctx, input }) => {
+      const since = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
+      const rows = await ctx.prisma.$queryRaw<
+        Array<{ d: Date; count: bigint }>
+      >`
+        SELECT date_trunc('day', published_at) AS d,
+               COUNT(*) AS count
+        FROM signals
+        WHERE sector_slug = ${input.sector_slug}
+          AND published_at >= ${since}
+        GROUP BY date_trunc('day', published_at)
+        ORDER BY d ASC
+      `;
+      return rows.map((r) => ({
+        date: r.d.toISOString().slice(0, 10),
+        count: Number(r.count),
+      }));
+    }),
+
+  /**
+   * Per-actor 90-day signal count for a vision. Feeds M53
+   * ActorRelevanceBubble's y-axis (signal volume) + the bot proposal
+   * confidence story. Returns only actors with non-zero signals to
+   * keep the bubble plot readable; consumers merge with the full
+   * VisionActor list for relevance + stage.
+   */
+  countByActor: publicProcedure
+    .input(
+      z.object({
+        sector_slug: z.string().min(1),
+        days: z.number().int().positive().max(365).default(90),
+      }),
+    )
+    .output(
+      z.array(
+        z.object({
+          actor_id: z.string(),
+          actor_key: z.string(),
+          actor_name: z.string(),
+          count: z.number().int(),
+        }),
+      ),
+    )
+    .query(async ({ ctx, input }) => {
+      const since = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
+      const grouped = await ctx.prisma.signal.groupBy({
+        by: ["actor_id"],
+        where: {
+          sector_slug: input.sector_slug,
+          published_at: { gte: since },
+          actor_id: { not: null },
+        },
+        _count: { _all: true },
+      });
+      const ids = grouped
+        .map((g) => g.actor_id)
+        .filter((x): x is string => typeof x === "string");
+      if (ids.length === 0) return [];
+      const actors = await ctx.prisma.actor.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, key: true, name: true },
+      });
+      const byId = new Map(actors.map((a) => [a.id, a]));
+      return grouped
+        .map((g) => {
+          const a = g.actor_id ? byId.get(g.actor_id) : null;
+          if (!a) return null;
+          return {
+            actor_id: a.id,
+            actor_key: a.key,
+            actor_name: a.name,
+            count: g._count._all,
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null);
+    }),
+
   markHighlight: publicProcedure
     .input(
       z.object({
