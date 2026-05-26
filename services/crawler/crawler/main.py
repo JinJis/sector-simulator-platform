@@ -45,10 +45,10 @@ from data_pipeline.agents import (
     HttpAgentClient,
     default_agent_orchestration_url,
 )
-from data_pipeline.deep_research.data_pipeline import (
-    DataPipelineClient,
-    HttpDataPipelineClient,
-    default_data_pipeline_url,
+from data_pipeline.jobs.signal_ingest import IngestStats, run_signal_ingest
+from data_pipeline.signal_repo import (
+    PostgresSignalRepository,
+    SignalRepository,
 )
 from data_pipeline.db.actor_reader import (
     ActorReader,
@@ -99,6 +99,7 @@ from data_pipeline.deep_research.fetchers.risk import (
 from data_pipeline.deep_research.fetchers.signal import (
     SignalFetcherError,
     SignalFetchRequest,
+    SignalIngestFn,
     run_signal_fetcher,
 )
 from data_pipeline.deep_research.orchestrator import pick_for_tick
@@ -436,23 +437,46 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
             )
             app.state.agent_client = None
 
-    # M49c — SignalFetcher delegates to data-pipeline's scoped ingest.
-    if not hasattr(app.state, "data_pipeline_client"):
-        base = default_data_pipeline_url()
-        if base:
-            app.state.data_pipeline_client = HttpDataPipelineClient(base_url=base)
+    # M49c (post-merger) — SignalFetcher now runs `run_signal_ingest`
+    # in-process. Reuse the shared asyncpg pool from PostgresCrawlRunRepository
+    # so we don't open a second pool just to talk to the same Postgres.
+    if not hasattr(app.state, "signal_repo"):
+        repo = getattr(app.state, "repo", None)
+        if isinstance(repo, PostgresCrawlRunRepository):
+            app.state.signal_repo = PostgresSignalRepository(repo.pool)
         else:
             log.warning(
-                "crawler: DATA_PIPELINE_URL unset — SignalFetcher "
-                "will return 503 (no data-pipeline reachable)"
+                "crawler: DATABASE_URL unset — SignalFetcher will return "
+                "503 (no signal_repo, can't run M39 ingest)"
             )
-            app.state.data_pipeline_client = None
+            app.state.signal_repo = None
+
+    if not hasattr(app.state, "signal_ingest_fn"):
+        signal_repo = app.state.signal_repo
+        if signal_repo is not None:
+            async def _signal_ingest(
+                vision_slug: str,
+                capability_keys: list[str],
+                lookback_days: int,
+                per_capability_limit: int,
+            ) -> IngestStats:
+                return await run_signal_ingest(
+                    sector_slugs=[vision_slug],
+                    repo=signal_repo,
+                    capability_keys=capability_keys,
+                    lookback_days=lookback_days,
+                    per_capability_limit=per_capability_limit,
+                )
+            app.state.signal_ingest_fn = _signal_ingest
+        else:
+            app.state.signal_ingest_fn = None
 
     log.info(
-        "crawler ready (repo=%s · deep_research=%s · agent_client=%s)",
+        "crawler ready (repo=%s · deep_research=%s · agent_client=%s · signal_repo=%s)",
         "on" if getattr(app.state, "repo", None) is not None else "off",
         "on" if getattr(app.state, "deep_research", None) is not None else "off",
         "on" if getattr(app.state, "agent_client", None) is not None else "off",
+        "on" if getattr(app.state, "signal_repo", None) is not None else "off",
     )
 
     # M49f — 15-minute orchestrator cron, gated on CRAWLER_SCHEDULE
@@ -538,12 +562,12 @@ async def _run_orchestrator_tick_job(*, app: FastAPI) -> None:
             getattr(app.state, "actor_reader", None),
             getattr(app.state, "risk_reader", None),
             getattr(app.state, "signal_writer", None),
-            getattr(app.state, "data_pipeline_client", None),
+            getattr(app.state, "signal_ingest_fn", None),
         ]
         if any(d is None for d in deps):
             log.warning(
                 "crawler cron: missing client(s) — skipping dispatch "
-                "(repo=%s dr=%s agent=%s cap=%s actor=%s risk=%s writer=%s pipeline=%s)",
+                "(repo=%s dr=%s agent=%s cap=%s actor=%s risk=%s writer=%s ingest_fn=%s)",
                 *["on" if d is not None else "off" for d in deps],
             )
             return
@@ -555,7 +579,7 @@ async def _run_orchestrator_tick_job(*, app: FastAPI) -> None:
             signal_writer=deps[6],
             deep_research=deps[1],
             agent_client=deps[2],
-            data_pipeline=deps[7],
+            signal_ingest_fn=deps[7],
         )
         summary = await dispatch_tick(pick=pick, clients=clients)
         app.state.last_orchestrator_tick = summary.to_summary_dict()
@@ -698,17 +722,17 @@ def create_app() -> FastAPI:
             )
         return client
 
-    def _require_data_pipeline_client() -> DataPipelineClient:
-        client = getattr(app.state, "data_pipeline_client", None)
-        if client is None:
+    def _require_signal_ingest_fn() -> SignalIngestFn:
+        fn = getattr(app.state, "signal_ingest_fn", None)
+        if fn is None:
             raise HTTPException(
                 status_code=503,
                 detail=(
-                    "crawler unavailable — DATA_PIPELINE_URL not configured "
-                    "(SignalFetcher cannot reach the M39 ingest pipeline)"
+                    "crawler unavailable — DATABASE_URL not configured "
+                    "(SignalFetcher needs an in-process signal_repo to run M39 ingest)"
                 ),
             )
-        return client
+        return fn
 
     @app.get("/health")
     def health() -> dict[str, Any]:
@@ -719,8 +743,7 @@ def create_app() -> FastAPI:
                 "repo": getattr(app.state, "repo", None) is not None,
                 "deep_research": getattr(app.state, "deep_research", None) is not None,
                 "agent_client": getattr(app.state, "agent_client", None) is not None,
-                "data_pipeline_client": getattr(app.state, "data_pipeline_client", None)
-                is not None,
+                "signal_repo": getattr(app.state, "signal_repo", None) is not None,
             },
         }
 
@@ -832,7 +855,7 @@ def create_app() -> FastAPI:
         actor_reader = _require_actor_reader()
         risk_reader = _require_risk_reader()
         writer = _require_signal_writer()
-        pipeline = _require_data_pipeline_client()
+        signal_ingest_fn = _require_signal_ingest_fn()
         clients = DispatcherClients(
             runs_repo=repo,
             capability_reader=cap_reader,
@@ -841,7 +864,7 @@ def create_app() -> FastAPI:
             signal_writer=writer,
             deep_research=dr,
             agent_client=agent,
-            data_pipeline=pipeline,
+            signal_ingest_fn=signal_ingest_fn,
         )
         summary = await dispatch_tick(pick=pick, clients=clients)
         return OrchestratorTickOut(
@@ -898,7 +921,7 @@ def create_app() -> FastAPI:
     async def signal_run(body: SignalTriggerBody) -> SignalTriggerOut:
         repo = _require_repo()
         reader = _require_capability_reader()
-        pipeline = _require_data_pipeline_client()
+        signal_ingest_fn = _require_signal_ingest_fn()
         log.info(
             "crawler: signal triggered vision=%s cap=%s",
             body.vision_slug,
@@ -914,7 +937,7 @@ def create_app() -> FastAPI:
                 ),
                 runs_repo=repo,
                 capability_reader=reader,
-                data_pipeline=pipeline,
+                signal_ingest_fn=signal_ingest_fn,
             )
         except SignalFetcherError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

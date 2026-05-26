@@ -120,9 +120,12 @@ const CrawlerHealth = z.object({
     repo: z.boolean(),
     deep_research: z.boolean(),
     // M49a → M49f — added incrementally; all optional so older
-    // crawler builds still validate.
+    // crawler builds still validate. `data_pipeline_client` was
+    // replaced by `signal_repo` in the data-pipeline merger (commit
+    // 2/6); both kept optional during the rollout.
     agent_client: z.boolean().optional(),
     data_pipeline_client: z.boolean().optional(),
+    signal_repo: z.boolean().optional(),
   }),
 });
 

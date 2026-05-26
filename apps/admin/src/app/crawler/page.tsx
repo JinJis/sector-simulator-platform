@@ -100,8 +100,12 @@ export default async function CrawlerCockpitPage() {
               on={health.ready.agent_client ?? false}
             />
             <ReadyChip
-              label="data_pipeline_client"
-              on={health.ready.data_pipeline_client ?? false}
+              label="signal_repo"
+              on={
+                health.ready.signal_repo ??
+                health.ready.data_pipeline_client ??
+                false
+              }
             />
             <span className="ml-auto text-neutral-500">
               checked {new Date(health.now).toISOString().slice(0, 19).replace("T", " ")}

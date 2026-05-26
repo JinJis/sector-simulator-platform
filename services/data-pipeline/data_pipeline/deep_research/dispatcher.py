@@ -21,7 +21,6 @@ from typing import Any
 from agent_tools import DeepResearchClient
 
 from data_pipeline.agents import AgentClient
-from data_pipeline.deep_research.data_pipeline import DataPipelineClient
 from data_pipeline.db.actor_reader import ActorReader
 from data_pipeline.db.capability_reader import CapabilityReader
 from data_pipeline.db.risk_reader import RiskReader
@@ -32,7 +31,11 @@ from data_pipeline.deep_research.fetchers.capability import (
     run_capability_fetcher,
 )
 from data_pipeline.deep_research.fetchers.risk import RiskFetchRequest, run_risk_fetcher
-from data_pipeline.deep_research.fetchers.signal import SignalFetchRequest, run_signal_fetcher
+from data_pipeline.deep_research.fetchers.signal import (
+    SignalFetchRequest,
+    SignalIngestFn,
+    run_signal_fetcher,
+)
 from data_pipeline.deep_research.orchestrator import Candidate, PickResult
 from data_pipeline.crawl_run_repo import CrawlRunRepository
 
@@ -104,7 +107,7 @@ class DispatcherClients:
     signal_writer: SignalWriter
     deep_research: DeepResearchClient
     agent_client: AgentClient
-    data_pipeline: DataPipelineClient
+    signal_ingest_fn: SignalIngestFn
 
 
 # --------------------------------------------------------------------------
@@ -182,7 +185,7 @@ async def _dispatch_one(cand: Candidate, *, clients: DispatcherClients) -> Dispa
                 ),
                 runs_repo=clients.runs_repo,
                 capability_reader=clients.capability_reader,
-                data_pipeline=clients.data_pipeline,
+                signal_ingest_fn=clients.signal_ingest_fn,
             )
             return DispatchOutcome(
                 candidate=cand,

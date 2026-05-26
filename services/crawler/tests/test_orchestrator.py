@@ -13,7 +13,6 @@ from typing import Any
 
 import pytest
 from data_pipeline.deep_research.config import OrchestratorConfig
-from data_pipeline.deep_research.data_pipeline import ScopedIngestRequest, ScopedIngestResult
 from data_pipeline.db.actor_reader import ActorRecord
 from data_pipeline.db.capability_reader import CapabilityRecord
 from data_pipeline.db.orchestrator_repo import (
@@ -402,14 +401,26 @@ class _FakeAgentClient:
 
 
 @dataclass
-class _FakePipelineClient:
-    calls: list[ScopedIngestRequest] = field(default_factory=list)
+class _FakeSignalIngestFn:
+    """Stand-in for the in-process closure crawler/main.py binds around
+    run_signal_ingest. Records every (vision, caps, lookback, limit)
+    call + returns canned IngestStats."""
 
-    async def scoped_signal_ingest(self, req: ScopedIngestRequest) -> ScopedIngestResult:
-        self.calls.append(req)
-        return ScopedIngestResult(
-            started_at="2026-05-26T00:00:00+00:00",
-            finished_at="2026-05-26T00:00:01+00:00",
+    calls: list[tuple[str, list[str], int, int]] = field(default_factory=list)
+
+    async def __call__(
+        self,
+        vision_slug: str,
+        capability_keys: list[str],
+        lookback_days: int,
+        per_capability_limit: int,
+    ):  # noqa: ANN201
+        from data_pipeline.jobs.signal_ingest import IngestStats
+
+        self.calls.append((vision_slug, capability_keys, lookback_days, per_capability_limit))
+        return IngestStats(
+            started_at=datetime(2026, 5, 26, 0, 0, 0, tzinfo=UTC),
+            finished_at=datetime(2026, 5, 26, 0, 0, 1, tzinfo=UTC),
             visions_processed=1,
             capabilities_processed=1,
             raw_signals_fetched=2,
@@ -488,7 +499,7 @@ def _build_clients() -> DispatcherClients:
         signal_writer=_FakeSignalWriter(),
         deep_research=DeepResearchClient(genai_client=_FakeGenAI(), poll_interval_seconds=0.0),
         agent_client=_FakeAgentClient(),
-        data_pipeline=_FakePipelineClient(),
+        signal_ingest_fn=_FakeSignalIngestFn(),
     )
 
 

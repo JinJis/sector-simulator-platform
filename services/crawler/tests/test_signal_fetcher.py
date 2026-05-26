@@ -1,7 +1,7 @@
 """Offline tests for SignalFetcher + the /fetchers/signal/run endpoint.
-All dependencies (CrawlRunRepo, CapabilityReader, DataPipelineClient)
-faked. Mirrors the test_capability_fetcher.py / test_actor_fetcher.py
-shape."""
+All dependencies (CrawlRunRepo, CapabilityReader, the injected
+signal_ingest callable) faked. Mirrors the test_capability_fetcher.py /
+test_actor_fetcher.py shape."""
 
 from __future__ import annotations
 
@@ -10,15 +10,15 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from data_pipeline.deep_research.data_pipeline import ScopedIngestRequest, ScopedIngestResult
+from crawler.main import create_app
+from data_pipeline.crawl_run_repo import CrawlRunRow
 from data_pipeline.db.capability_reader import CapabilityRecord
 from data_pipeline.deep_research.fetchers.signal import (
     SignalFetcherError,
     SignalFetchRequest,
     run_signal_fetcher,
 )
-from crawler.main import create_app
-from data_pipeline.crawl_run_repo import CrawlRunRow
+from data_pipeline.jobs.signal_ingest import IngestStats
 from fastapi.testclient import TestClient
 
 # --------------------------------------------------------------------------
@@ -128,27 +128,44 @@ class _InMemoryCapabilityReader:
         return self.records.get((sector_slug, capability_key))
 
 
-@dataclass
-class _FakeDataPipelineClient:
-    next_result: ScopedIngestResult = field(
-        default_factory=lambda: ScopedIngestResult(
-            started_at="2026-05-26T00:00:00+00:00",
-            finished_at="2026-05-26T00:00:01+00:00",
-            visions_processed=1,
-            capabilities_processed=1,
-            raw_signals_fetched=5,
-            extractor_calls=5,
-            extractor_failures=0,
-            signals_written=5,
-            extractor_total_cost_usd=0.0042,
-            errors=[],
-        )
+def _make_stats(
+    *,
+    signals_written: int = 5,
+    raw_signals_fetched: int = 5,
+    extractor_total_cost_usd: float = 0.0042,
+    extractor_failures: int = 0,
+) -> IngestStats:
+    return IngestStats(
+        started_at=datetime(2026, 5, 26, 0, 0, 0, tzinfo=UTC),
+        finished_at=datetime(2026, 5, 26, 0, 0, 1, tzinfo=UTC),
+        visions_processed=1,
+        capabilities_processed=1 if signals_written else 0,
+        raw_signals_fetched=raw_signals_fetched,
+        extractor_calls=raw_signals_fetched,
+        extractor_failures=extractor_failures,
+        signals_written=signals_written,
+        extractor_total_cost_usd=extractor_total_cost_usd,
+        errors=[],
     )
-    raise_for: bool = False
-    calls: list[ScopedIngestRequest] = field(default_factory=list)
 
-    async def scoped_signal_ingest(self, req: ScopedIngestRequest) -> ScopedIngestResult:
-        self.calls.append(req)
+
+@dataclass
+class _FakeSignalIngestFn:
+    """Stand-in for the closure crawler/main.py binds around
+    run_signal_ingest. Records calls + lets a test force a raise."""
+
+    next_result: IngestStats = field(default_factory=_make_stats)
+    raise_for: bool = False
+    calls: list[tuple[str, list[str], int, int]] = field(default_factory=list)
+
+    async def __call__(
+        self,
+        vision_slug: str,
+        capability_keys: list[str],
+        lookback_days: int,
+        per_capability_limit: int,
+    ) -> IngestStats:
+        self.calls.append((vision_slug, capability_keys, lookback_days, per_capability_limit))
         if self.raise_for:
             raise RuntimeError("data-pipeline unreachable")
         return self.next_result
@@ -176,7 +193,7 @@ def _seed_cap_reader() -> _InMemoryCapabilityReader:
 async def test_signal_fetcher_records_pipeline_stats_on_run() -> None:
     runs = _InMemoryRunsRepo()
     reader = _seed_cap_reader()
-    pipeline = _FakeDataPipelineClient()
+    ingest = _FakeSignalIngestFn()
 
     result = await run_signal_fetcher(
         SignalFetchRequest(
@@ -185,45 +202,45 @@ async def test_signal_fetcher_records_pipeline_stats_on_run() -> None:
         ),
         runs_repo=runs,
         capability_reader=reader,
-        data_pipeline=pipeline,
+        signal_ingest_fn=ingest,
     )
 
     assert result.run.status == "ok"
     assert result.run.signals_written == 5
     assert result.run.cost_usd == pytest.approx(0.0042)
-    # data-pipeline was called scoped to the single capability key.
-    assert len(pipeline.calls) == 1
-    req = pipeline.calls[0]
-    assert req.sector_slug == "space-data-center"
-    assert req.capability_keys == ["rad-hard-compute"]
-    assert req.lookback_days == 3
-    assert req.per_capability_limit == 10
+    # ingest was called scoped to the single capability key.
+    assert len(ingest.calls) == 1
+    vision, caps, lookback, limit = ingest.calls[0]
+    assert vision == "space-data-center"
+    assert caps == ["rad-hard-compute"]
+    assert lookback == 3
+    assert limit == 10
 
 
 @pytest.mark.asyncio
 async def test_signal_fetcher_unknown_capability_raises_with_run() -> None:
     runs = _InMemoryRunsRepo()
     reader = _InMemoryCapabilityReader()  # empty
-    pipeline = _FakeDataPipelineClient()
+    ingest = _FakeSignalIngestFn()
 
     with pytest.raises(SignalFetcherError) as excinfo:
         await run_signal_fetcher(
             SignalFetchRequest(vision_slug="space-data-center", capability_key="missing-key"),
             runs_repo=runs,
             capability_reader=reader,
-            data_pipeline=pipeline,
+            signal_ingest_fn=ingest,
         )
     assert excinfo.value.run.status == "error"
     assert excinfo.value.run.error and "no capability" in excinfo.value.run.error
-    # Pipeline was never called.
-    assert pipeline.calls == []
+    # Ingest was never called.
+    assert ingest.calls == []
 
 
 @pytest.mark.asyncio
 async def test_signal_fetcher_pipeline_failure_marks_run_error() -> None:
     runs = _InMemoryRunsRepo()
     reader = _seed_cap_reader()
-    pipeline = _FakeDataPipelineClient(raise_for=True)
+    ingest = _FakeSignalIngestFn(raise_for=True)
 
     result = await run_signal_fetcher(
         SignalFetchRequest(
@@ -232,7 +249,7 @@ async def test_signal_fetcher_pipeline_failure_marks_run_error() -> None:
         ),
         runs_repo=runs,
         capability_reader=reader,
-        data_pipeline=pipeline,
+        signal_ingest_fn=ingest,
     )
     assert result.run.status == "error"
     assert result.ingest is None
@@ -244,18 +261,11 @@ async def test_signal_fetcher_pipeline_failure_marks_run_error() -> None:
 async def test_signal_fetcher_zero_signals_still_ok() -> None:
     runs = _InMemoryRunsRepo()
     reader = _seed_cap_reader()
-    pipeline = _FakeDataPipelineClient(
-        next_result=ScopedIngestResult(
-            started_at="2026-05-26T00:00:00+00:00",
-            finished_at="2026-05-26T00:00:01+00:00",
-            visions_processed=1,
-            capabilities_processed=0,
-            raw_signals_fetched=0,
-            extractor_calls=0,
-            extractor_failures=0,
+    ingest = _FakeSignalIngestFn(
+        next_result=_make_stats(
             signals_written=0,
+            raw_signals_fetched=0,
             extractor_total_cost_usd=0.0,
-            errors=[],
         )
     )
 
@@ -266,7 +276,7 @@ async def test_signal_fetcher_zero_signals_still_ok() -> None:
         ),
         runs_repo=runs,
         capability_reader=reader,
-        data_pipeline=pipeline,
+        signal_ingest_fn=ingest,
     )
     assert result.run.status == "ok"
     assert result.run.signals_written == 0
@@ -279,7 +289,7 @@ async def test_signal_fetcher_zero_signals_still_ok() -> None:
 # --------------------------------------------------------------------------
 
 
-def _client_with_fakes() -> tuple[TestClient, _FakeDataPipelineClient]:
+def _client_with_fakes() -> tuple[TestClient, _FakeSignalIngestFn]:
     app = create_app()
     app.state.repo = _InMemoryRunsRepo()
     app.state.deep_research = None  # signal path doesn't need DR
@@ -287,13 +297,14 @@ def _client_with_fakes() -> tuple[TestClient, _FakeDataPipelineClient]:
     app.state.signal_writer = None
     app.state.actor_reader = None
     app.state.agent_client = None
-    pipeline = _FakeDataPipelineClient()
-    app.state.data_pipeline_client = pipeline
-    return TestClient(app), pipeline
+    app.state.signal_repo = object()  # truthy → health flag on
+    ingest = _FakeSignalIngestFn()
+    app.state.signal_ingest_fn = ingest
+    return TestClient(app), ingest
 
 
 def test_post_signal_returns_run_payload() -> None:
-    client, pipeline = _client_with_fakes()
+    client, ingest = _client_with_fakes()
     r = client.post(
         "/fetchers/signal/run",
         json={
@@ -308,7 +319,7 @@ def test_post_signal_returns_run_payload() -> None:
     assert body["signals_written"] == 5
     assert body["raw_signals_fetched"] == 5
     assert body["extractor_total_cost_usd"] == pytest.approx(0.0042)
-    assert len(pipeline.calls) == 1
+    assert len(ingest.calls) == 1
 
 
 def test_post_signal_404_when_capability_missing() -> None:
@@ -331,7 +342,8 @@ def test_post_signal_503_when_pipeline_unavailable() -> None:
     app.state.signal_writer = None
     app.state.actor_reader = None
     app.state.agent_client = None
-    app.state.data_pipeline_client = None  # not configured
+    app.state.signal_repo = None
+    app.state.signal_ingest_fn = None  # not configured
     client = TestClient(app)
     r = client.post(
         "/fetchers/signal/run",
@@ -343,9 +355,9 @@ def test_post_signal_503_when_pipeline_unavailable() -> None:
     assert r.status_code == 503
 
 
-def test_health_surfaces_data_pipeline_ready_flag() -> None:
+def test_health_surfaces_signal_repo_ready_flag() -> None:
     client, _ = _client_with_fakes()
     r = client.get("/health")
     assert r.status_code == 200
     body = r.json()
-    assert body["ready"]["data_pipeline_client"] is True
+    assert body["ready"]["signal_repo"] is True
