@@ -25,8 +25,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from crawler.config import CONFIG, OrchestratorConfig
-from crawler.db.orchestrator_repo import (
+from data_pipeline.deep_research.config import CONFIG, OrchestratorConfig
+from data_pipeline.db.orchestrator_repo import (
     ActorCandidate,
     CapabilityCandidate,
     OrchestratorReader,

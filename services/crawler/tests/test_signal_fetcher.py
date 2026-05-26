@@ -10,15 +10,15 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from crawler.data_pipeline import ScopedIngestRequest, ScopedIngestResult
-from crawler.db.capability_reader import CapabilityRecord
-from crawler.fetchers.signal import (
+from data_pipeline.deep_research.data_pipeline import ScopedIngestRequest, ScopedIngestResult
+from data_pipeline.db.capability_reader import CapabilityRecord
+from data_pipeline.deep_research.fetchers.signal import (
     SignalFetcherError,
     SignalFetchRequest,
     run_signal_fetcher,
 )
 from crawler.main import create_app
-from crawler.repo import CrawlRunRow
+from data_pipeline.crawl_run_repo import CrawlRunRow
 from fastapi.testclient import TestClient
 
 # --------------------------------------------------------------------------

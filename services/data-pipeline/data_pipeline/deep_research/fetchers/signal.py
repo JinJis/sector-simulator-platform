@@ -24,13 +24,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from crawler.data_pipeline import (
+from data_pipeline.deep_research.data_pipeline import (
     DataPipelineClient,
     ScopedIngestRequest,
     ScopedIngestResult,
 )
-from crawler.db.capability_reader import CapabilityReader, CapabilityRecord
-from crawler.repo import CrawlRunRepository, CrawlRunRow
+from data_pipeline.db.capability_reader import CapabilityReader, CapabilityRecord
+from data_pipeline.crawl_run_repo import CrawlRunRepository, CrawlRunRow
 
 
 @dataclass(frozen=True, slots=True)

@@ -14,13 +14,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from crawler.db.discovery_reader import DiscoveryReader
-from crawler.db.proposal_writer import (
+from data_pipeline.db.discovery_reader import DiscoveryReader
+from data_pipeline.db.proposal_writer import (
     EvidenceInput,
     ProposalDraft,
     ProposalWriter,
 )
-from crawler.discovery.entity_detector import ExtractedEntity
+from data_pipeline.deep_research.discovery.entity_detector import ExtractedEntity
 
 
 @dataclass(frozen=True, slots=True)

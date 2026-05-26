@@ -423,7 +423,9 @@ version = "0.1.0"
 source = { editable = "services/crawler" }
 dependencies = [
     { name = "agent-tools" },
+    { name = "apscheduler" },
     { name = "asyncpg" },
+    { name = "data-pipeline" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "pydantic" },
@@ -442,7 +444,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "agent-tools", editable = "packages/agent-tools" },
+    { name = "apscheduler", specifier = ">=3.10.0" },
     { name = "asyncpg", specifier = ">=0.30.0" },
+    { name = "data-pipeline", editable = "services/data-pipeline" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "pydantic", specifier = ">=2.9.0" },
@@ -549,6 +553,7 @@ name = "data-pipeline"
 version = "0.1.0"
 source = { editable = "services/data-pipeline" }
 dependencies = [
+    { name = "agent-tools" },
     { name = "apscheduler" },
     { name = "asyncpg" },
     { name = "fastapi" },
@@ -569,6 +574,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "agent-tools", editable = "packages/agent-tools" },
     { name = "apscheduler", specifier = ">=3.10.4" },
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "fastapi", specifier = ">=0.115.0" },

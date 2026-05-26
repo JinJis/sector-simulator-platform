@@ -13,21 +13,21 @@ from fastapi.testclient import TestClient
 
 from agent_tools import DeepResearchClient
 
-from crawler.agents import (
+from data_pipeline.agents import (
     AgentClient,
     SignalExtractorRequest,
     SignalExtractorRunResult,
     SignalScoring,
 )
-from crawler.db.capability_reader import CapabilityReader, CapabilityRecord
-from crawler.db.signal_writer import SignalUpsert, SignalWriter
-from crawler.fetchers.capability import (
+from data_pipeline.db.capability_reader import CapabilityReader, CapabilityRecord
+from data_pipeline.db.signal_writer import SignalUpsert, SignalWriter
+from data_pipeline.deep_research.fetchers.capability import (
     CapabilityFetchRequest,
     CapabilityFetcherError,
     run_capability_fetcher,
 )
 from crawler.main import create_app
-from crawler.repo import CrawlRunRow
+from data_pipeline.crawl_run_repo import CrawlRunRow
 
 
 # --------------------------------------------------------------------------

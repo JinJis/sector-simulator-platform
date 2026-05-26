@@ -23,7 +23,7 @@ from typing import Protocol
 
 import asyncpg
 
-from crawler.db.capability_reader import CapabilityRecord
+from data_pipeline.db.capability_reader import CapabilityRecord
 
 
 @dataclass(frozen=True, slots=True)

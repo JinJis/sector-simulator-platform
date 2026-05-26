@@ -12,26 +12,26 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from crawler.config import OrchestratorConfig
-from crawler.data_pipeline import ScopedIngestRequest, ScopedIngestResult
-from crawler.db.actor_reader import ActorRecord
-from crawler.db.capability_reader import CapabilityRecord
-from crawler.db.orchestrator_repo import (
+from data_pipeline.deep_research.config import OrchestratorConfig
+from data_pipeline.deep_research.data_pipeline import ScopedIngestRequest, ScopedIngestResult
+from data_pipeline.db.actor_reader import ActorRecord
+from data_pipeline.db.capability_reader import CapabilityRecord
+from data_pipeline.db.orchestrator_repo import (
     ActorCandidate,
     CapabilityCandidate,
     RiskCandidate,
 )
-from crawler.db.risk_reader import RiskRecord
-from crawler.db.signal_writer import SignalUpsert
-from crawler.dispatcher import DispatcherClients, dispatch_tick
+from data_pipeline.db.risk_reader import RiskRecord
+from data_pipeline.db.signal_writer import SignalUpsert
+from data_pipeline.deep_research.dispatcher import DispatcherClients, dispatch_tick
 from crawler.main import create_app
-from crawler.orchestrator import (
+from data_pipeline.deep_research.orchestrator import (
     Candidate,
     PickResult,
     pick_for_tick,
     score_candidate,
 )
-from crawler.repo import CrawlRunRow
+from data_pipeline.crawl_run_repo import CrawlRunRow
 from fastapi.testclient import TestClient
 
 # --------------------------------------------------------------------------
@@ -384,7 +384,7 @@ class _FakeAgentClient:
     calls: list[Any] = field(default_factory=list)
 
     async def score_signal(self, req: Any) -> Any:
-        from crawler.agents import SignalExtractorRunResult, SignalScoring
+        from data_pipeline.agents import SignalExtractorRunResult, SignalScoring
 
         self.calls.append(req)
         return SignalExtractorRunResult(

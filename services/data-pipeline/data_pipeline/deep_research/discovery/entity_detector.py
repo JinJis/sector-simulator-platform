@@ -28,7 +28,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from crawler.db.discovery_reader import (
+from data_pipeline.db.discovery_reader import (
     DiscoveryReader,
     KnownActorRow,
     RecentSignalRow,

@@ -40,69 +40,69 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from crawler.agents import (
+from data_pipeline.agents import (
     AgentClient,
     HttpAgentClient,
     default_agent_orchestration_url,
 )
-from crawler.data_pipeline import (
+from data_pipeline.deep_research.data_pipeline import (
     DataPipelineClient,
     HttpDataPipelineClient,
     default_data_pipeline_url,
 )
-from crawler.db.actor_reader import (
+from data_pipeline.db.actor_reader import (
     ActorReader,
     PostgresActorReader,
 )
-from crawler.db.capability_reader import (
+from data_pipeline.db.capability_reader import (
     CapabilityReader,
     PostgresCapabilityReader,
 )
-from crawler.db.discovery_reader import (
+from data_pipeline.db.discovery_reader import (
     DiscoveryReader,
     PostgresDiscoveryReader,
 )
-from crawler.db.orchestrator_repo import (
+from data_pipeline.db.orchestrator_repo import (
     OrchestratorReader,
     PostgresOrchestratorReader,
 )
-from crawler.db.proposal_writer import (
+from data_pipeline.db.proposal_writer import (
     PostgresProposalWriter,
     ProposalWriter,
 )
-from crawler.db.risk_reader import (
+from data_pipeline.db.risk_reader import (
     PostgresRiskReader,
     RiskReader,
 )
-from crawler.db.signal_writer import PostgresSignalWriter, SignalWriter
-from crawler.discovery.runner import run_discovery
-from crawler.dispatcher import DispatcherClients, dispatch_tick
-from crawler.fetchers.actor import (
+from data_pipeline.db.signal_writer import PostgresSignalWriter, SignalWriter
+from data_pipeline.deep_research.discovery.runner import run_discovery
+from data_pipeline.deep_research.dispatcher import DispatcherClients, dispatch_tick
+from data_pipeline.deep_research.fetchers.actor import (
     ActorFetcherError,
     ActorFetchRequest,
     run_actor_fetcher,
 )
-from crawler.fetchers.capability import (
+from data_pipeline.deep_research.fetchers.capability import (
     CapabilityFetcherError,
     CapabilityFetchRequest,
     run_capability_fetcher,
 )
-from crawler.fetchers.hello_world import (
+from data_pipeline.deep_research.fetchers.hello_world import (
     HelloWorldRunRequest,
     run_hello_world,
 )
-from crawler.fetchers.risk import (
+from data_pipeline.deep_research.fetchers.risk import (
     RiskFetcherError,
     RiskFetchRequest,
     run_risk_fetcher,
 )
-from crawler.fetchers.signal import (
+from data_pipeline.deep_research.fetchers.signal import (
     SignalFetcherError,
     SignalFetchRequest,
     run_signal_fetcher,
 )
-from crawler.orchestrator import pick_for_tick
-from crawler.repo import (
+from data_pipeline.deep_research.orchestrator import pick_for_tick
+from data_pipeline.crawl_run_repo import (
     CrawlRunRepository,
     CrawlRunRow,
     PostgresCrawlRunRepository,

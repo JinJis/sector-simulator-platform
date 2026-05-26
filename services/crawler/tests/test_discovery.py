@@ -13,18 +13,18 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from crawler.db.discovery_reader import KnownActorRow, RecentSignalRow
-from crawler.db.proposal_writer import ProposalDraft, WriteResult
-from crawler.discovery.entity_detector import (
+from data_pipeline.db.discovery_reader import KnownActorRow, RecentSignalRow
+from data_pipeline.db.proposal_writer import ProposalDraft, WriteResult
+from data_pipeline.deep_research.discovery.entity_detector import (
     detect_new_actors,
     jaro_winkler,
 )
-from crawler.discovery.proposal_drafter import (
+from data_pipeline.deep_research.discovery.proposal_drafter import (
     DraftedProposal,
     SkippedProposal,
     draft_actor_proposal,
 )
-from crawler.discovery.runner import run_discovery
+from data_pipeline.deep_research.discovery.runner import run_discovery
 
 # --------------------------------------------------------------------------
 # Fakes

@@ -15,10 +15,10 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from crawler.db.discovery_reader import DiscoveryReader
-from crawler.db.proposal_writer import ProposalWriter
-from crawler.discovery.entity_detector import detect_new_actors
-from crawler.discovery.proposal_drafter import (
+from data_pipeline.db.discovery_reader import DiscoveryReader
+from data_pipeline.db.proposal_writer import ProposalWriter
+from data_pipeline.deep_research.discovery.entity_detector import detect_new_actors
+from data_pipeline.deep_research.discovery.proposal_drafter import (
     DraftedProposal,
     SkippedProposal,
     draft_actor_proposal,

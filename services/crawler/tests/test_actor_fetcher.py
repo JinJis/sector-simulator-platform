@@ -11,21 +11,21 @@ from typing import Any
 
 import pytest
 from agent_tools import DeepResearchClient
-from crawler.agents import (
+from data_pipeline.agents import (
     SignalExtractorRequest,
     SignalExtractorRunResult,
     SignalScoring,
 )
-from crawler.db.actor_reader import ActorRecord
-from crawler.db.capability_reader import CapabilityRecord
-from crawler.db.signal_writer import SignalUpsert
-from crawler.fetchers.actor import (
+from data_pipeline.db.actor_reader import ActorRecord
+from data_pipeline.db.capability_reader import CapabilityRecord
+from data_pipeline.db.signal_writer import SignalUpsert
+from data_pipeline.deep_research.fetchers.actor import (
     ActorFetcherError,
     ActorFetchRequest,
     run_actor_fetcher,
 )
 from crawler.main import create_app
-from crawler.repo import CrawlRunRow
+from data_pipeline.crawl_run_repo import CrawlRunRow
 from fastapi.testclient import TestClient
 
 # --------------------------------------------------------------------------

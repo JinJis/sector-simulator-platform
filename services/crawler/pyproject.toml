@@ -11,6 +11,11 @@ dependencies = [
   "httpx>=0.27.0",
   "apscheduler>=3.10.0",
   "agent-tools",
+  # Commit 1 transitional dep — crawler's logic modules moved to
+  # data_pipeline.{deep_research,db,agents,crawl_run_repo}. Commits
+  # 2-3 inline the dispatch + collapse main.py; commit 6 deletes
+  # this service entirely.
+  "data-pipeline",
 ]
 
 [build-system]

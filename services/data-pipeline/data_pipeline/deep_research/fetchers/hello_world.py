@@ -16,7 +16,7 @@ from typing import Any
 
 from agent_tools import DeepResearchClient
 
-from crawler.repo import CrawlRunRepository, CrawlRunRow
+from data_pipeline.crawl_run_repo import CrawlRunRepository, CrawlRunRow
 
 
 _DEFAULT_PROMPT = (

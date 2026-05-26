@@ -13,12 +13,12 @@ from fastapi.testclient import TestClient
 
 from agent_tools import DeepResearchClient, DeepResearchResult
 
-from crawler.fetchers.hello_world import (
+from data_pipeline.deep_research.fetchers.hello_world import (
     HelloWorldRunRequest,
     run_hello_world,
 )
 from crawler.main import create_app
-from crawler.repo import CrawlRunRow
+from data_pipeline.crawl_run_repo import CrawlRunRow
 
 
 # --------------------------------------------------------------------------

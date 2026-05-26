@@ -20,21 +20,21 @@ from typing import Any
 
 from agent_tools import DeepResearchClient
 
-from crawler.agents import AgentClient
-from crawler.data_pipeline import DataPipelineClient
-from crawler.db.actor_reader import ActorReader
-from crawler.db.capability_reader import CapabilityReader
-from crawler.db.risk_reader import RiskReader
-from crawler.db.signal_writer import SignalWriter
-from crawler.fetchers.actor import ActorFetchRequest, run_actor_fetcher
-from crawler.fetchers.capability import (
+from data_pipeline.agents import AgentClient
+from data_pipeline.deep_research.data_pipeline import DataPipelineClient
+from data_pipeline.db.actor_reader import ActorReader
+from data_pipeline.db.capability_reader import CapabilityReader
+from data_pipeline.db.risk_reader import RiskReader
+from data_pipeline.db.signal_writer import SignalWriter
+from data_pipeline.deep_research.fetchers.actor import ActorFetchRequest, run_actor_fetcher
+from data_pipeline.deep_research.fetchers.capability import (
     CapabilityFetchRequest,
     run_capability_fetcher,
 )
-from crawler.fetchers.risk import RiskFetchRequest, run_risk_fetcher
-from crawler.fetchers.signal import SignalFetchRequest, run_signal_fetcher
-from crawler.orchestrator import Candidate, PickResult
-from crawler.repo import CrawlRunRepository
+from data_pipeline.deep_research.fetchers.risk import RiskFetchRequest, run_risk_fetcher
+from data_pipeline.deep_research.fetchers.signal import SignalFetchRequest, run_signal_fetcher
+from data_pipeline.deep_research.orchestrator import Candidate, PickResult
+from data_pipeline.crawl_run_repo import CrawlRunRepository
 
 log = logging.getLogger("crawler.dispatcher")
 

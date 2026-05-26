@@ -1,23 +1,18 @@
-"""ActorFetcher (M49b).
+"""CapabilityFetcher (M49a).
 
-Per actor the orchestrator picks (top-N relevance per vision per day),
-ask the Gemini Deep Research Agent for a 90-day synthesis of the
-actor's activity *for this vision*, hand the synthesis to the existing
-SignalExtractor agent (haiku) — passing the actor's signal_keywords so
-the extractor can confirm the match — and upsert the result as one
-`signals` row tagged with both the actor and the actor's primary
-capability.
+Per binding capability the orchestrator picks, ask the Gemini Deep
+Research Agent for a current-state synthesis, hand the synthesis to
+the existing SignalExtractor agent (haiku) for per-dimension scoring,
+and upsert the result as one `signals` row tagged with the capability.
 
-One run = one CrawlRun row = one Signal row (per actor per day).
-Re-runs on the same UTC day collapse via the `(source_url, capability_id)`
-unique constraint — `internal://crawler/actor/{vision}/{actor_key}/{date}`
+One run = one CrawlRun row = one Signal row (per capability per day).
+Re-runs on the same day collapse via the `(source_url, capability_id)`
+unique constraint — `internal://crawler/capability/{cap_key}/{date}`
 is the synthetic source_url that gives us the idempotency window.
 
-Anchoring against the actor's primary CapabilityActor binding is a
-deliberate v1 choice: `signals.capability_id` is part of the dedup key,
-and the actor's lead capability is the closest semantic anchor for a
-"what has X been up to" synthesis. The actor_id field is what the
-Capability card's actor footer + the M53 ActorRelevanceBubble read.
+Discrete events (papers / patents / news) still come through the M39
+SignalFetcher (wrapped in M49e); this fetcher produces the synthesized
+"state of X" signal that M51's capability card surfaces above them.
 """
 
 from __future__ import annotations
@@ -28,169 +23,136 @@ from typing import Any
 
 from agent_tools import DeepResearchClient, DeepResearchResult
 
-from crawler.agents import (
-    ActorKeywordSet,
+from data_pipeline.agents import (
     AgentClient,
     SignalExtractorRequest,
     SignalExtractorRunResult,
 )
-from crawler.db.actor_reader import ActorReader, ActorRecord
-from crawler.db.signal_writer import SignalUpsert, SignalWriter
-from crawler.repo import CrawlRunRepository, CrawlRunRow
+from data_pipeline.db.capability_reader import CapabilityReader, CapabilityRecord
+from data_pipeline.db.signal_writer import SignalUpsert, SignalWriter
+from data_pipeline.crawl_run_repo import CrawlRunRepository, CrawlRunRow
+
 
 _DEFAULT_PROMPT = (
-    "You are researching what '{actor_name}' has done in the last 90 days "
-    "that materially advances or hinders the vision '{vision_slug}', "
-    "specifically in the context of the capability '{capability_name}'.\n\n"
-    "Capability context: {capability_description}\n"
-    "Why this capability matters: {capability_rationale}\n\n"
-    "Synthesize {actor_name}'s recent moves — product launches, "
-    "publications, filings, hires, partnerships, regulatory submissions, "
-    "earnings commentary — and assess net impact on the four dimensions: "
-    "technical maturity, economic viability, regulatory posture, and "
-    "supply / talent / capital. Cite primary sources (press releases, "
-    "papers, filings, news) inline. Be specific about WHAT they shipped "
-    "or shifted. Keep it under ~400 words."
+    "You are researching the current state of the technical capability "
+    "'{capability_name}' for the broader vision '{vision_slug}'.\n\n"
+    "Capability description: {description}\n"
+    "Why it matters: {rationale}\n\n"
+    "Synthesize what has happened in the last 90 days that materially "
+    "changed any of the four dimensions: technical maturity, economic "
+    "viability, regulatory posture, and supply / talent / capital. Cite "
+    "primary sources (papers, filings, press, gov releases) inline. "
+    "Be specific about WHO did WHAT — name companies, labs, or programs. "
+    "Keep it under ~400 words."
 )
 
 
 @dataclass(frozen=True, slots=True)
-class ActorFetchRequest:
+class CapabilityFetchRequest:
     vision_slug: str
-    actor_key: str
+    capability_key: str
     prompt: str | None = None  # override the default prompt template
 
 
 @dataclass(frozen=True, slots=True)
-class ActorFetchResult:
+class CapabilityFetchResult:
     run: CrawlRunRow
-    actor: ActorRecord
+    capability: CapabilityRecord
     deep_research: DeepResearchResult
     scoring: SignalExtractorRunResult | None
     signal_id: str | None
 
 
-class ActorFetcherError(Exception):
-    """Raised when the fetcher refuses to even attempt the run (e.g.
-    unknown actor or actor not bound to any capability in this vision).
-    The crawler endpoint maps this to a 404 instead of a generic 500."""
-
-    def __init__(self, message: str, *, run: CrawlRunRow) -> None:
-        super().__init__(message)
-        self.run = run
-
-
-def _synthetic_source_url(*, actor_key: str, vision_slug: str, as_of: datetime) -> str:
+def _synthetic_source_url(*, capability_key: str, vision_slug: str, as_of: datetime) -> str:
     """Day-bucketed pseudo-URL so multiple runs in the same UTC day
     collapse to one Signal row via the unique constraint."""
     day = as_of.strftime("%Y-%m-%d")
-    return f"internal://crawler/actor/{vision_slug}/{actor_key}/{day}"
+    return f"internal://crawler/capability/{vision_slug}/{capability_key}/{day}"
 
 
-async def run_actor_fetcher(
-    request: ActorFetchRequest,
+async def run_capability_fetcher(
+    request: CapabilityFetchRequest,
     *,
     runs_repo: CrawlRunRepository,
-    actor_reader: ActorReader,
+    capability_reader: CapabilityReader,
     signal_writer: SignalWriter,
     deep_research: DeepResearchClient,
     agent_client: AgentClient,
-) -> ActorFetchResult:
+) -> CapabilityFetchResult:
     plan: dict[str, Any] = {
-        "fetcher": "actor",
+        "fetcher": "capability",
         "vision_slug": request.vision_slug,
-        "actor_key": request.actor_key,
+        "capability_key": request.capability_key,
         "prompt_override": request.prompt is not None,
         "tier": "fast",
     }
     run = await runs_repo.create_queued(
         vision_slug=request.vision_slug,
-        fetcher_kind="actor",
+        fetcher_kind="capability",
         plan=plan,
     )
     await runs_repo.mark_running(run.id)
 
-    # 1. Load actor + its primary capability binding. Two refusal modes:
-    #    (a) unknown actor or actor not bound to the vision, and
-    #    (b) actor bound to the vision but no CapabilityActor row — we
-    #        have nothing to anchor the signal against.
-    actor = await actor_reader.get(sector_slug=request.vision_slug, actor_key=request.actor_key)
-    if actor is None:
+    # 1. Load capability metadata. A missing capability is the only
+    # expected failure mode that we surface as a polite error rather
+    # than an exception — admins type slugs by hand into the cockpit.
+    capability = await capability_reader.get(
+        sector_slug=request.vision_slug, capability_key=request.capability_key
+    )
+    if capability is None:
         await runs_repo.mark_complete(
             run.id,
             status="error",
             result_summary={
-                "error_kind": "actor_not_found",
+                "error_kind": "capability_not_found",
                 "vision_slug": request.vision_slug,
-                "actor_key": request.actor_key,
-            },
-            cost_usd=None,
-            signals_written=0,
-            proposals_written=0,
-            error=(f"no actor {request.actor_key!r} bound to vision {request.vision_slug!r}"),
-        )
-        fresh = await runs_repo.get(run.id)
-        assert fresh is not None
-        raise ActorFetcherError(
-            f"actor not found: {request.vision_slug}/{request.actor_key}",
-            run=fresh,
-        )
-
-    if actor.primary_capability is None:
-        await runs_repo.mark_complete(
-            run.id,
-            status="error",
-            result_summary={
-                "error_kind": "actor_unbound",
-                "vision_slug": request.vision_slug,
-                "actor_key": request.actor_key,
-                "actor_id": actor.id,
+                "capability_key": request.capability_key,
             },
             cost_usd=None,
             signals_written=0,
             proposals_written=0,
             error=(
-                f"actor {request.actor_key!r} has no capability binding "
-                f"in vision {request.vision_slug!r}"
+                f"no capability {request.capability_key!r} "
+                f"for vision {request.vision_slug!r}"
             ),
         )
         fresh = await runs_repo.get(run.id)
         assert fresh is not None
-        raise ActorFetcherError(
-            f"actor unbound: {request.vision_slug}/{request.actor_key}",
+        raise CapabilityFetcherError(
+            f"capability not found: {request.vision_slug}/{request.capability_key}",
             run=fresh,
         )
 
-    capability = actor.primary_capability
-
     prompt = (request.prompt or _DEFAULT_PROMPT).format(
         vision_slug=request.vision_slug,
-        actor_name=actor.name,
         capability_name=capability.name,
-        capability_description=capability.description,
-        capability_rationale=capability.rationale,
+        description=capability.description,
+        rationale=capability.rationale,
     )
 
-    # 2. Deep Research synthesis. DR client owns cache + cost metering.
+    # 2. Deep Research synthesis. The DR client owns cache + cost
+    # metering; we just read the result. If the call itself blows up
+    # (e.g. Gemini auth / quota), record the failure on the run and
+    # return — callers want a structured response, not an exception.
     try:
         dr = await deep_research.research(
             prompt=prompt,
-            surface="actor",
+            surface="capability",
             vision_slug=request.vision_slug,
             tier="fast",
         )
     except Exception as exc:  # noqa: BLE001
         err_text = (
-            f"{type(exc).__name__}: {str(exc).splitlines()[0] if str(exc) else 'unknown error'}"
+            f"{type(exc).__name__}: "
+            f"{str(exc).splitlines()[0] if str(exc) else 'unknown error'}"
         )
         await runs_repo.mark_complete(
             run.id,
             status="error",
             result_summary={
                 "error_kind": type(exc).__name__,
-                "actor_id": actor.id,
-                "actor_key": actor.key,
                 "capability_id": capability.id,
+                "capability_key": capability.key,
             },
             cost_usd=None,
             signals_written=0,
@@ -199,9 +161,9 @@ async def run_actor_fetcher(
         )
         fresh = await runs_repo.get(run.id)
         assert fresh is not None
-        return ActorFetchResult(
+        return CapabilityFetchResult(
             run=fresh,
-            actor=actor,
+            capability=capability,
             deep_research=DeepResearchResult(
                 interaction_id="",
                 tier="fast",
@@ -217,17 +179,17 @@ async def run_actor_fetcher(
             scoring=None,
             signal_id=None,
         )
-
     total_cost = dr.cost_usd
     signals_written = 0
     scoring: SignalExtractorRunResult | None = None
     signal_id: str | None = None
 
     if dr.status != "completed" or not dr.output_text:
+        # DR failed or timed out — record what we have, no Signal row.
         await runs_repo.mark_complete(
             run.id,
             status=dr.status if dr.status == "timeout" else "error",
-            result_summary=_summarize(dr=dr, scoring=None, actor=actor),
+            result_summary=_summarize(dr=dr, scoring=None, capability=capability),
             cost_usd=total_cost if total_cost > 0 else None,
             signals_written=0,
             proposals_written=0,
@@ -235,18 +197,15 @@ async def run_actor_fetcher(
         )
         fresh = await runs_repo.get(run.id)
         assert fresh is not None
-        return ActorFetchResult(
+        return CapabilityFetchResult(
             run=fresh,
-            actor=actor,
+            capability=capability,
             deep_research=dr,
             scoring=None,
             signal_id=None,
         )
 
-    # 3. SignalExtractor — pass the actor's keyword set so the extractor
-    # confirms the match. We still set actor_id directly on the Signal
-    # row below regardless of matched_actor_key (the fetcher is per-actor
-    # by construction); the extractor signal is used for sanity reporting.
+    # 3. SignalExtractor: score the DR brief across the 4 dims.
     signal_title = _first_sentence(dr.output_text)
     extractor_req = SignalExtractorRequest(
         sector_slug=capability.sector_slug,
@@ -257,12 +216,10 @@ async def run_actor_fetcher(
         signal_title=signal_title,
         signal_summary=dr.output_text,
         source_kind="research_brief",
-        actor_keywords=[
-            ActorKeywordSet(
-                actor_key=actor.key,
-                aliases=actor.signal_keywords,
-            )
-        ],
+        # M50 will populate actor_keywords from the actors table; M49a
+        # leaves it empty (extractor returns matched_actor_key=null,
+        # which is fine — the Signal row stays untagged for now).
+        actor_keywords=[],
     )
     try:
         scoring = await agent_client.score_signal(extractor_req)
@@ -270,7 +227,7 @@ async def run_actor_fetcher(
         await runs_repo.mark_complete(
             run.id,
             status="error",
-            result_summary=_summarize(dr=dr, scoring=None, actor=actor),
+            result_summary=_summarize(dr=dr, scoring=None, capability=capability),
             cost_usd=total_cost if total_cost > 0 else None,
             signals_written=0,
             proposals_written=0,
@@ -278,25 +235,24 @@ async def run_actor_fetcher(
         )
         fresh = await runs_repo.get(run.id)
         assert fresh is not None
-        return ActorFetchResult(
+        return CapabilityFetchResult(
             run=fresh,
-            actor=actor,
+            capability=capability,
             deep_research=dr,
             scoring=None,
             signal_id=None,
         )
     total_cost += scoring.cost_usd
 
-    # 4. Signal upsert. Day-bucketed source_url + capability_id is the
-    # dedup key; actor_id is the fetcher's whole point.
+    # 4. Signal upsert. Day-bucketed source_url is the dedup key.
     now = datetime.now(UTC)
     upsert = SignalUpsert(
         sector_slug=capability.sector_slug,
         capability_id=capability.id,
-        actor_id=actor.id,
+        actor_id=None,  # actor resolution lands in M49b (ActorFetcher) + M50
         source_kind="research_brief",
         source_url=_synthetic_source_url(
-            actor_key=actor.key,
+            capability_key=capability.key,
             vision_slug=capability.sector_slug,
             as_of=now,
         ),
@@ -313,7 +269,9 @@ async def run_actor_fetcher(
         delta_regulatory=scoring.scoring.delta_regulatory
         if scoring.scoring.confidence >= 0.5
         else None,
-        delta_supply=scoring.scoring.delta_supply if scoring.scoring.confidence >= 0.5 else None,
+        delta_supply=scoring.scoring.delta_supply
+        if scoring.scoring.confidence >= 0.5
+        else None,
         is_highlight=scoring.scoring.is_highlight,
     )
     signal_id = await signal_writer.upsert(upsert)
@@ -322,7 +280,7 @@ async def run_actor_fetcher(
     await runs_repo.mark_complete(
         run.id,
         status="ok",
-        result_summary=_summarize(dr=dr, scoring=scoring, actor=actor),
+        result_summary=_summarize(dr=dr, scoring=scoring, capability=capability),
         cost_usd=total_cost if total_cost > 0 else None,
         signals_written=signals_written,
         proposals_written=0,
@@ -330,9 +288,9 @@ async def run_actor_fetcher(
     )
     fresh = await runs_repo.get(run.id)
     assert fresh is not None
-    return ActorFetchResult(
+    return CapabilityFetchResult(
         run=fresh,
-        actor=actor,
+        capability=capability,
         deep_research=dr,
         scoring=scoring,
         signal_id=signal_id,
@@ -342,6 +300,16 @@ async def run_actor_fetcher(
 # --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------
+
+
+class CapabilityFetcherError(Exception):
+    """Raised when the fetcher refuses to even attempt the run (e.g.
+    unknown capability). The crawler endpoint maps this to a 404
+    instead of a generic 500."""
+
+    def __init__(self, message: str, *, run: CrawlRunRow) -> None:
+        super().__init__(message)
+        self.run = run
 
 
 def _first_sentence(text: str) -> str:
@@ -359,18 +327,12 @@ def _summarize(
     *,
     dr: DeepResearchResult,
     scoring: SignalExtractorRunResult | None,
-    actor: ActorRecord,
+    capability: CapabilityRecord,
 ) -> dict[str, Any]:
     out: dict[str, Any] = {
-        "actor_id": actor.id,
-        "actor_key": actor.key,
-        "actor_name": actor.name,
-        "primary_capability_id": actor.primary_capability.id
-        if actor.primary_capability is not None
-        else None,
-        "primary_capability_key": actor.primary_capability.key
-        if actor.primary_capability is not None
-        else None,
+        "capability_id": capability.id,
+        "capability_key": capability.key,
+        "capability_name": capability.name,
         "interaction_id": dr.interaction_id,
         "model": dr.model,
         "dr_status": dr.status,
@@ -386,7 +348,6 @@ def _summarize(
             "delta_regulatory": scoring.scoring.delta_regulatory,
             "delta_supply": scoring.scoring.delta_supply,
             "is_highlight": scoring.scoring.is_highlight,
-            "matched_actor_key": scoring.scoring.matched_actor_key,
             "rationale": scoring.scoring.rationale,
             "cost_usd": scoring.cost_usd,
         }

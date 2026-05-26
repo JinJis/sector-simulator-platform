@@ -11,6 +11,7 @@ members = [
 [tool.uv.sources]
 platform-sdk = { workspace = true }
 agent-tools = { workspace = true }
+data-pipeline = { workspace = true }
 
 [tool.ruff]
 line-length = 100
