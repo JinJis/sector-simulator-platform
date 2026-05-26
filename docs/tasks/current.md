@@ -43,7 +43,7 @@ Six product-level outcomes Phase 4 ships:
 ## Milestones
 
 ```
-M48 ──► M49a ──► M49b ──► [MP1✅ ─► MP2✅ ─► MP3✅ ─► MP4✅ ─► MP5✅ ─► MP6 ─► MP7]
+M48 ──► M49a ──► M49b ──► [MP1✅ ─► MP2✅ ─► MP3✅ ─► MP4✅ ─► MP5✅ ─► MP6✅ ─► MP7]
  │        │        │       │
  │        │        │       └─► M49c ─► M49d ─► M49f ─► M50 ─► M52 ─► M53 ─► M54
  │        │        │
@@ -290,7 +290,18 @@ Economics tab stops being a "coming soon" stub.
 curve set with working source chips on every datapoint; Overview
 shows the preview that routes to the full page.
 
-### MP6 — IA polish: tab alignment + Top10 + Pulse clarity + click affordances  (1d)
+### MP6 — IA polish: tab alignment + Top10 + Pulse clarity + click affordances  (1d) ✅
+
+Shipped 2026-05-26: SubNav tabs now center-aligned (justify-center +
+dropped flex-1 so they cluster center rather than stretching).
+Overview Risk Board sliced to top 10 with "top 10 of N" caption when
+truncated (matches capabilities / actors pattern). Pulse page header
+expanded with a "sources → signals → scores" pipeline line + an
+inline SourceChip legend (one chip per source_kind) so first-time
+readers learn the colour taxonomy from the page itself.
+CapabilityCard + ActorCard now render cursor-pointer + cyan hover
+ring + subtle shadow + a "Detail →" chevron that fades in on hover
+when the card is interactive (href or onClick set).
 
 The small high-leverage UX cleanup that addresses gaps 4 / 5
 (perception) / 8 / 9 (explanation).

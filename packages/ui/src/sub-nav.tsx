@@ -39,7 +39,7 @@ export function SubNav({ items, activeHref, className }: SubNavProps) {
     <nav
       aria-label="Section navigation"
       className={
-        "flex flex-wrap items-stretch gap-1 rounded-lg border border-neutral-800 bg-neutral-900/40 p-1 " +
+        "flex flex-wrap items-stretch justify-center gap-1 rounded-lg border border-neutral-800 bg-neutral-900/40 p-1 " +
         (className ?? "")
       }
     >
@@ -50,7 +50,7 @@ export function SubNav({ items, activeHref, className }: SubNavProps) {
             key={item.href}
             href={item.href}
             aria-current={isActive ? "page" : undefined}
-            className={`min-w-[120px] flex-1 rounded-md px-3 py-2 text-left transition ${
+            className={`min-w-[120px] rounded-md px-3 py-2 text-center transition ${
               isActive
                 ? "bg-neutral-800 shadow-inner ring-1 ring-cyan-500/30"
                 : "hover:bg-neutral-800/50"

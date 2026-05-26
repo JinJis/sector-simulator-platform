@@ -88,12 +88,17 @@ export function CapabilityCard({
       ? "rgb(251 113 133)"
       : "rgb(115 115 115)";
 
+  const interactive = Boolean(href) || Boolean(onClick);
   const cardContent = (
     <div
-      className={`group flex h-full flex-col gap-3 rounded-lg border bg-neutral-900/60 p-3 transition-colors ${
+      className={`group/card flex h-full flex-col gap-3 rounded-lg border bg-neutral-900/60 p-3 transition-all ${
         isBinding
           ? "border-amber-500/60 hover:border-amber-400"
           : "border-neutral-800 hover:border-neutral-700"
+      } ${
+        interactive
+          ? "cursor-pointer hover:bg-neutral-900/80 hover:shadow-lg hover:shadow-cyan-500/5 hover:ring-1 hover:ring-cyan-500/30"
+          : ""
       } ${className ?? ""}`}
       style={style}
       data-capability-key={capabilityKey}
@@ -163,6 +168,13 @@ export function CapabilityCard({
       )}
 
       {children}
+
+      {interactive && (
+        <div className="-mb-1 -mt-1 flex items-center justify-end text-[10px] uppercase tracking-wider text-neutral-600 opacity-0 transition-opacity group-hover/card:opacity-100">
+          <span>Detail</span>
+          <span className="ml-0.5 text-cyan-400">→</span>
+        </div>
+      )}
     </div>
   );
 

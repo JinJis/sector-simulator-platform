@@ -403,6 +403,11 @@ export default async function VisionOverviewPage({ params }: Props) {
           <div className="mb-3 flex items-baseline justify-between">
             <h2 className="text-sm font-medium uppercase tracking-wider text-neutral-400">
               {t("hero.section.riskBoard")}
+              {risks.length > 10 && (
+                <span className="ml-2 text-[10px] font-normal normal-case text-neutral-500">
+                  top 10 of {risks.length}
+                </span>
+              )}
             </h2>
             <a
               href={`/visions/${slug}/risks`}
@@ -412,7 +417,7 @@ export default async function VisionOverviewPage({ params }: Props) {
             </a>
           </div>
           <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-4 py-2" role="list">
-            {risks.map((r) => (
+            {risks.slice(0, 10).map((r) => (
               <RiskRow
                 key={r.key}
                 category={r.category}
