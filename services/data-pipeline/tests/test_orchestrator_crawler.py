@@ -23,7 +23,7 @@ from data_pipeline.db.orchestrator_repo import (
 from data_pipeline.db.risk_reader import RiskRecord
 from data_pipeline.db.signal_writer import SignalUpsert
 from data_pipeline.deep_research.dispatcher import DispatcherClients, dispatch_tick
-from crawler.main import create_app
+from data_pipeline.main import create_app
 from data_pipeline.deep_research.orchestrator import (
     Candidate,
     PickResult,
@@ -597,7 +597,7 @@ async def test_dispatcher_isolates_errors() -> None:
 
 def test_post_orchestrator_tick_dry_run() -> None:
     app = create_app()
-    app.state.repo = _InMemoryRunsRepo()
+    app.state.crawl_runs_repo = _InMemoryRunsRepo()
     app.state.orchestrator_reader = _FakeOrchestratorReader(
         visions=["alpha"],
         caps_by_vision={"alpha": [CapabilityCandidate("alpha", "c1", composite_score=15.0)]},
@@ -614,7 +614,7 @@ def test_post_orchestrator_tick_dry_run() -> None:
 
 def test_post_orchestrator_tick_503_when_reader_unset() -> None:
     app = create_app()
-    app.state.repo = _InMemoryRunsRepo()
+    app.state.crawl_runs_repo = _InMemoryRunsRepo()
     app.state.orchestrator_reader = None
     client = TestClient(app)
     r = client.post("/jobs/orchestrator/tick?dry_run=true", json={})

@@ -17,7 +17,7 @@ from data_pipeline.deep_research.fetchers.hello_world import (
     HelloWorldRunRequest,
     run_hello_world,
 )
-from crawler.main import create_app
+from data_pipeline.main import create_app
 from data_pipeline.crawl_run_repo import CrawlRunRow
 
 
@@ -214,7 +214,7 @@ async def test_hello_world_caches_second_call() -> None:
 
 def _client_with_fakes() -> TestClient:
     app = create_app()
-    app.state.repo = _InMemoryRepo()
+    app.state.crawl_runs_repo = _InMemoryRepo()
     app.state.deep_research = _build_deep_research()
     return TestClient(app)
 
@@ -263,7 +263,7 @@ def test_get_run_returns_404_when_missing() -> None:
 
 def test_hello_world_503_when_deep_research_unavailable() -> None:
     app = create_app()
-    app.state.repo = _InMemoryRepo()
+    app.state.crawl_runs_repo = _InMemoryRepo()
     app.state.deep_research = None
     client = TestClient(app)
     r = client.post(
@@ -275,7 +275,7 @@ def test_hello_world_503_when_deep_research_unavailable() -> None:
 
 def test_hello_world_503_when_repo_unavailable() -> None:
     app = create_app()
-    app.state.repo = None
+    app.state.crawl_runs_repo = None
     app.state.deep_research = _build_deep_research()
     client = TestClient(app)
     r = client.post(

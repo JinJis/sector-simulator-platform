@@ -35,9 +35,11 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
+from agent_tools import DeepResearchClient
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI, HTTPException
+from apscheduler.triggers.interval import IntervalTrigger
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -49,10 +51,56 @@ from data_pipeline.adapters.fake_financials import FakeFinancialsSource
 from data_pipeline.adapters.financials_base import FinancialsSource
 from data_pipeline.adapters.frankfurter_fx import FrankfurterFx
 from data_pipeline.adapters.yfinance_source import YFinanceSource
+from data_pipeline.agents import (
+    AgentClient,
+    HttpAgentClient,
+    default_agent_orchestration_url,
+)
+from data_pipeline.crawl_run_repo import (
+    CrawlRunRepository,
+    CrawlRunRow,
+    PostgresCrawlRunRepository,
+)
+from data_pipeline.db.actor_reader import ActorReader, PostgresActorReader
+from data_pipeline.db.capability_reader import CapabilityReader, PostgresCapabilityReader
+from data_pipeline.db.discovery_reader import DiscoveryReader, PostgresDiscoveryReader
+from data_pipeline.db.orchestrator_repo import OrchestratorReader, PostgresOrchestratorReader
+from data_pipeline.db.proposal_writer import PostgresProposalWriter, ProposalWriter
+from data_pipeline.db.risk_reader import PostgresRiskReader, RiskReader
+from data_pipeline.db.signal_writer import PostgresSignalWriter, SignalWriter
+from data_pipeline.deep_research.discovery.runner import run_discovery
+from data_pipeline.deep_research.dispatcher import DispatcherClients, dispatch_tick
+from data_pipeline.deep_research.fetchers.actor import (
+    ActorFetcherError,
+    ActorFetchRequest,
+    run_actor_fetcher,
+)
+from data_pipeline.deep_research.fetchers.capability import (
+    CapabilityFetcherError,
+    CapabilityFetchRequest,
+    run_capability_fetcher,
+)
+from data_pipeline.deep_research.fetchers.hello_world import (
+    HelloWorldRunRequest,
+    run_hello_world,
+)
+from data_pipeline.deep_research.fetchers.risk import (
+    RiskFetcherError,
+    RiskFetchRequest,
+    run_risk_fetcher,
+)
+from data_pipeline.deep_research.fetchers.signal import (
+    SignalFetcherError,
+    SignalFetchRequest,
+    SignalIngestFn,
+    run_signal_fetcher,
+)
+from data_pipeline.deep_research.orchestrator import pick_for_tick
 from data_pipeline.jobs.refresh_financials import (
     RefreshFinancialsResult,
     refresh_financials,
 )
+from data_pipeline.jobs.signal_ingest import IngestStats, run_signal_ingest
 from data_pipeline.jobs.refresh_quote_history import (
     RefreshHistoryResult,
     refresh_quote_history,
@@ -247,6 +295,110 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         os.environ.get("REFRESH_FINANCIALS_QUARTERS", str(_DEFAULT_FINANCIALS_QUARTERS))
     )
 
+    # ------------------------------------------------------------------
+    # Crawler-side bootstrap (merged from crawler/main.py in commit 3/6).
+    # crawl_runs_repo owns its own asyncpg pool; the per-fetcher readers
+    # share that pool to stay at one connection bucket for the crawler
+    # side of the service.
+    # ------------------------------------------------------------------
+    if not hasattr(app.state, "crawl_runs_repo"):
+        dsn = os.environ.get("DATABASE_URL")
+        if dsn:
+            try:
+                app.state.crawl_runs_repo = await PostgresCrawlRunRepository.connect(dsn)
+            except Exception as exc:
+                log.error("data-pipeline: crawl_runs_repo connect failed: %s", exc)
+                app.state.crawl_runs_repo = None
+        else:
+            log.warning(
+                "data-pipeline: DATABASE_URL unset — crawler fetchers disabled"
+            )
+            app.state.crawl_runs_repo = None
+
+    if not hasattr(app.state, "deep_research"):
+        app.state.deep_research = _build_deep_research_client()
+
+    crawl_repo = getattr(app.state, "crawl_runs_repo", None)
+    crawl_pool = crawl_repo.pool if isinstance(crawl_repo, PostgresCrawlRunRepository) else None
+
+    if not hasattr(app.state, "capability_reader"):
+        app.state.capability_reader = (
+            PostgresCapabilityReader(crawl_pool) if crawl_pool is not None else None
+        )
+    if not hasattr(app.state, "signal_writer"):
+        app.state.signal_writer = (
+            PostgresSignalWriter(crawl_pool) if crawl_pool is not None else None
+        )
+    if not hasattr(app.state, "actor_reader"):
+        app.state.actor_reader = (
+            PostgresActorReader(crawl_pool) if crawl_pool is not None else None
+        )
+    if not hasattr(app.state, "risk_reader"):
+        app.state.risk_reader = (
+            PostgresRiskReader(crawl_pool) if crawl_pool is not None else None
+        )
+    if not hasattr(app.state, "orchestrator_reader"):
+        app.state.orchestrator_reader = (
+            PostgresOrchestratorReader(crawl_pool) if crawl_pool is not None else None
+        )
+    if not hasattr(app.state, "discovery_reader"):
+        app.state.discovery_reader = (
+            PostgresDiscoveryReader(crawl_pool) if crawl_pool is not None else None
+        )
+    if not hasattr(app.state, "proposal_writer"):
+        app.state.proposal_writer = (
+            PostgresProposalWriter(crawl_pool) if crawl_pool is not None else None
+        )
+    if not hasattr(app.state, "bot_user_id"):
+        if crawl_pool is not None:
+            row = await crawl_pool.fetchrow(
+                "SELECT id FROM users WHERE bot_kind = 'research_agent' AND is_bot = true LIMIT 1"
+            )
+            app.state.bot_user_id = row["id"] if row is not None else None
+            if app.state.bot_user_id is None:
+                log.warning(
+                    "data-pipeline: no @feasibility_bot user found — discovery "
+                    "endpoint will 503 until `pnpm db:seed` runs"
+                )
+        else:
+            app.state.bot_user_id = None
+
+    if not hasattr(app.state, "agent_client"):
+        base = default_agent_orchestration_url()
+        if base:
+            app.state.agent_client = HttpAgentClient(base_url=base)
+        else:
+            log.warning(
+                "data-pipeline: AGENT_ORCHESTRATION_URL unset — SignalExtractor "
+                "unreachable; capability/actor/risk fetchers will 503"
+            )
+            app.state.agent_client = None
+
+    # In-process signal-ingest closure. Reuses signal_repo (already
+    # initialized above) — no new pool. SignalFetcher invokes this
+    # instead of the legacy HTTP hop.
+    if not hasattr(app.state, "signal_ingest_fn"):
+        sig_repo = app.state.signal_repo
+        if sig_repo is not None:
+            async def _signal_ingest_scoped(
+                vision_slug: str,
+                capability_keys: list[str],
+                lookback_days: int,
+                per_capability_limit: int,
+            ) -> IngestStats:
+                return await run_signal_ingest(
+                    sector_slugs=[vision_slug],
+                    repo=sig_repo,
+                    capability_keys=capability_keys,
+                    lookback_days=lookback_days,
+                    per_capability_limit=per_capability_limit,
+                )
+            app.state.signal_ingest_fn = _signal_ingest_scoped
+        else:
+            app.state.signal_ingest_fn = None
+    if not hasattr(app.state, "last_orchestrator_tick"):
+        app.state.last_orchestrator_tick = None
+
     scheduler: AsyncIOScheduler | None = None
     if os.environ.get("INGEST_SCHEDULE", "on").lower() != "off":
         scheduler = AsyncIOScheduler(timezone="UTC")
@@ -405,6 +557,34 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
                     rf_cron,
                 )
 
+        # M49f — orchestrator opportunistic picker. 15-min interval.
+        # ORCHESTRATOR_SCHEDULE (new) or CRAWLER_SCHEDULE (legacy
+        # alias from the standalone crawler service); default off so
+        # dev/CI doesn't burn LLM budget.
+        orch_mode = os.environ.get(
+            "ORCHESTRATOR_SCHEDULE",
+            os.environ.get("CRAWLER_SCHEDULE", "off"),
+        ).lower()
+        if orch_mode != "off" and app.state.crawl_runs_repo is not None:
+            scheduler.add_job(
+                _run_orchestrator_tick_job,
+                trigger=IntervalTrigger(minutes=15),
+                kwargs={"app": app},
+                id="orchestrator_tick_15min",
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+            )
+            log.info(
+                "data-pipeline: orchestrator cron armed (every 15min) — schedule=%s",
+                orch_mode,
+            )
+        elif orch_mode == "off":
+            log.info(
+                "data-pipeline: orchestrator cron disabled — "
+                "use POST /jobs/orchestrator/tick for manual runs"
+            )
+
         if scheduler.get_jobs():
             scheduler.start()
         else:
@@ -429,6 +609,9 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         resolver_v2_repo = getattr(app.state, "resolver_v2_repo", None)
         if resolver_v2_repo is not None:
             await resolver_v2_repo.close()
+        crawl_runs_repo = getattr(app.state, "crawl_runs_repo", None)
+        if isinstance(crawl_runs_repo, PostgresCrawlRunRepository):
+            await crawl_runs_repo.close()
 
 
 async def _run_refresh_job(*, app: FastAPI) -> RefreshQuotesResult:
@@ -527,6 +710,259 @@ async def _run_recompute_feasibility_job(*, app: FastAPI):  # noqa: ANN201
     return stats
 
 
+# --------------------------------------------------------------------------
+# Crawler-side Pydantic shapes (merged from services/crawler/crawler/main.py
+# in the data-pipeline merger, commit 3/6). Names + fields preserved so
+# admin cockpit + tRPC schema don't need a deploy in lockstep.
+# --------------------------------------------------------------------------
+
+
+class CrawlRunOut(BaseModel):
+    id: str
+    vision_slug: str
+    fetcher_kind: str
+    status: str
+    plan: dict[str, Any]
+    result_summary: dict[str, Any] | None
+    cost_usd: float | None
+    signals_written: int
+    proposals_written: int
+    error: str | None
+    started_at: datetime
+    ended_at: datetime | None
+
+    @classmethod
+    def from_row(cls, row: CrawlRunRow) -> CrawlRunOut:
+        return cls(
+            id=row.id,
+            vision_slug=row.vision_slug,
+            fetcher_kind=row.fetcher_kind,
+            status=row.status,
+            plan=row.plan,
+            result_summary=row.result_summary,
+            cost_usd=row.cost_usd,
+            signals_written=row.signals_written,
+            proposals_written=row.proposals_written,
+            error=row.error,
+            started_at=row.started_at,
+            ended_at=row.ended_at,
+        )
+
+
+class HelloWorldTriggerBody(BaseModel):
+    vision_slug: str = Field(..., min_length=1, max_length=128)
+    prompt: str | None = None
+
+
+class HelloWorldTriggerOut(BaseModel):
+    run: CrawlRunOut
+    cached: bool
+
+
+class CapabilityTriggerBody(BaseModel):
+    vision_slug: str = Field(..., min_length=1, max_length=128)
+    capability_key: str = Field(..., min_length=1, max_length=128)
+    prompt: str | None = Field(default=None, max_length=4000)
+
+
+class CapabilityTriggerOut(BaseModel):
+    run: CrawlRunOut
+    signal_id: str | None
+    dr_cached: bool
+    scoring_confidence: float | None
+
+
+class ActorTriggerBody(BaseModel):
+    vision_slug: str = Field(..., min_length=1, max_length=128)
+    actor_key: str = Field(..., min_length=1, max_length=128)
+    prompt: str | None = Field(default=None, max_length=4000)
+
+
+class ActorTriggerOut(BaseModel):
+    run: CrawlRunOut
+    signal_id: str | None
+    dr_cached: bool
+    scoring_confidence: float | None
+    matched_actor_key: str | None
+    primary_capability_key: str | None
+
+
+class SignalTriggerBody(BaseModel):
+    vision_slug: str = Field(..., min_length=1, max_length=128)
+    capability_key: str = Field(..., min_length=1, max_length=128)
+    lookback_days: int = Field(default=3, ge=1, le=30)
+    per_capability_limit: int = Field(default=10, ge=1, le=100)
+
+
+class SignalTriggerOut(BaseModel):
+    run: CrawlRunOut
+    raw_signals_fetched: int
+    signals_written: int
+    extractor_failures: int
+    extractor_total_cost_usd: float
+
+
+class RiskTriggerBody(BaseModel):
+    vision_slug: str = Field(..., min_length=1, max_length=128)
+    risk_key: str = Field(..., min_length=1, max_length=128)
+    prompt: str | None = Field(default=None, max_length=4000)
+
+
+class RiskTriggerOut(BaseModel):
+    run: CrawlRunOut
+    signal_id: str | None
+    dr_cached: bool
+    scoring_confidence: float | None
+    primary_capability_key: str | None
+    risk_severity: str
+    risk_likelihood: str
+
+
+class OrchestratorCandidateOut(BaseModel):
+    vision_slug: str
+    fetcher_kind: str
+    key: str
+    anchor_composite: float | None
+    stale_hours: float
+    estimated_cost_usd: float
+    ranking_score: float
+
+
+class OrchestratorTickBody(BaseModel):
+    pinned_visions: list[str] | None = Field(default=None, max_length=50)
+
+
+class OrchestratorTickOut(BaseModel):
+    dry_run: bool
+    total_candidates: int
+    over_budget_skipped: int
+    picked: list[OrchestratorCandidateOut]
+    per_vision_remaining_usd: dict[str, float]
+    dispatch_summary: dict[str, Any] | None = None
+
+
+class DiscoveryRunBody(BaseModel):
+    vision_slugs: list[str] | None = Field(default=None, max_length=50)
+    min_signal_count: int = Field(default=2, ge=1, le=20)
+    lookback_days: int = Field(default=7, ge=1, le=30)
+    fuzzy_threshold: float = Field(default=0.92, ge=0.5, le=1.0)
+
+
+class DiscoveryRunOut(BaseModel):
+    summary: dict[str, Any]
+
+
+def _build_deep_research_client() -> DeepResearchClient | None:
+    """Construct a DeepResearchClient backed by google-genai. Vertex AI
+    is the only supported auth path because the deep-research-* models
+    live on the Vertex Interactions API; the AI Studio GEMINI_API_KEY
+    endpoint returns HTML 404 for those model names."""
+    try:
+        from google import genai  # noqa: PLC0415  (optional dep)
+    except ImportError:
+        log.warning("data-pipeline: google-genai not installed — Deep Research disabled")
+        return None
+
+    use_vertex = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    has_api_key = bool((os.environ.get("GEMINI_API_KEY") or "").strip())
+
+    if not use_vertex:
+        log.warning(
+            "data-pipeline: Deep Research disabled — GOOGLE_GENAI_USE_VERTEXAI is "
+            "not set to true. Fetcher endpoints will 503."
+            + (
+                "  (GEMINI_API_KEY is present but cannot serve deep-research-* models.)"
+                if has_api_key
+                else ""
+            )
+        )
+        return None
+    if not creds:
+        log.warning(
+            "data-pipeline: Deep Research disabled — GOOGLE_APPLICATION_CREDENTIALS "
+            "unset. Set it to /secrets/vertex-ai-sa.json (in-container path)."
+        )
+        return None
+    if not os.path.exists(creds):
+        log.error(
+            "data-pipeline: Deep Research disabled — SA JSON not found at %s. "
+            "Drop a Vertex AI service-account key at infra/secrets/"
+            "vertex-ai-sa.json on the host (see infra/secrets/README.md).",
+            creds,
+        )
+        return None
+    try:
+        client = genai.Client(
+            vertexai=True,
+            location=os.environ.get("GOOGLE_CLOUD_LOCATION", "global"),
+        )
+    except Exception as exc:  # pragma: no cover — exercised in compose
+        log.error(
+            "data-pipeline: Vertex AI client construction failed (%s). "
+            "Verify GOOGLE_CLOUD_PROJECT + the SA's roles/aiplatform.user grant.",
+            exc,
+        )
+        return None
+    log.info("data-pipeline: Deep Research enabled via Vertex AI (sa=%s)", creds)
+    return DeepResearchClient(genai_client=client)
+
+
+async def _run_orchestrator_tick_job(*, app: FastAPI) -> None:
+    """Cron entrypoint (M49f) — wraps pick_for_tick + dispatch_tick with
+    full client wiring from app.state. Logs + swallows errors so a bad
+    tick doesn't kill the scheduler."""
+    reader = getattr(app.state, "orchestrator_reader", None)
+    if reader is None:
+        log.warning("orchestrator cron: orchestrator_reader unset — skipping tick")
+        return
+    try:
+        pick = await pick_for_tick(reader=reader)
+        if not pick.picked:
+            log.info(
+                "orchestrator cron: tick picked 0/%d (over_budget=%d)",
+                pick.total_candidates,
+                pick.over_budget_skipped,
+            )
+            return
+        deps = [
+            getattr(app.state, "crawl_runs_repo", None),
+            getattr(app.state, "deep_research", None),
+            getattr(app.state, "agent_client", None),
+            getattr(app.state, "capability_reader", None),
+            getattr(app.state, "actor_reader", None),
+            getattr(app.state, "risk_reader", None),
+            getattr(app.state, "signal_writer", None),
+            getattr(app.state, "signal_ingest_fn", None),
+        ]
+        if any(d is None for d in deps):
+            log.warning(
+                "orchestrator cron: missing dep(s) — skipping dispatch "
+                "(runs=%s dr=%s agent=%s cap=%s actor=%s risk=%s writer=%s ingest_fn=%s)",
+                *["on" if d is not None else "off" for d in deps],
+            )
+            return
+        clients = DispatcherClients(
+            runs_repo=deps[0],
+            capability_reader=deps[3],
+            actor_reader=deps[4],
+            risk_reader=deps[5],
+            signal_writer=deps[6],
+            deep_research=deps[1],
+            agent_client=deps[2],
+            signal_ingest_fn=deps[7],
+        )
+        summary = await dispatch_tick(pick=pick, clients=clients)
+        app.state.last_orchestrator_tick = summary.to_summary_dict()
+    except Exception as exc:  # noqa: BLE001
+        log.error("orchestrator cron: tick failed: %s", exc)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="data-pipeline",
@@ -570,6 +1006,14 @@ def create_app() -> FastAPI:
             "last_resolve_predictions": last_resolve.model_dump(mode="json")
             if last_resolve is not None
             else None,
+            # Merged crawler readiness flags (commit 3/6). Cockpit chips
+            # at /admin/crawler read this same shape.
+            "ready": {
+                "repo": getattr(app.state, "crawl_runs_repo", None) is not None,
+                "deep_research": getattr(app.state, "deep_research", None) is not None,
+                "agent_client": getattr(app.state, "agent_client", None) is not None,
+                "signal_repo": getattr(app.state, "signal_repo", None) is not None,
+            },
         }
 
     @app.post("/jobs/refresh-quotes", response_model=RefreshQuotesResult)
@@ -849,6 +1293,387 @@ def create_app() -> FastAPI:
             "score_updater_total_cost_usd": last.score_updater_total_cost_usd,
             "errors": last.errors,
         }
+
+    # ------------------------------------------------------------------
+    # Crawler-side endpoints (merged from crawler/main.py in commit 3/6).
+    # ------------------------------------------------------------------
+
+    def _require_crawl_repo() -> CrawlRunRepository:
+        repo = getattr(app.state, "crawl_runs_repo", None)
+        if repo is None:
+            raise HTTPException(
+                status_code=503,
+                detail="data-pipeline unavailable — DATABASE_URL not configured",
+            )
+        return repo
+
+    def _require_deep_research() -> DeepResearchClient:
+        dr = getattr(app.state, "deep_research", None)
+        if dr is None:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Deep Research not configured. The deep-research-* models live "
+                    "on the Vertex AI Interactions API; the AI Studio "
+                    "GEMINI_API_KEY endpoint cannot serve them. "
+                    "(1) Drop a Vertex SA JSON at infra/secrets/vertex-ai-sa.json "
+                    "(see infra/secrets/README.md). "
+                    "(2) Set GOOGLE_GENAI_USE_VERTEXAI=true + GOOGLE_CLOUD_PROJECT + "
+                    "GOOGLE_APPLICATION_CREDENTIALS=/secrets/vertex-ai-sa.json in .env. "
+                    "(3) Restart the data-pipeline container."
+                ),
+            )
+        return dr
+
+    def _require_capability_reader() -> CapabilityReader:
+        r = getattr(app.state, "capability_reader", None)
+        if r is None:
+            raise HTTPException(
+                status_code=503,
+                detail="data-pipeline unavailable — capability_reader not configured (DATABASE_URL)",
+            )
+        return r
+
+    def _require_actor_reader() -> ActorReader:
+        r = getattr(app.state, "actor_reader", None)
+        if r is None:
+            raise HTTPException(
+                status_code=503,
+                detail="data-pipeline unavailable — actor_reader not configured (DATABASE_URL)",
+            )
+        return r
+
+    def _require_risk_reader() -> RiskReader:
+        r = getattr(app.state, "risk_reader", None)
+        if r is None:
+            raise HTTPException(
+                status_code=503,
+                detail="data-pipeline unavailable — risk_reader not configured (DATABASE_URL)",
+            )
+        return r
+
+    def _require_orchestrator_reader() -> OrchestratorReader:
+        r = getattr(app.state, "orchestrator_reader", None)
+        if r is None:
+            raise HTTPException(
+                status_code=503,
+                detail="data-pipeline unavailable — orchestrator_reader not configured (DATABASE_URL)",
+            )
+        return r
+
+    def _require_discovery_reader() -> DiscoveryReader:
+        r = getattr(app.state, "discovery_reader", None)
+        if r is None:
+            raise HTTPException(
+                status_code=503,
+                detail="data-pipeline unavailable — discovery_reader not configured",
+            )
+        return r
+
+    def _require_proposal_writer() -> ProposalWriter:
+        w = getattr(app.state, "proposal_writer", None)
+        if w is None:
+            raise HTTPException(
+                status_code=503,
+                detail="data-pipeline unavailable — proposal_writer not configured",
+            )
+        return w
+
+    def _require_bot_user_id() -> str:
+        bot_id = getattr(app.state, "bot_user_id", None)
+        if not bot_id:
+            raise HTTPException(
+                status_code=503,
+                detail="data-pipeline unavailable — no @feasibility_bot user; run `pnpm db:seed`",
+            )
+        return bot_id
+
+    def _require_signal_writer() -> SignalWriter:
+        w = getattr(app.state, "signal_writer", None)
+        if w is None:
+            raise HTTPException(
+                status_code=503,
+                detail="data-pipeline unavailable — signal_writer not configured (DATABASE_URL)",
+            )
+        return w
+
+    def _require_agent_client() -> AgentClient:
+        c = getattr(app.state, "agent_client", None)
+        if c is None:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "data-pipeline unavailable — AGENT_ORCHESTRATION_URL not configured "
+                    "(SignalExtractor unreachable)"
+                ),
+            )
+        return c
+
+    def _require_signal_ingest_fn() -> SignalIngestFn:
+        fn = getattr(app.state, "signal_ingest_fn", None)
+        if fn is None:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "data-pipeline unavailable — DATABASE_URL not configured "
+                    "(SignalFetcher needs signal_repo to run M39 ingest)"
+                ),
+            )
+        return fn
+
+    @app.post("/fetchers/capability/run", response_model=CapabilityTriggerOut)
+    async def capability_run(body: CapabilityTriggerBody) -> CapabilityTriggerOut:
+        repo = _require_crawl_repo()
+        dr = _require_deep_research()
+        reader = _require_capability_reader()
+        writer = _require_signal_writer()
+        agent = _require_agent_client()
+        log.info("crawler: capability triggered vision=%s cap=%s", body.vision_slug, body.capability_key)
+        try:
+            out = await run_capability_fetcher(
+                CapabilityFetchRequest(
+                    vision_slug=body.vision_slug,
+                    capability_key=body.capability_key,
+                    prompt=body.prompt,
+                ),
+                runs_repo=repo,
+                capability_reader=reader,
+                signal_writer=writer,
+                deep_research=dr,
+                agent_client=agent,
+            )
+        except CapabilityFetcherError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return CapabilityTriggerOut(
+            run=CrawlRunOut.from_row(out.run),
+            signal_id=out.signal_id,
+            dr_cached=out.deep_research.cached,
+            scoring_confidence=out.scoring.scoring.confidence if out.scoring is not None else None,
+        )
+
+    @app.post("/fetchers/actor/run", response_model=ActorTriggerOut)
+    async def actor_run(body: ActorTriggerBody) -> ActorTriggerOut:
+        repo = _require_crawl_repo()
+        dr = _require_deep_research()
+        reader = _require_actor_reader()
+        writer = _require_signal_writer()
+        agent = _require_agent_client()
+        log.info("crawler: actor triggered vision=%s actor=%s", body.vision_slug, body.actor_key)
+        try:
+            out = await run_actor_fetcher(
+                ActorFetchRequest(
+                    vision_slug=body.vision_slug,
+                    actor_key=body.actor_key,
+                    prompt=body.prompt,
+                ),
+                runs_repo=repo,
+                actor_reader=reader,
+                signal_writer=writer,
+                deep_research=dr,
+                agent_client=agent,
+            )
+        except ActorFetcherError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return ActorTriggerOut(
+            run=CrawlRunOut.from_row(out.run),
+            signal_id=out.signal_id,
+            dr_cached=out.deep_research.cached,
+            scoring_confidence=out.scoring.scoring.confidence if out.scoring is not None else None,
+            matched_actor_key=out.scoring.scoring.matched_actor_key
+            if out.scoring is not None
+            else None,
+            primary_capability_key=out.actor.primary_capability.key
+            if out.actor.primary_capability is not None
+            else None,
+        )
+
+    @app.post("/fetchers/risk/run", response_model=RiskTriggerOut)
+    async def risk_run(body: RiskTriggerBody) -> RiskTriggerOut:
+        repo = _require_crawl_repo()
+        dr = _require_deep_research()
+        reader = _require_risk_reader()
+        writer = _require_signal_writer()
+        agent = _require_agent_client()
+        log.info("crawler: risk triggered vision=%s risk=%s", body.vision_slug, body.risk_key)
+        try:
+            out = await run_risk_fetcher(
+                RiskFetchRequest(
+                    vision_slug=body.vision_slug,
+                    risk_key=body.risk_key,
+                    prompt=body.prompt,
+                ),
+                runs_repo=repo,
+                risk_reader=reader,
+                signal_writer=writer,
+                deep_research=dr,
+                agent_client=agent,
+            )
+        except RiskFetcherError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return RiskTriggerOut(
+            run=CrawlRunOut.from_row(out.run),
+            signal_id=out.signal_id,
+            dr_cached=out.deep_research.cached,
+            scoring_confidence=out.scoring.scoring.confidence if out.scoring is not None else None,
+            primary_capability_key=out.risk.primary_capability.key
+            if out.risk.primary_capability is not None
+            else None,
+            risk_severity=out.risk.severity,
+            risk_likelihood=out.risk.likelihood,
+        )
+
+    @app.post("/fetchers/signal/run", response_model=SignalTriggerOut)
+    async def signal_run(body: SignalTriggerBody) -> SignalTriggerOut:
+        repo = _require_crawl_repo()
+        reader = _require_capability_reader()
+        signal_ingest_fn = _require_signal_ingest_fn()
+        log.info("crawler: signal triggered vision=%s cap=%s", body.vision_slug, body.capability_key)
+        try:
+            out = await run_signal_fetcher(
+                SignalFetchRequest(
+                    vision_slug=body.vision_slug,
+                    capability_key=body.capability_key,
+                    lookback_days=body.lookback_days,
+                    per_capability_limit=body.per_capability_limit,
+                ),
+                runs_repo=repo,
+                capability_reader=reader,
+                signal_ingest_fn=signal_ingest_fn,
+            )
+        except SignalFetcherError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return SignalTriggerOut(
+            run=CrawlRunOut.from_row(out.run),
+            raw_signals_fetched=out.ingest.raw_signals_fetched if out.ingest else 0,
+            signals_written=out.ingest.signals_written if out.ingest else 0,
+            extractor_failures=out.ingest.extractor_failures if out.ingest else 0,
+            extractor_total_cost_usd=out.ingest.extractor_total_cost_usd if out.ingest else 0.0,
+        )
+
+    @app.post("/fetchers/hello-world/run", response_model=HelloWorldTriggerOut)
+    async def hello_world_run(body: HelloWorldTriggerBody) -> HelloWorldTriggerOut:
+        repo = _require_crawl_repo()
+        dr = _require_deep_research()
+        log.info("crawler: hello-world triggered vision=%s", body.vision_slug)
+        out = await run_hello_world(
+            HelloWorldRunRequest(vision_slug=body.vision_slug, prompt=body.prompt),
+            repo=repo,
+            deep_research=dr,
+        )
+        return HelloWorldTriggerOut(
+            run=CrawlRunOut.from_row(out.run),
+            cached=out.cached,
+        )
+
+    @app.post("/jobs/orchestrator/tick", response_model=OrchestratorTickOut)
+    async def orchestrator_tick(
+        body: OrchestratorTickBody | None = None,
+        dry_run: bool = True,
+    ) -> OrchestratorTickOut:
+        reader = _require_orchestrator_reader()
+        pinned = set(body.pinned_visions) if body and body.pinned_visions else set()
+        pick = await pick_for_tick(reader=reader, pinned_visions=pinned)
+
+        picked_out = [
+            OrchestratorCandidateOut(
+                vision_slug=c.vision_slug,
+                fetcher_kind=c.fetcher_kind,
+                key=c.key,
+                anchor_composite=c.anchor_composite,
+                stale_hours=round(c.stale_hours, 2),
+                estimated_cost_usd=round(c.estimated_cost_usd, 4),
+                ranking_score=round(c.ranking_score, 2),
+            )
+            for c in pick.picked
+        ]
+
+        if dry_run:
+            return OrchestratorTickOut(
+                dry_run=True,
+                total_candidates=pick.total_candidates,
+                over_budget_skipped=pick.over_budget_skipped,
+                picked=picked_out,
+                per_vision_remaining_usd={
+                    k: round(v, 4) for k, v in pick.per_vision_remaining_usd.items()
+                },
+                dispatch_summary=None,
+            )
+
+        repo = _require_crawl_repo()
+        dr = _require_deep_research()
+        agent = _require_agent_client()
+        cap_reader = _require_capability_reader()
+        actor_reader = _require_actor_reader()
+        risk_reader = _require_risk_reader()
+        writer = _require_signal_writer()
+        signal_ingest_fn = _require_signal_ingest_fn()
+        clients = DispatcherClients(
+            runs_repo=repo,
+            capability_reader=cap_reader,
+            actor_reader=actor_reader,
+            risk_reader=risk_reader,
+            signal_writer=writer,
+            deep_research=dr,
+            agent_client=agent,
+            signal_ingest_fn=signal_ingest_fn,
+        )
+        summary = await dispatch_tick(pick=pick, clients=clients)
+        return OrchestratorTickOut(
+            dry_run=False,
+            total_candidates=pick.total_candidates,
+            over_budget_skipped=pick.over_budget_skipped,
+            picked=picked_out,
+            per_vision_remaining_usd={
+                k: round(v, 4) for k, v in pick.per_vision_remaining_usd.items()
+            },
+            dispatch_summary=summary.to_summary_dict(),
+        )
+
+    @app.post("/jobs/discovery/run", response_model=DiscoveryRunOut)
+    async def discovery_run(body: DiscoveryRunBody | None = None) -> DiscoveryRunOut:
+        discovery_reader = _require_discovery_reader()
+        proposal_writer = _require_proposal_writer()
+        bot_id = _require_bot_user_id()
+        body = body or DiscoveryRunBody()
+
+        slugs = body.vision_slugs
+        if not slugs:
+            orch_reader = _require_orchestrator_reader()
+            slugs = await orch_reader.list_vision_slugs()
+        summary = await run_discovery(
+            sector_slugs=slugs,
+            reader=discovery_reader,
+            writer=proposal_writer,
+            bot_user_id=bot_id,
+            min_signal_count=body.min_signal_count,
+            lookback_days=body.lookback_days,
+            fuzzy_threshold=body.fuzzy_threshold,
+        )
+        return DiscoveryRunOut(summary=summary.to_dict())
+
+    @app.get("/jobs/runs", response_model=list[CrawlRunOut])
+    async def list_runs(
+        vision: str | None = Query(None, alias="vision"),
+        fetcher: str | None = Query(None, alias="fetcher"),
+        status: str | None = Query(None, alias="status"),
+        limit: int = Query(50, ge=1, le=200),
+    ) -> list[CrawlRunOut]:
+        repo = _require_crawl_repo()
+        rows = await repo.list_recent(
+            vision_slug=vision,
+            fetcher_kind=fetcher,
+            status=status,
+            limit=limit,
+        )
+        return [CrawlRunOut.from_row(r) for r in rows]
+
+    @app.get("/jobs/runs/{run_id}", response_model=CrawlRunOut)
+    async def get_run(run_id: str) -> CrawlRunOut:
+        repo = _require_crawl_repo()
+        row = await repo.get(run_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+        return CrawlRunOut.from_row(row)
 
     return app
 

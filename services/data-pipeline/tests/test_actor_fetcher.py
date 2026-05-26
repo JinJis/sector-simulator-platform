@@ -24,7 +24,7 @@ from data_pipeline.deep_research.fetchers.actor import (
     ActorFetchRequest,
     run_actor_fetcher,
 )
-from crawler.main import create_app
+from data_pipeline.main import create_app
 from data_pipeline.crawl_run_repo import CrawlRunRow
 from fastapi.testclient import TestClient
 
@@ -450,7 +450,7 @@ async def test_actor_fetcher_dr_failure_skips_extractor_call() -> None:
 
 def _client_with_fakes() -> tuple[TestClient, _InMemorySignalWriter]:
     app = create_app()
-    app.state.repo = _InMemoryRunsRepo()
+    app.state.crawl_runs_repo = _InMemoryRunsRepo()
     app.state.deep_research = _build_deep_research()
     app.state.capability_reader = None  # not used by the actor endpoint
     app.state.actor_reader = _seed_actor_reader()
@@ -490,7 +490,7 @@ def test_post_actor_404_when_actor_missing() -> None:
 
 def test_post_actor_503_when_actor_reader_unavailable() -> None:
     app = create_app()
-    app.state.repo = _InMemoryRunsRepo()
+    app.state.crawl_runs_repo = _InMemoryRunsRepo()
     app.state.deep_research = _build_deep_research()
     app.state.capability_reader = None
     app.state.actor_reader = None

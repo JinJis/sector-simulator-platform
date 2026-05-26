@@ -24,7 +24,7 @@ from data_pipeline.deep_research.fetchers.risk import (
     RiskFetchRequest,
     run_risk_fetcher,
 )
-from crawler.main import create_app
+from data_pipeline.main import create_app
 from data_pipeline.crawl_run_repo import CrawlRunRow
 from fastapi.testclient import TestClient
 
@@ -456,7 +456,7 @@ async def test_risk_fetcher_dr_failure_skips_extractor_call() -> None:
 
 def _client_with_fakes() -> tuple[TestClient, _InMemorySignalWriter]:
     app = create_app()
-    app.state.repo = _InMemoryRunsRepo()
+    app.state.crawl_runs_repo = _InMemoryRunsRepo()
     app.state.deep_research = _build_deep_research()
     app.state.capability_reader = None
     app.state.actor_reader = None
@@ -505,7 +505,7 @@ def test_post_risk_404_when_risk_missing() -> None:
 
 def test_post_risk_503_when_risk_reader_unavailable() -> None:
     app = create_app()
-    app.state.repo = _InMemoryRunsRepo()
+    app.state.crawl_runs_repo = _InMemoryRunsRepo()
     app.state.deep_research = _build_deep_research()
     app.state.capability_reader = None
     app.state.actor_reader = None

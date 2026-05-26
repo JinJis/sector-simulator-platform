@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from crawler.main import create_app
+from data_pipeline.main import create_app
 from data_pipeline.crawl_run_repo import CrawlRunRow
 from data_pipeline.db.capability_reader import CapabilityRecord
 from data_pipeline.deep_research.fetchers.signal import (
@@ -291,7 +291,7 @@ async def test_signal_fetcher_zero_signals_still_ok() -> None:
 
 def _client_with_fakes() -> tuple[TestClient, _FakeSignalIngestFn]:
     app = create_app()
-    app.state.repo = _InMemoryRunsRepo()
+    app.state.crawl_runs_repo = _InMemoryRunsRepo()
     app.state.deep_research = None  # signal path doesn't need DR
     app.state.capability_reader = _seed_cap_reader()
     app.state.signal_writer = None
@@ -336,7 +336,7 @@ def test_post_signal_404_when_capability_missing() -> None:
 
 def test_post_signal_503_when_pipeline_unavailable() -> None:
     app = create_app()
-    app.state.repo = _InMemoryRunsRepo()
+    app.state.crawl_runs_repo = _InMemoryRunsRepo()
     app.state.deep_research = None
     app.state.capability_reader = _seed_cap_reader()
     app.state.signal_writer = None
