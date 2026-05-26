@@ -155,13 +155,17 @@ const Health24hOut = z.object({
 // ---------- Helpers ----------
 
 function crawlerBase(): string {
-  const base = env().CRAWLER_URL;
+  // After the crawler/data-pipeline merger (commit 6/6), every former
+  // crawler endpoint lives at the data-pipeline service. Prefer the
+  // canonical DATA_PIPELINE_URL; fall back to the legacy CRAWLER_URL
+  // for deploys still mid-rollover.
+  const base = env().DATA_PIPELINE_URL ?? env().CRAWLER_URL;
   if (!base) {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
       message:
-        "CRAWLER_URL not configured — start the crawler service or " +
-        "set CRAWLER_URL to its base URL.",
+        "DATA_PIPELINE_URL not configured — start the data-pipeline " +
+        "service or set DATA_PIPELINE_URL to its base URL.",
     });
   }
   return base.replace(/\/+$/, "");

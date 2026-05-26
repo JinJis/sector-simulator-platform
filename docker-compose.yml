@@ -133,57 +133,45 @@ services:
     networks:
       - internal
 
+  # Unified data-pipeline (commit 6/6 of the crawler merger). One
+  # container hosts:
+  #   - tiered signal ingest (news_ingest_5min · research_ingest_hourly)
+  #   - recompute_feasibility_hourly + resolve_predictions_v2_hourly
+  #   - daily quote refresh (PredictionV2 dep)
+  #   - all M49 fetchers + the M50 discovery loop
+  #   - the manual DR digest at /jobs/deep-research-digest/run
+  # Port 8003. The previous services/crawler container (port 8004) was
+  # deleted in commit 6 — every endpoint moved here.
   data-pipeline:
     image: tssp/data-pipeline:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: infra/docker/data-pipeline.Dockerfile
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
-      # `yfinance` (default) for live ingest; `fake` to short-circuit
-      # to a no-op source for local smoke tests.
-      INGEST_SOURCE: ${INGEST_SOURCE:-yfinance}
-      # Daily refresh cron — UTC. Default 08:30 UTC (17:30 KST, after
-      # KOSPI close + a few hours after US close).
-      INGEST_CRON_QUOTES: ${INGEST_CRON_QUOTES:-30 8 * * *}
-      # Set to `off` if you don't want the scheduler firing in CI/dev.
-      INGEST_SCHEDULE: ${INGEST_SCHEDULE:-on}
-      INGEST_THROTTLE_MS: ${INGEST_THROTTLE_MS:-200}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      db-migrate:
-        condition: service_completed_successfully
-    networks:
-      - internal
-
-  # M48c — real-time crawler service. Runs per-surface fetchers + the
-  # Gemini Deep Research Agent; writes CrawlRun rows for the admin
-  # cockpit and (in M49+) Signal/CommunityProposal rows. Always-on
-  # alongside data-pipeline. Port 8004.
-  crawler:
-    image: tssp/crawler:${IMAGE_TAG:-latest}
-    build:
-      context: .
-      dockerfile: infra/docker/crawler.Dockerfile
-    # Vertex env comes from .env (same reasoning as agent-orchestration).
+    # Vertex env comes from .env (same reasoning as agent-orchestration
+    # below). env_file skips compose interpolation so a stray export
+    # in someone's ~/.bashrc can't silently override values.
     env_file:
       - .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
-      GOOGLE_APPLICATION_CREDENTIALS: /secrets/vertex-ai-sa.json
-      # M49a — CapabilityFetcher delegates per-dim scoring to the
-      # SignalExtractor agent via HTTP. Without this, the capability
-      # endpoint returns 503.
+      # `yfinance` (default) for live quote ingest; `fake` for smoke.
+      INGEST_SOURCE: ${INGEST_SOURCE:-yfinance}
+      INGEST_CRON_QUOTES: ${INGEST_CRON_QUOTES:-30 8 * * *}
+      INGEST_SCHEDULE: ${INGEST_SCHEDULE:-on}
+      INGEST_THROTTLE_MS: ${INGEST_THROTTLE_MS:-200}
+      # SignalExtractor + ScoreUpdater HTTP client. Capability / actor /
+      # risk fetchers + the digest 503 without this.
       AGENT_ORCHESTRATION_URL: http://agent-orchestration:8002
-      # M49c — SignalFetcher delegates scoped signal-ingest to the
-      # data-pipeline service via HTTP. Missing this env → /fetchers/
-      # signal/run returns 503 with a clear "DATA_PIPELINE_URL not
-      # configured" hint.
-      DATA_PIPELINE_URL: http://data-pipeline:8003
-      # M49f will arm the orchestrator cron via this flag. M48c is
-      # trigger-only; scheduler stays off by default.
-      CRAWLER_SCHEDULE: ${CRAWLER_SCHEDULE:-off}
+      # Container-internal Vertex SA mount; the same dir is mounted
+      # read-only into agent-orchestration and sector-service.
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/vertex-ai-sa.json
+      # M49f orchestrator picker. Off by default — flip to `on` in
+      # prod to enable. The deprecated alias CRAWLER_SCHEDULE is still
+      # honored.
+      ORCHESTRATOR_SCHEDULE: ${ORCHESTRATOR_SCHEDULE:-${CRAWLER_SCHEDULE:-off}}
+      # Tiered signal ingest gates.
+      NEWS_INGEST_SCHEDULE: ${NEWS_INGEST_SCHEDULE:-on}
+      RESEARCH_INGEST_SCHEDULE: ${RESEARCH_INGEST_SCHEDULE:-on}
     volumes:
       - ./infra/secrets:/secrets:ro
     depends_on:
@@ -192,8 +180,6 @@ services:
       db-migrate:
         condition: service_completed_successfully
       agent-orchestration:
-        condition: service_started
-      data-pipeline:
         condition: service_started
     networks:
       - internal
@@ -213,7 +199,10 @@ services:
       SIMULATION_SERVICE_URL: http://simulation-service:8000
       AGENT_ORCHESTRATION_URL: http://agent-orchestration:8002
       DATA_PIPELINE_URL: http://data-pipeline:8003
-      CRAWLER_URL: http://crawler:8004
+      # CRAWLER_URL retained as a deprecated alias pointing at the
+      # unified data-pipeline; sector-service's crawler tRPC router
+      # prefers DATA_PIPELINE_URL but falls back to this when present.
+      CRAWLER_URL: http://data-pipeline:8003
       DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
       # Container-internal SA mount path.
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/vertex-ai-sa.json
@@ -225,8 +214,6 @@ services:
       agent-orchestration:
         condition: service_started
       data-pipeline:
-        condition: service_started
-      crawler:
         condition: service_started
       postgres:
         condition: service_healthy

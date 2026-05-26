@@ -5,13 +5,11 @@ members = [
   "services/simulation-service",
   "services/agent-orchestration",
   "services/data-pipeline",
-  "services/crawler",
 ]
 
 [tool.uv.sources]
 platform-sdk = { workspace = true }
 agent-tools = { workspace = true }
-data-pipeline = { workspace = true }
 
 [tool.ruff]
 line-length = 100

@@ -4,7 +4,7 @@
 #   target=prod  → frozen install, uvicorn (no reload), non-root user
 #
 # Build context MUST be the repository root so the uv workspace can resolve
-# its members.
+# its members (agent-tools is a workspace dep after the crawler merger).
 
 ARG PYTHON_VERSION=3.12-slim-bookworm
 
@@ -23,12 +23,14 @@ WORKDIR /repo
 
 FROM base AS deps
 # Workspace root + every member manifest in data-pipeline's dependency
-# closure. data-pipeline itself has no workspace package deps today
-# (no platform-sdk / agent-tools imports yet) — but we still copy the
-# workspace root pyproject.toml so uv recognizes the layout.
+# closure. After the crawler merger (commit 6/6), data-pipeline depends
+# on agent-tools (DeepResearchClient + extractor HTTP client are wired
+# in deep_research.* fetchers).
 COPY pyproject.toml ./pyproject.toml
+COPY packages/agent-tools/pyproject.toml ./packages/agent-tools/pyproject.toml
 COPY services/data-pipeline/pyproject.toml ./services/data-pipeline/pyproject.toml
 COPY uv.lock* ./
+COPY packages/agent-tools ./packages/agent-tools
 COPY services/data-pipeline ./services/data-pipeline
 RUN --mount=type=cache,target=/root/.cache/uv \
     if [ -f uv.lock ]; then \
@@ -38,13 +40,14 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     fi
 
 FROM deps AS dev
-ENV PYTHONPATH=/repo/services/data-pipeline
+ENV PYTHONPATH=/repo/services/data-pipeline:/repo/packages/agent-tools
 WORKDIR /repo/services/data-pipeline
 EXPOSE 8003
 CMD ["uvicorn", "data_pipeline.main:app", \
      "--host", "0.0.0.0", "--port", "8003", \
      "--reload", \
-     "--reload-dir", "/repo/services/data-pipeline"]
+     "--reload-dir", "/repo/services/data-pipeline", \
+     "--reload-dir", "/repo/packages/agent-tools"]
 
 FROM deps AS prod
 RUN groupadd --system app && useradd --system --gid app --home /home/app app \
