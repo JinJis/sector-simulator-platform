@@ -110,8 +110,15 @@ that chooses which one to run.
   CrawlRun per call with `signals_written` + extractor cost rolled
   onto the row. HTTP delegation (matches the crawler → agent-
   orchestration pattern) keeps adapter ownership in data-pipeline.
-- `services/crawler/fetchers/risk.py` — regulatory keyword + safety
-  event watch; uses curated risk-keyword sets per vision.
+- ✅ M49d — `services/crawler/fetchers/risk.py` — per-risk 90-day
+  Deep Research synthesis of regulatory + safety + supply-shock
+  evidence. RiskReader picks the first resolvable entry from
+  `risks.affected_capability_keys[]` as the Signal anchor; DR brief
+  goes through SignalExtractor and writes one Signal per risk per
+  UTC day (actor_id null — risks aren't actors). Day-bucketed
+  pseudo-URL `internal://crawler/risk/{vision}/{risk_key}/{date}`.
+  Risk *discovery* (new categories) is intentionally scoped out —
+  M50 EntityDetector handles that via CommunityProposal drafts.
 - `services/crawler/fetchers/economics.py` — analyst report + paper
   benchmark extraction; writes new `EconomicsDatapoint` rows.
 - `services/crawler/orchestrator.py` — ranking score from

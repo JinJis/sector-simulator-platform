@@ -6,6 +6,7 @@ Endpoints:
 - POST /fetchers/capability/run                 → CapabilityFetcher (M49a)
 - POST /fetchers/actor/run                      → ActorFetcher (M49b)
 - POST /fetchers/signal/run                     → SignalFetcher (M49c)
+- POST /fetchers/risk/run                       → RiskFetcher (M49d)
 - GET  /jobs/runs?vision=&fetcher=&status=&limit=   → recent CrawlRuns
 - GET  /jobs/runs/{run_id}                      → single CrawlRun
 
@@ -55,6 +56,10 @@ from crawler.db.capability_reader import (
     CapabilityReader,
     PostgresCapabilityReader,
 )
+from crawler.db.risk_reader import (
+    PostgresRiskReader,
+    RiskReader,
+)
 from crawler.db.signal_writer import PostgresSignalWriter, SignalWriter
 from crawler.fetchers.actor import (
     ActorFetcherError,
@@ -69,6 +74,11 @@ from crawler.fetchers.capability import (
 from crawler.fetchers.hello_world import (
     HelloWorldRunRequest,
     run_hello_world,
+)
+from crawler.fetchers.risk import (
+    RiskFetcherError,
+    RiskFetchRequest,
+    run_risk_fetcher,
 )
 from crawler.fetchers.signal import (
     SignalFetcherError,
@@ -175,6 +185,22 @@ class SignalTriggerOut(BaseModel):
     extractor_total_cost_usd: float
 
 
+class RiskTriggerBody(BaseModel):
+    vision_slug: str = Field(..., min_length=1, max_length=128)
+    risk_key: str = Field(..., min_length=1, max_length=128)
+    prompt: str | None = Field(default=None, max_length=4000)
+
+
+class RiskTriggerOut(BaseModel):
+    run: CrawlRunOut
+    signal_id: str | None
+    dr_cached: bool
+    scoring_confidence: float | None
+    primary_capability_key: str | None
+    risk_severity: str
+    risk_likelihood: str
+
+
 # --------------------------------------------------------------------------
 # Bootstrap helpers (separated so tests can inject)
 # --------------------------------------------------------------------------
@@ -279,6 +305,14 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         else:
             app.state.actor_reader = None
 
+    # M49d — risk lookup; same shared pool.
+    if not hasattr(app.state, "risk_reader"):
+        repo = getattr(app.state, "repo", None)
+        if isinstance(repo, PostgresCrawlRunRepository):
+            app.state.risk_reader = PostgresRiskReader(repo.pool)
+        else:
+            app.state.risk_reader = None
+
     if not hasattr(app.state, "agent_client"):
         base = default_agent_orchestration_url()
         if base:
@@ -379,6 +413,15 @@ def create_app() -> FastAPI:
             )
         return reader
 
+    def _require_risk_reader() -> RiskReader:
+        reader = getattr(app.state, "risk_reader", None)
+        if reader is None:
+            raise HTTPException(
+                status_code=503,
+                detail="crawler unavailable — risk_reader not configured (needs DATABASE_URL)",
+            )
+        return reader
+
     def _require_signal_writer() -> SignalWriter:
         writer = getattr(app.state, "signal_writer", None)
         if writer is None:
@@ -460,6 +503,47 @@ def create_app() -> FastAPI:
             scoring_confidence=out.scoring.scoring.confidence
             if out.scoring is not None
             else None,
+        )
+
+    @app.post("/fetchers/risk/run", response_model=RiskTriggerOut)
+    async def risk_run(body: RiskTriggerBody) -> RiskTriggerOut:
+        repo = _require_repo()
+        dr = _require_deep_research()
+        reader = _require_risk_reader()
+        writer = _require_signal_writer()
+        agent = _require_agent_client()
+        log.info(
+            "crawler: risk triggered vision=%s risk=%s",
+            body.vision_slug,
+            body.risk_key,
+        )
+        try:
+            out = await run_risk_fetcher(
+                RiskFetchRequest(
+                    vision_slug=body.vision_slug,
+                    risk_key=body.risk_key,
+                    prompt=body.prompt,
+                ),
+                runs_repo=repo,
+                risk_reader=reader,
+                signal_writer=writer,
+                deep_research=dr,
+                agent_client=agent,
+            )
+        except RiskFetcherError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return RiskTriggerOut(
+            run=CrawlRunOut.from_row(out.run),
+            signal_id=out.signal_id,
+            dr_cached=out.deep_research.cached,
+            scoring_confidence=out.scoring.scoring.confidence
+            if out.scoring is not None
+            else None,
+            primary_capability_key=out.risk.primary_capability.key
+            if out.risk.primary_capability is not None
+            else None,
+            risk_severity=out.risk.severity,
+            risk_likelihood=out.risk.likelihood,
         )
 
     @app.post("/fetchers/signal/run", response_model=SignalTriggerOut)
