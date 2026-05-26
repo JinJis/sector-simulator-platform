@@ -23,7 +23,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from agent_tools import DeepResearchClient, DeepResearchResult
+from agent_tools import (
+    GroundedResearchClient,
+    GroundedResearchResult,
+    grounded_model_for,
+)
 
 from data_pipeline.agents import (
     AgentClient,
@@ -63,7 +67,7 @@ class DigestRequest:
 class DigestResult:
     run: CrawlRunRow
     anchor_capability: CapabilityHandle | None
-    deep_research: DeepResearchResult
+    deep_research: GroundedResearchResult
     scoring: SignalExtractorRunResult | None
     signal_id: str | None
 
@@ -99,7 +103,7 @@ async def run_deep_research_digest(
     runs_repo: CrawlRunRepository,
     signal_repo: SignalRepository,
     signal_writer: SignalWriter,
-    deep_research: DeepResearchClient,
+    deep_research: GroundedResearchClient,
     agent_client: AgentClient,
 ) -> DigestResult:
     plan: dict[str, Any] = {
@@ -181,10 +185,10 @@ async def run_deep_research_digest(
         return DigestResult(
             run=fresh,
             anchor_capability=anchor,
-            deep_research=DeepResearchResult(
+            deep_research=GroundedResearchResult(
                 interaction_id="",
                 tier="max",
-                model="deep-research-preview-04-2026",
+                model=grounded_model_for("deep"),
                 status="error",
                 output_text="",
                 error=err_text,
@@ -315,7 +319,7 @@ async def run_deep_research_digest(
 
 def _summarize(
     *,
-    dr: DeepResearchResult,
+    dr: GroundedResearchResult,
     scoring: SignalExtractorRunResult | None,
     anchor: CapabilityHandle,
 ) -> dict[str, Any]:

@@ -46,7 +46,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
-from agent_tools import DeepResearchClient
+from agent_tools import GroundedResearchClient
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -227,7 +227,7 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
             app.state.crawl_runs_repo = None
 
     if not hasattr(app.state, "deep_research"):
-        app.state.deep_research = _build_deep_research_client()
+        app.state.deep_research = _build_grounded_research_client()
 
     crawl_repo = getattr(app.state, "crawl_runs_repo", None)
     crawl_pool = crawl_repo.pool if isinstance(crawl_repo, PostgresCrawlRunRepository) else None
@@ -750,15 +750,19 @@ class DiscoveryRunOut(BaseModel):
     summary: dict[str, Any]
 
 
-def _build_deep_research_client() -> DeepResearchClient | None:
-    """Construct a DeepResearchClient backed by google-genai. Vertex AI
-    is the only supported auth path because the deep-research-* models
-    live on the Vertex Interactions API; the AI Studio GEMINI_API_KEY
-    endpoint returns HTML 404 for those model names."""
+def _build_grounded_research_client() -> GroundedResearchClient | None:
+    """Construct a GroundedResearchClient backed by google-genai with
+    the google_search grounding tool. Models default to gemini-2.5-flash
+    (fast tier) and gemini-3.1-pro-preview (deep tier); both are
+    env-overridable via GROUNDED_MODEL_FAST / GROUNDED_MODEL_DEEP.
+
+    Vertex AI auth is preferred (SA JSON). AI Studio (GEMINI_API_KEY)
+    also works for the gemini-* family — we'll fall back to it when
+    Vertex env isn't set."""
     try:
         from google import genai  # noqa: PLC0415  (optional dep)
     except ImportError:
-        log.warning("data-pipeline: google-genai not installed — Deep Research disabled")
+        log.warning("data-pipeline: google-genai not installed — grounded research disabled")
         return None
 
     use_vertex = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in {
@@ -768,47 +772,51 @@ def _build_deep_research_client() -> DeepResearchClient | None:
         "on",
     }
     creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    has_api_key = bool((os.environ.get("GEMINI_API_KEY") or "").strip())
+    api_key = (os.environ.get("GEMINI_API_KEY") or "").strip()
 
-    if not use_vertex:
-        log.warning(
-            "data-pipeline: Deep Research disabled — GOOGLE_GENAI_USE_VERTEXAI is "
-            "not set to true. Fetcher endpoints will 503."
-            + (
-                "  (GEMINI_API_KEY is present but cannot serve deep-research-* models.)"
-                if has_api_key
-                else ""
+    # Vertex AI path (preferred — same SA other services use).
+    if use_vertex and creds:
+        if not os.path.exists(creds):
+            log.error(
+                "data-pipeline: grounded research disabled — SA JSON not "
+                "found at %s. Drop a Vertex AI service-account key at "
+                "infra/secrets/vertex-ai-sa.json on the host (see "
+                "infra/secrets/README.md).",
+                creds,
             )
-        )
-        return None
-    if not creds:
-        log.warning(
-            "data-pipeline: Deep Research disabled — GOOGLE_APPLICATION_CREDENTIALS "
-            "unset. Set it to /secrets/vertex-ai-sa.json (in-container path)."
-        )
-        return None
-    if not os.path.exists(creds):
-        log.error(
-            "data-pipeline: Deep Research disabled — SA JSON not found at %s. "
-            "Drop a Vertex AI service-account key at infra/secrets/"
-            "vertex-ai-sa.json on the host (see infra/secrets/README.md).",
-            creds,
-        )
-        return None
-    try:
-        client = genai.Client(
-            vertexai=True,
-            location=os.environ.get("GOOGLE_CLOUD_LOCATION", "global"),
-        )
-    except Exception as exc:  # pragma: no cover — exercised in compose
-        log.error(
-            "data-pipeline: Vertex AI client construction failed (%s). "
-            "Verify GOOGLE_CLOUD_PROJECT + the SA's roles/aiplatform.user grant.",
-            exc,
-        )
-        return None
-    log.info("data-pipeline: Deep Research enabled via Vertex AI (sa=%s)", creds)
-    return DeepResearchClient(genai_client=client)
+            return None
+        try:
+            client = genai.Client(
+                vertexai=True,
+                location=os.environ.get("GOOGLE_CLOUD_LOCATION", "global"),
+            )
+        except Exception as exc:  # pragma: no cover — exercised in compose
+            log.error(
+                "data-pipeline: Vertex AI client construction failed (%s). "
+                "Verify GOOGLE_CLOUD_PROJECT + the SA's roles/aiplatform.user grant.",
+                exc,
+            )
+            return None
+        log.info("data-pipeline: grounded research via Vertex AI (sa=%s)", creds)
+        return GroundedResearchClient(genai_client=client)
+
+    # AI Studio fallback — works for gemini-* family.
+    if api_key:
+        try:
+            client = genai.Client(api_key=api_key)
+        except Exception as exc:  # pragma: no cover
+            log.error("data-pipeline: AI Studio client construction failed: %s", exc)
+            return None
+        log.info("data-pipeline: grounded research via AI Studio (GEMINI_API_KEY)")
+        return GroundedResearchClient(genai_client=client)
+
+    log.warning(
+        "data-pipeline: grounded research disabled — neither Vertex "
+        "(GOOGLE_GENAI_USE_VERTEXAI + GOOGLE_APPLICATION_CREDENTIALS) "
+        "nor AI Studio (GEMINI_API_KEY) is configured. Fetcher endpoints "
+        "will 503."
+    )
+    return None
 
 
 async def _run_orchestrator_tick_job(*, app: FastAPI) -> None:
@@ -1132,20 +1140,19 @@ def create_app() -> FastAPI:
             )
         return repo
 
-    def _require_deep_research() -> DeepResearchClient:
+    def _require_deep_research() -> GroundedResearchClient:
         dr = getattr(app.state, "deep_research", None)
         if dr is None:
             raise HTTPException(
                 status_code=503,
                 detail=(
-                    "Deep Research not configured. The deep-research-* models live "
-                    "on the Vertex AI Interactions API; the AI Studio "
-                    "GEMINI_API_KEY endpoint cannot serve them. "
-                    "(1) Drop a Vertex SA JSON at infra/secrets/vertex-ai-sa.json "
-                    "(see infra/secrets/README.md). "
-                    "(2) Set GOOGLE_GENAI_USE_VERTEXAI=true + GOOGLE_CLOUD_PROJECT + "
+                    "Grounded research not configured. Two auth paths supported "
+                    "(env-driven): "
+                    "(A) Vertex AI — drop a Vertex SA JSON at "
+                    "infra/secrets/vertex-ai-sa.json + set GOOGLE_GENAI_USE_VERTEXAI=true + "
                     "GOOGLE_APPLICATION_CREDENTIALS=/secrets/vertex-ai-sa.json in .env. "
-                    "(3) Restart the data-pipeline container."
+                    "(B) AI Studio — set GEMINI_API_KEY in .env. "
+                    "Restart the data-pipeline container after either."
                 ),
             )
         return dr

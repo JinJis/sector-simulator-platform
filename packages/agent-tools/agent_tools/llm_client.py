@@ -73,19 +73,36 @@ except ImportError:  # pragma: no cover - same story for Anthropic SDK
 ModelTier = Literal["haiku", "sonnet", "opus"]
 
 
-# Single source of truth for tier → model ID. Update only when migrating.
+# Defaults — env vars below override per tier so model rolls don't need
+# a code change. Update the defaults only when migrating the base lineup.
 # - opus  → Claude (best reasoning; routed via AnthropicVertex).
 # - sonnet / haiku → Gemini 3.5 flash family (cheap & fast).
-_MODEL_BY_TIER: dict[ModelTier, str] = {
+_DEFAULT_MODEL_BY_TIER: dict[ModelTier, str] = {
     "haiku": "gemini-3.5-flash-lite",
     "sonnet": "gemini-3.5-flash",
     "opus": "claude-opus-4-7",
 }
 
+# Env var that overrides each tier's model id. Read at call time, not
+# import time, so tests can monkeypatch + container restarts pick up new
+# values without a wheel rebuild.
+_MODEL_ENV_BY_TIER: dict[ModelTier, str] = {
+    "haiku": "LLM_HAIKU_MODEL",
+    "sonnet": "LLM_SONNET_MODEL",
+    "opus": "LLM_OPUS_MODEL",
+}
+
+
+def model_for_tier(tier: ModelTier) -> str:
+    """Resolve the active model id for `tier`. Order of precedence:
+    env (`LLM_{TIER}_MODEL`) → built-in default."""
+    env_key = _MODEL_ENV_BY_TIER[tier]
+    return os.environ.get(env_key) or _DEFAULT_MODEL_BY_TIER[tier]
+
 
 def available_models() -> Mapping[ModelTier, str]:
-    """Return the active tier → model-id mapping. Read-only snapshot."""
-    return dict(_MODEL_BY_TIER)
+    """Return the currently-active tier → model-id mapping (env-resolved)."""
+    return {tier: model_for_tier(tier) for tier in _DEFAULT_MODEL_BY_TIER}
 
 
 def _is_anthropic_tier(tier: ModelTier) -> bool:
@@ -252,7 +269,7 @@ class LLMClient:
         `adaptive_thinking`, which controls Gemini's `thinking_budget`
         and is ignored on the Anthropic path.
         """
-        model = _MODEL_BY_TIER[tier]
+        model = model_for_tier(tier)
         effort = effort or _DEFAULT_EFFORT_BY_TIER[tier]
 
         if _is_anthropic_tier(tier):

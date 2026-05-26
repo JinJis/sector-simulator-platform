@@ -1,6 +1,6 @@
 """Offline smoke tests for HelloWorldFetcher + the crawler FastAPI
 app. Uses an in-memory CrawlRunRepository fake and a stubbed
-DeepResearchClient — no DB, no network."""
+GroundedResearchClient — no DB, no network."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from agent_tools import DeepResearchClient, DeepResearchResult
+from agent_tools import GroundedResearchClient, DeepResearchResult
 
 from data_pipeline.deep_research.fetchers.hello_world import (
     HelloWorldRunRequest,
@@ -126,35 +126,40 @@ def _replace(row: CrawlRunRow, **changes: Any) -> CrawlRunRow:
 
 
 @dataclass
-class _FakeInteraction:
-    id: str = "int_test_1"
-    status: str = "completed"
-    output_text: str = "the crawler is wired correctly."
-    error: str | None = None
-    usage_metadata: Any = None
+class _FakeUsage:
+    prompt_token_count: int = 1200
+    candidates_token_count: int = 700
+    total_token_count: int = 1900
 
 
 @dataclass
-class _FakeInteractions:
-    create_calls: list[dict[str, Any]] = field(default_factory=list)
+class _FakeResponse:
+    text: str = "the crawler is wired correctly."
+    candidates: list[Any] = field(default_factory=list)
+    usage_metadata: _FakeUsage = field(default_factory=_FakeUsage)
 
-    def create(self, **kwargs: Any) -> _FakeInteraction:
-        self.create_calls.append(kwargs)
-        return _FakeInteraction()
 
-    def get(self, id: str) -> _FakeInteraction:  # noqa: A002
-        return _FakeInteraction(id=id)
+@dataclass
+class _FakeModels:
+    """Stand-in for `genai.Client.models` — only `generate_content` is
+    exercised by GroundedResearchClient."""
+
+    calls: list[dict[str, Any]] = field(default_factory=list)
+    next: _FakeResponse = field(default_factory=_FakeResponse)
+
+    def generate_content(self, **kwargs: Any) -> _FakeResponse:
+        self.calls.append(kwargs)
+        return self.next
 
 
 @dataclass
 class _FakeGenAI:
-    interactions: _FakeInteractions = field(default_factory=_FakeInteractions)
+    models: _FakeModels = field(default_factory=_FakeModels)
 
 
-def _build_deep_research() -> DeepResearchClient:
-    return DeepResearchClient(
+def _build_deep_research() -> GroundedResearchClient:
+    return GroundedResearchClient(
         genai_client=_FakeGenAI(),
-        poll_interval_seconds=0.0,
     )
 
 

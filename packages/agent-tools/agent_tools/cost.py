@@ -52,6 +52,13 @@ _PRICES: dict[str, ModelPrice] = {
     # gemini-3.5-flash-lite — haiku tier. Cheapest tier; used for
     # extraction + routing + classification.
     "gemini-3.5-flash-lite": ModelPrice(0.25, 1.50),
+    # gemini-2.5-flash — grounded-research FAST tier (post-DR-deprecation).
+    # Placeholder rates from the 2.5 line; bump when invoices confirm.
+    "gemini-2.5-flash": ModelPrice(0.30, 2.50),
+    # gemini-3.1-pro-preview — grounded-research DEEP tier. Used by the
+    # daily digest; carries ThinkingConfig HIGH so output tokens trend
+    # high. Placeholder rates aligned with the 2.5-pro preview tier.
+    "gemini-3.1-pro-preview": ModelPrice(1.25, 10.00),
 }
 
 
@@ -64,25 +71,20 @@ def model_price(model_id: str) -> ModelPrice:
     return _PRICES.get(model_id, _PRICES["gemini-3.5-flash-lite"])
 
 
-# M48b — Gemini Deep Research is billed per-task, not per-token, and the
-# Interactions API doesn't currently surface a usage_metadata field we
-# can multiply into a token rate. So we estimate cost from a flat
-# per-tier USD-per-run figure here; replace with metered usage once the
-# SDK exposes it (or once we move to a paid agent contract with a
-# documented rate). These are starting-point placeholders — bump them
-# from the admin cockpit when actual invoices land.
-_DEEP_RESEARCH_PRICES_USD: dict[str, float] = {
-    "deep-research-preview-04-2026": 0.10,
-    "deep-research-max-preview-04-2026": 0.50,
-}
+# M48b → grounded research migration: the legacy Vertex Deep Research
+# Interactions API was billed per-task with no usage_metadata, so we
+# used a flat per-tier USD figure here. The new GroundedResearchClient
+# uses gemini models with normal per-token metering via `price_call()`,
+# so this helper is retained only for any caller that still references
+# the old per-run constant (none in-tree post-migration).
+_LEGACY_DR_PRICE_USD = 0.10
 
 
-def deep_research_price_usd(model_id: str) -> float:
-    """Flat USD cost per Deep Research run. Falls back to the
-    fast-tier price for unknown model IDs."""
-    return _DEEP_RESEARCH_PRICES_USD.get(
-        model_id, _DEEP_RESEARCH_PRICES_USD["deep-research-preview-04-2026"]
-    )
+def deep_research_price_usd(model_id: str) -> float:  # noqa: ARG001
+    """Deprecated: legacy flat per-run Deep Research price. Kept as a
+    compat shim; new code paths meter grounded-research calls via
+    `price_call()` with normal Gemini token rates."""
+    return _LEGACY_DR_PRICE_USD
 
 
 @dataclass(frozen=True)

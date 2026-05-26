@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from agent_tools import DeepResearchClient
+from agent_tools import GroundedResearchClient
 
 from data_pipeline.agents import AgentClient
 from data_pipeline.db.actor_reader import ActorReader
@@ -105,7 +105,7 @@ class DispatcherClients:
     actor_reader: ActorReader
     risk_reader: RiskReader
     signal_writer: SignalWriter
-    deep_research: DeepResearchClient
+    deep_research: GroundedResearchClient
     agent_client: AgentClient
     signal_ingest_fn: SignalIngestFn
 

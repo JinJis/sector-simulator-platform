@@ -1,6 +1,6 @@
 """Offline tests for CapabilityFetcher + the /fetchers/capability/run
 endpoint. All dependencies (CrawlRunRepo, CapabilityReader,
-SignalWriter, DeepResearchClient, SignalExtractor agent) are faked."""
+SignalWriter, GroundedResearchClient, SignalExtractor agent) are faked."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from agent_tools import DeepResearchClient
+from agent_tools import GroundedResearchClient
 
 from data_pipeline.agents import (
     AgentClient,
@@ -190,35 +190,40 @@ class _FakeAgentClient:
 
 
 @dataclass
-class _FakeInteraction:
-    id: str = "int_cap_1"
-    status: str = "completed"
-    output_text: str = "Rad-hard compute progressed. AMD MI300 tape-out delayed Q3."
-    error: str | None = None
-    usage_metadata: Any = None
+class _FakeUsage:
+    prompt_token_count: int = 1200
+    candidates_token_count: int = 700
+    total_token_count: int = 1900
 
 
 @dataclass
-class _FakeInteractions:
-    create_calls: list[dict[str, Any]] = field(default_factory=list)
+class _FakeResponse:
+    text: str = "Rad-hard compute progressed. AMD MI300 tape-out delayed Q3."
+    candidates: list[Any] = field(default_factory=list)
+    usage_metadata: _FakeUsage = field(default_factory=_FakeUsage)
 
-    def create(self, **kwargs: Any) -> _FakeInteraction:
-        self.create_calls.append(kwargs)
-        return _FakeInteraction()
 
-    def get(self, id: str) -> _FakeInteraction:  # noqa: A002
-        return _FakeInteraction(id=id)
+@dataclass
+class _FakeModels:
+    """Stand-in for `genai.Client.models` — only `generate_content` is
+    exercised by GroundedResearchClient."""
+
+    calls: list[dict[str, Any]] = field(default_factory=list)
+    next: _FakeResponse = field(default_factory=_FakeResponse)
+
+    def generate_content(self, **kwargs: Any) -> _FakeResponse:
+        self.calls.append(kwargs)
+        return self.next
 
 
 @dataclass
 class _FakeGenAI:
-    interactions: _FakeInteractions = field(default_factory=_FakeInteractions)
+    models: _FakeModels = field(default_factory=_FakeModels)
 
 
-def _build_deep_research() -> DeepResearchClient:
-    return DeepResearchClient(
+def _build_deep_research() -> GroundedResearchClient:
+    return GroundedResearchClient(
         genai_client=_FakeGenAI(),
-        poll_interval_seconds=0.0,
     )
 
 
@@ -388,7 +393,7 @@ async def test_capability_fetcher_dr_failure_skips_extractor_call() -> None:
     class _FailingClient:
         interactions: _FailingInteractions = field(default_factory=_FailingInteractions)
 
-    dr = DeepResearchClient(genai_client=_FailingClient(), poll_interval_seconds=0.0)
+    dr = GroundedResearchClient(genai_client=_FailingClient())
     agent = _FakeAgentClient()
 
     result = await run_capability_fetcher(

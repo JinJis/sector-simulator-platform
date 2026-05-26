@@ -26,7 +26,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from agent_tools import DeepResearchClient, DeepResearchResult
+from agent_tools import (
+    GroundedResearchClient,
+    GroundedResearchResult,
+    grounded_model_for,
+)
 
 from data_pipeline.agents import (
     ActorKeywordSet,
@@ -65,7 +69,7 @@ class ActorFetchRequest:
 class ActorFetchResult:
     run: CrawlRunRow
     actor: ActorRecord
-    deep_research: DeepResearchResult
+    deep_research: GroundedResearchResult
     scoring: SignalExtractorRunResult | None
     signal_id: str | None
 
@@ -93,7 +97,7 @@ async def run_actor_fetcher(
     runs_repo: CrawlRunRepository,
     actor_reader: ActorReader,
     signal_writer: SignalWriter,
-    deep_research: DeepResearchClient,
+    deep_research: GroundedResearchClient,
     agent_client: AgentClient,
 ) -> ActorFetchResult:
     plan: dict[str, Any] = {
@@ -202,10 +206,10 @@ async def run_actor_fetcher(
         return ActorFetchResult(
             run=fresh,
             actor=actor,
-            deep_research=DeepResearchResult(
+            deep_research=GroundedResearchResult(
                 interaction_id="",
                 tier="fast",
-                model="deep-research-preview-04-2026",
+                model=grounded_model_for("fast"),
                 status="error",
                 output_text="",
                 error=err_text,
@@ -357,7 +361,7 @@ def _first_sentence(text: str) -> str:
 
 def _summarize(
     *,
-    dr: DeepResearchResult,
+    dr: GroundedResearchResult,
     scoring: SignalExtractorRunResult | None,
     actor: ActorRecord,
 ) -> dict[str, Any]:

@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from agent_tools import DeepResearchClient
+from agent_tools import GroundedResearchClient
 from data_pipeline.agents import (
     SignalExtractorRequest,
     SignalExtractorRunResult,
@@ -176,38 +176,47 @@ class _FakeAgentClient:
         )
 
 
-@dataclass
-class _FakeInteraction:
-    id: str = "int_digest_1"
-    status: str = "completed"
-    output_text: str = (
-        "AWS announced a $4B orbital DC capex tranche; SK Hynix flagged "
-        "HBM4 supply tightening; FCC opened comment period on orbital "
-        "spectrum reallocation."
-    )
-    error: str | None = None
-    usage_metadata: Any = None
+_FAKE_DIGEST_TEXT = (
+    "AWS announced a $4B orbital DC capex tranche; SK Hynix flagged "
+    "HBM4 supply tightening; FCC opened comment period on orbital "
+    "spectrum reallocation."
+)
 
 
 @dataclass
-class _FakeInteractions:
-    create_calls: list[dict[str, Any]] = field(default_factory=list)
+class _FakeUsage:
+    prompt_token_count: int = 1200
+    candidates_token_count: int = 700
+    total_token_count: int = 1900
 
-    def create(self, **kwargs: Any) -> _FakeInteraction:
-        self.create_calls.append(kwargs)
-        return _FakeInteraction()
 
-    def get(self, id: str) -> _FakeInteraction:  # noqa: A002
-        return _FakeInteraction(id=id)
+@dataclass
+class _FakeResponse:
+    text: str = _FAKE_DIGEST_TEXT
+    candidates: list[Any] = field(default_factory=list)
+    usage_metadata: _FakeUsage = field(default_factory=_FakeUsage)
+
+
+@dataclass
+class _FakeModels:
+    """Stand-in for `genai.Client.models` — only `generate_content` is
+    exercised by GroundedResearchClient."""
+
+    calls: list[dict[str, Any]] = field(default_factory=list)
+    next: _FakeResponse = field(default_factory=_FakeResponse)
+
+    def generate_content(self, **kwargs: Any) -> _FakeResponse:
+        self.calls.append(kwargs)
+        return self.next
 
 
 @dataclass
 class _FakeGenAI:
-    interactions: _FakeInteractions = field(default_factory=_FakeInteractions)
+    models: _FakeModels = field(default_factory=_FakeModels)
 
 
-def _build_deep_research() -> DeepResearchClient:
-    return DeepResearchClient(genai_client=_FakeGenAI(), poll_interval_seconds=0.0)
+def _build_deep_research() -> GroundedResearchClient:
+    return GroundedResearchClient(genai_client=_FakeGenAI())
 
 
 def _seed_signal_repo() -> _InMemorySignalRepo:

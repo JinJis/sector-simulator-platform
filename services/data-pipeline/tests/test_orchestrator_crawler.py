@@ -433,30 +433,39 @@ class _FakeSignalIngestFn:
 
 
 @dataclass
-class _FakeInteraction:
-    id: str = "int_disp_1"
-    status: str = "completed"
-    output_text: str = "Body."
-    error: str | None = None
-    usage_metadata: Any = None
+class _FakeUsage:
+    prompt_token_count: int = 1200
+    candidates_token_count: int = 700
+    total_token_count: int = 1900
 
 
 @dataclass
-class _FakeInteractions:
-    def create(self, **kwargs: Any) -> _FakeInteraction:
-        return _FakeInteraction()
+class _FakeResponse:
+    text: str = "Body."
+    candidates: list[Any] = field(default_factory=list)
+    usage_metadata: _FakeUsage = field(default_factory=_FakeUsage)
 
-    def get(self, id: str) -> _FakeInteraction:  # noqa: A002
-        return _FakeInteraction(id=id)
+
+@dataclass
+class _FakeModels:
+    """Stand-in for `genai.Client.models` — only `generate_content` is
+    exercised by GroundedResearchClient."""
+
+    calls: list[dict[str, Any]] = field(default_factory=list)
+    next: _FakeResponse = field(default_factory=_FakeResponse)
+
+    def generate_content(self, **kwargs: Any) -> _FakeResponse:
+        self.calls.append(kwargs)
+        return self.next
 
 
 @dataclass
 class _FakeGenAI:
-    interactions: _FakeInteractions = field(default_factory=_FakeInteractions)
+    models: _FakeModels = field(default_factory=_FakeModels)
 
 
 def _build_clients() -> DispatcherClients:
-    from agent_tools import DeepResearchClient
+    from agent_tools import GroundedResearchClient
 
     cap = CapabilityRecord(
         id="cap_1",
@@ -497,7 +506,7 @@ def _build_clients() -> DispatcherClients:
         actor_reader=_FakeActorReader(records={("alpha", "a1"): actor}),
         risk_reader=_FakeRiskReader(records={("alpha", "r1"): risk}),
         signal_writer=_FakeSignalWriter(),
-        deep_research=DeepResearchClient(genai_client=_FakeGenAI(), poll_interval_seconds=0.0),
+        deep_research=GroundedResearchClient(genai_client=_FakeGenAI()),
         agent_client=_FakeAgentClient(),
         signal_ingest_fn=_FakeSignalIngestFn(),
     )

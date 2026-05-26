@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from agent_tools import DeepResearchClient
+from agent_tools import GroundedResearchClient
 
 from data_pipeline.crawl_run_repo import CrawlRunRepository, CrawlRunRow
 
@@ -43,7 +43,7 @@ async def run_hello_world(
     request: HelloWorldRunRequest,
     *,
     repo: CrawlRunRepository,
-    deep_research: DeepResearchClient,
+    deep_research: GroundedResearchClient,
 ) -> HelloWorldRunResult:
     prompt = (request.prompt or _DEFAULT_PROMPT).format(
         vision_slug=request.vision_slug
