@@ -4,6 +4,17 @@ import { useEffect, useState } from "react";
 
 import { type CrawlRun, listCrawlRuns } from "@/lib/sim-client";
 
+/**
+ * `true` after the first client commit — gates anything that depends
+ * on browser-only state (Date.now(), navigator, window) so the SSR
+ * markup matches the client's first paint.
+ */
+function useMounted(): boolean {
+  const [m, setM] = useState(false);
+  useEffect(() => setM(true), []);
+  return m;
+}
+
 const STATUS_TONE: Record<string, string> = {
   ok: "border-emerald-800/60 bg-emerald-950/40 text-emerald-300",
   running: "border-blue-800/60 bg-blue-950/40 text-blue-300",
@@ -31,9 +42,15 @@ export function LiveJobsTable({
 }) {
   const [runs, setRuns] = useState<CrawlRun[]>(initialRuns);
   const [error, setError] = useState<string | null>(null);
-  const [tickedAt, setTickedAt] = useState<Date>(new Date());
+  // null on first render so server + client emit the same HTML; we
+  // stamp the timestamp after mount, then update on every poll. Using
+  // `new Date()` as the initial value caused a hydration mismatch
+  // because the server's clock string differed from the browser's
+  // locale-formatted clock string.
+  const [tickedAt, setTickedAt] = useState<Date | null>(null);
 
   useEffect(() => {
+    setTickedAt(new Date());
     let cancelled = false;
     const tick = async () => {
       try {
@@ -62,8 +79,12 @@ export function LiveJobsTable({
         <h2 className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
           Live jobs ({runs.length})
         </h2>
-        <span className="text-[10px] text-neutral-600">
-          auto-refresh 5s · last {tickedAt.toLocaleTimeString()}
+        <span
+          className="text-[10px] text-neutral-600"
+          suppressHydrationWarning
+        >
+          auto-refresh 5s
+          {tickedAt && ` · last ${tickedAt.toLocaleTimeString()}`}
         </span>
       </div>
       {error ? (
@@ -89,10 +110,20 @@ export function LiveJobsTable({
 function RunRow({ run }: { run: CrawlRun }) {
   const started = new Date(run.started_at);
   const ended = run.ended_at ? new Date(run.ended_at) : null;
-  const elapsed =
+  // Final elapsed is deterministic — render directly. Live elapsed for
+  // running rows is a *moving* number; rendering Date.now() during SSR
+  // would hydration-mismatch since the browser clock differs from the
+  // server's. Defer that to after mount via useMounted().
+  const finalElapsed =
     ended != null
       ? `${((ended.getTime() - started.getTime()) / 1000).toFixed(2)}s`
-      : `${((Date.now() - started.getTime()) / 1000).toFixed(0)}s…`;
+      : null;
+  const mounted = useMounted();
+  const elapsed =
+    finalElapsed ??
+    (mounted
+      ? `${((Date.now() - started.getTime()) / 1000).toFixed(0)}s…`
+      : "running…");
   const costStr = run.cost_usd != null ? `$${run.cost_usd.toFixed(4)}` : "—";
   const preview =
     run.result_summary && typeof run.result_summary === "object"
