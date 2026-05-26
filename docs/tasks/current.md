@@ -43,7 +43,7 @@ Six product-level outcomes Phase 4 ships:
 ## Milestones
 
 ```
-M48 ──► M49a ──► M49b ──► [MP1✅ ─► MP2✅ ─► MP3✅ ─► MP4✅ ─► MP5✅ ─► MP6✅ ─► MP7]
+M48 ──► M49a ──► M49b ──► [MP1✅ ─► MP2✅ ─► MP3✅ ─► MP4✅ ─► MP5✅ ─► MP6✅ ─► MP7✅]
  │        │        │       │
  │        │        │       └─► M49c ─► M49d ─► M49f ─► M50 ─► M52 ─► M53 ─► M54
  │        │        │
@@ -320,25 +320,45 @@ The small high-leverage UX cleanup that addresses gaps 4 / 5
 hovering a Capability card on Overview shows the chevron + ring;
 Pulse header explains itself in one glance.
 
-### MP7 — Deprecated code + schema cleanup  (2–3d)
+### MP7 — Deprecated code + schema cleanup  (2–3d) ✅ (narrowed scope)
 
-Runs last so prior MPs aren't competing with churn. One PR per
-removal; each PR proves no callers remain via grep + typecheck +
-test.
+Shipped 2026-05-26. Pre-deletion grep + caller audit revealed the
+original 5-item list overshot reality — 4 of the 5 candidates still
+have live callers and cannot be removed without breaking
+PredictionV2 or the legacy resolve-cron. Per CLAUDE.md "Surgical
+changes", only the safe removal landed; the rest is documented
+explicitly as deferred so a future cleanup milestone can sequence
+the underlying migrations first.
 
-- Remove `SectorEquity` + `EquityFinancial` + `EquityQuote` Prisma
-  models + all downstream code paths + `seed-equities.ts` /
-  `seed-equity-financials.ts` / `seed-equity-quotes.ts`.
-- Confirm `SectorSuggestion` + `SectorSuggestionVote` have zero
-  callers → remove if confirmed.
-- Confirm old `Prediction` + `PredictionResult` superseded by
-  `PredictionV2` → remove if confirmed.
-- Remove `apps/web/src/app/visions/_components/domain-filter.tsx`
-  if no caller.
-- `ENABLE_LEGACY_INVESTMENT_FEATURES` flag + all branches: remove.
+**Shipped**:
+- `SectorSuggestion` + `SectorSuggestionVote` Prisma models removed
+  (0 runtime callers outside the schema itself — confirmed by grep).
+  Migration `drop_sector_suggestions` drops both tables; User
+  backrefs (`suggestions`, `suggestion_votes`) removed.
+  `CommunityProposal` (M46a) already covers the same use case so no
+  product surface goes dark.
 
-**verify**: `pnpm typecheck && pnpm lint && pnpm test` clean after
-each removal slice; `git grep <removed-name>` returns no hits.
+**Deferred (NOT safe to remove yet — listed with the blocker)**:
+
+| Item | Live caller blocking removal |
+|---|---|
+| `SectorEquity` + `EquityFinancial` + `EquityQuote` | PredictionV2 (M46) reads `sectorEquity` + `equityQuote` for vol calc + price anchoring; `equity.*` tRPC; `monitoring.ts`; `graph.ts` composition |
+| `Prediction` + `PredictionResult` (v1) | `resolve_predictions_daily` cron in `services/data-pipeline/main.py`; `prediction_repo.py` write path |
+| `ENABLE_LEGACY_INVESTMENT_FEATURES` flag | Gates the two cleanups above — remove together |
+| `_components/domain-filter.tsx` | **Not orphan** — `visions/page.tsx:97` actively renders `<DomainFilter>` on the visions list page. Keep. |
+
+Future cleanup pre-reqs:
+1. Migrate PredictionV2 off `SectorEquity`/`EquityQuote` (e.g., to a
+   dedicated `MarketAnchor` model that doesn't carry investment-frame
+   constraints), or accept that those tables persist as price storage.
+2. Drop the `resolve_predictions_daily` cron + delete `prediction_repo.py`
+   + old `resolve_predictions.py` job; only then can the v1 model die.
+3. With (1) + (2) done, `ENABLE_LEGACY_INVESTMENT_FEATURES` becomes
+   dead code and can be deleted.
+
+**verify (shipped slice)**: `pnpm typecheck` clean across db /
+sector-service / web; `git grep -E 'SectorSuggestion|sector_suggestion'`
+returns only the new `drop_sector_suggestions` migration file.
 
 ---
 

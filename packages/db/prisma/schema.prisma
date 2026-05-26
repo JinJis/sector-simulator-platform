@@ -379,8 +379,6 @@ model User {
   billing_customer BillingCustomer?
   predictions      Prediction[]
   user_score       UserScore?
-  suggestions      SectorSuggestion[]
-  suggestion_votes SectorSuggestionVote[]
 
   // M46a — Community 3.0
   community_proposals       CommunityProposal[] @relation("ProposalAuthor")
@@ -632,54 +630,13 @@ model UserScore {
   @@map("user_scores")
 }
 
-/// @deprecated M36 — community suggestion flow retired with /community
-/// hub archive. May resurface as "Vision contribution" PRs (M41+ admin
-/// approval flow) but with a different schema.
-model SectorSuggestion {
-  // Community-submitted suggestion to improve a sector's structure —
-  // e.g. "add NVDA as a memory-semi equity", "remove driver X because
-  // it never moves". Editorial team reviews; an admin can flip status.
-  id          String   @id @default(cuid())
-  user_id     String   @map("user_id")
-  user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  sector_slug String   @map("sector_slug")
-  // "add_driver" | "remove_driver" | "add_equity" | "remove_equity" |
-  // "rename_node" | "rewire_edge" — kept as a free string so new kinds
-  // don't need a migration. The payload JSONB carries kind-specific
-  // detail (e.g. {"ticker": "NVDA", "rationale": "..."}).
-  kind        String
-  title       String
-  body        String?
-  payload     Json     @default("{}")
-  // "open" | "under_review" | "approved" | "rejected" | "withdrawn"
-  status      String   @default("open")
-  // Snapshot of net votes (`+1` ups - `-1` downs). Updated transactionally
-  // with each vote insert/update so the list query stays cheap.
-  score       Int      @default(0)
-  created_at  DateTime @default(now()) @map("created_at")
-  updated_at  DateTime @updatedAt @map("updated_at")
-
-  votes SectorSuggestionVote[]
-
-  @@index([sector_slug, status, score(sort: Desc)])
-  @@index([user_id, created_at(sort: Desc)])
-  @@map("sector_suggestions")
-}
-
-/// @deprecated M36 — see SectorSuggestion.
-model SectorSuggestionVote {
-  // One vote per (user, suggestion). Value is +1 or -1.
-  suggestion_id String           @map("suggestion_id")
-  suggestion    SectorSuggestion @relation(fields: [suggestion_id], references: [id], onDelete: Cascade)
-  user_id       String           @map("user_id")
-  user          User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  value         Int // +1 | -1
-  created_at    DateTime         @default(now()) @map("created_at")
-
-  @@id([suggestion_id, user_id])
-  @@index([user_id, created_at(sort: Desc)])
-  @@map("sector_suggestion_votes")
-}
+// MP7 (2026-05-26) — `SectorSuggestion` + `SectorSuggestionVote`
+// removed. They were the pre-pivot community-suggestion flow; the
+// new `CommunityProposal` chain (M46a) covers the same use case and
+// no runtime caller referenced these models. Migration
+// `drop_sector_suggestions` drops both tables. Equity / Prediction
+// (v1) cleanups are deferred — they still have live callers
+// (PredictionV2, resolve_predictions_daily cron).
 
 // =====================================================================
 // M36 — Vision Feasibility Monitor
