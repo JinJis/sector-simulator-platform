@@ -5,13 +5,15 @@ import { useState, useTransition } from "react";
 
 import { runHelloWorldFetcher } from "@/lib/sim-client";
 
-import { TriggerError, TriggerOk } from "./TriggerFeedback";
-
-const DEFAULT_VISION = "space-data-center";
+import { TriggerSelectors, type TriggerSelectorsValue } from "./TriggerSelectors";
+import { TriggerError, TriggerOk, TriggerPendingHint } from "./TriggerFeedback";
 
 export function HelloWorldTrigger() {
   const router = useRouter();
-  const [vision, setVision] = useState<string>(DEFAULT_VISION);
+  const [sel, setSel] = useState<TriggerSelectorsValue>({
+    vision_slug: "",
+    secondary_key: "",
+  });
   const [error, setError] = useState<string | null>(null);
   const [lastOk, setLastOk] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -22,7 +24,7 @@ export function HelloWorldTrigger() {
     setLastOk(null);
     startTransition(async () => {
       try {
-        const out = await runHelloWorldFetcher({ vision_slug: vision });
+        const out = await runHelloWorldFetcher({ vision_slug: sel.vision_slug });
         // The crawler returns 200 even on fetcher failure so the UI
         // can render structured feedback — split here on run.status.
         if (out.run.status === "ok" || out.run.status === "running") {
@@ -43,28 +45,26 @@ export function HelloWorldTrigger() {
     });
   };
 
+  const ready = sel.vision_slug.length > 0 && !pending;
+
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-4 py-3">
-      <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
-        <label className="text-xs text-neutral-400" htmlFor="hello-vision">
-          Vision slug
-        </label>
-        <input
-          id="hello-vision"
-          type="text"
-          value={vision}
-          onChange={(e) => setVision(e.target.value)}
-          className="w-64 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm text-neutral-100 focus:border-neutral-500 focus:outline-none"
-          autoComplete="off"
-          spellCheck={false}
+      <form onSubmit={onSubmit} className="flex flex-col gap-2">
+        <TriggerSelectors
+          secondaryKind={null}
+          value={sel}
+          onChange={setSel}
         />
-        <button
-          type="submit"
-          disabled={pending || vision.trim().length === 0}
-          className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-emerald-50 hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
-        >
-          {pending ? "Running…" : "Run HelloWorld"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="submit"
+            disabled={!ready}
+            className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-emerald-50 hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+          >
+            {pending ? "Running…" : "Run HelloWorld"}
+          </button>
+          {pending ? <TriggerPendingHint /> : null}
+        </div>
       </form>
       {lastOk ? <TriggerOk text={lastOk} /> : null}
       {error ? <TriggerError raw={error} /> : null}

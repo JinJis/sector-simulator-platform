@@ -96,9 +96,11 @@ async def test_live_fast_tier_grounded_response() -> None:
 @pytest.mark.asyncio
 async def test_live_deep_tier_synthesis() -> None:
     """DEEP tier (gemini-3.1-pro-preview by default) with
-    ThinkingConfig=HIGH. Heavier synthesis prompt — confirms the
-    DEEP-tier model + thinking config + grounding all work
-    end-to-end. This is the same path the daily digest cron uses."""
+    Heavier synthesis prompt — confirms the DEEP-tier model + grounding
+    work end-to-end. This is the same path the daily digest cron uses.
+    ThinkingConfig was removed (Vertex rejects it on some preview
+    models); the DEEP tier still thinks more than FAST because the
+    underlying model is heavier."""
     client = _build_real_client()
     result = await client.research(
         prompt=(
@@ -115,7 +117,8 @@ async def test_live_deep_tier_synthesis() -> None:
     assert result.output_text, "empty output_text"
     assert result.cost_usd > 0, "DEEP tier call should meter > 0 USD"
     assert result.model == grounded_model_for("deep")
-    # DEEP tier tends to spend more output tokens (ThinkingConfig=HIGH).
+    # DEEP tier tends to spend more output tokens — heavier model
+    # writes more for the same prompt.
     out_tokens = result.raw_usage.get("candidates_token_count", 0)
     assert out_tokens > 30, f"DEEP synthesis should write >30 tokens, got {out_tokens}"
     # Grounding fired.

@@ -21,9 +21,11 @@ Two tiers, both selectable via env:
     grounded search, low thinking budget. Used by capability / actor /
     risk / signal fetchers.
   - `deep` / `max` → `GROUNDED_MODEL_DEEP` (default
-    `gemini-3.1-pro-preview`): grounded search + `ThinkingConfig`
-    HIGH. Used by the daily digest. `max` is accepted as a synonym
-    for `deep` so the old `tier="max"` call sites keep working.
+    `gemini-3.1-pro-preview`): grounded search on a heavier model
+    that thinks more by default. Used by the daily digest. `max`
+    is accepted as a synonym for `deep` so the old `tier="max"`
+    call sites keep working. Explicit ThinkingConfig is NOT set
+    (Vertex rejects it for some preview models).
 
 Cost is metered from `usage_metadata.prompt_token_count` +
 `candidates_token_count` via the same `price_call()` helper the agent
@@ -357,19 +359,28 @@ class GroundedResearchClient:
 
 def _build_generate_config(*, tier: GroundedResearchTier) -> Any:
     """Build a `google.genai.types.GenerateContentConfig` with the
-    google_search grounding tool and tier-appropriate ThinkingConfig.
-    Imported lazily so the module can be imported in environments
-    without the SDK (e.g., type-check-only test envs)."""
+    google_search grounding tool. Imported lazily so the module can
+    be imported in environments without the SDK.
+
+    ThinkingConfig intentionally omitted — `gemini-2.5-flash` (FAST
+    tier) returns INVALID_ARGUMENT "thinking_level is not supported by
+    this model" when it's set, and the SDK's parameter shape varies
+    across Vertex preview models. Letting each model use its default
+    thinking behavior is safer than feature-detecting at runtime.
+    Tier still drives model selection via `grounded_model_for(tier)` —
+    DEEP routes to a heavier model that thinks more by default.
+    """
     from google.genai import types as gtypes  # noqa: PLC0415
 
-    thinking_level = "HIGH" if tier in ("deep", "max") else "LOW"
+    # `tier` retained for future use (e.g., per-model temperature
+    # tuning) but currently doesn't change the config shape.
+    _ = tier
     return gtypes.GenerateContentConfig(
         temperature=1.0,
         top_p=0.95,
         # Generous cap; the model stops naturally on EOS.
         max_output_tokens=65535,
         tools=[gtypes.Tool(google_search=gtypes.GoogleSearch())],
-        thinking_config=gtypes.ThinkingConfig(thinking_level=thinking_level),
         safety_settings=[
             gtypes.SafetySetting(category=cat, threshold="OFF")
             for cat in (

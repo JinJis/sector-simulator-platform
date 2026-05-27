@@ -119,12 +119,24 @@ export function TriggerSelectors({
   }, [secondaryKind, value.vision_slug]);
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-col gap-1.5">
+      {visionsError ? (
+        <p className="rounded border border-rose-800/60 bg-rose-950/30 px-2 py-1 text-[10px] text-rose-200">
+          vision lookup failed — restart sector-service if it predates
+          this UI (added 2026-05-26).{" "}
+          <span className="font-mono text-rose-300">{visionsError}</span>
+        </p>
+      ) : null}
+      {secondaryError ? (
+        <p className="rounded border border-rose-800/60 bg-rose-950/30 px-2 py-1 text-[10px] text-rose-200">
+          {secondaryKind ?? "options"} lookup failed —{" "}
+          <span className="font-mono text-rose-300">{secondaryError}</span>
+        </p>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-2">
       <label className="text-xs text-neutral-400">Vision</label>
       {visionsError ? (
-        <span className="text-[10px] text-rose-400" title={visionsError}>
-          vision load failed
-        </span>
+        <span className="text-[10px] text-rose-400">—</span>
       ) : visions === null ? (
         <Skeleton width="w-52" />
       ) : visions.length === 0 ? (
@@ -155,12 +167,7 @@ export function TriggerSelectors({
             {secondaryLabel ?? labelFor(secondaryKind)}
           </label>
           {secondaryError ? (
-            <span
-              className="text-[10px] text-rose-400"
-              title={secondaryError}
-            >
-              load failed
-            </span>
+            <span className="text-[10px] text-rose-400">—</span>
           ) : !value.vision_slug ? (
             <span className="text-[10px] text-neutral-600">
               pick vision first
@@ -192,6 +199,7 @@ export function TriggerSelectors({
           )}
         </>
       ) : null}
+      </div>
     </div>
   );
 }

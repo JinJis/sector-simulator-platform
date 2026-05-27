@@ -287,12 +287,14 @@ export const crawlerRouter = router({
     visions: publicProcedure
       .output(z.array(VisionLookupOption))
       .query(async ({ ctx }) => {
+        // No status filter — operators sometimes need to trigger
+        // fetchers against draft visions (mid-build) too. Order
+        // live-first so the most common picks land at the top.
         const rows = await ctx.prisma.sector.findMany({
-          where: { status: "live" },
-          select: { slug: true, name: true },
-          orderBy: { name: "asc" },
+          select: { slug: true, name: true, status: true },
+          orderBy: [{ status: "asc" }, { name: "asc" }],
         });
-        return rows;
+        return rows.map((r) => ({ slug: r.slug, name: r.name }));
       }),
 
     capabilities: publicProcedure
