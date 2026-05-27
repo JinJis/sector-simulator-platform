@@ -290,31 +290,11 @@ services:
     networks:
       - internal
 
-  admin:
-    # Admin console — sector + scenario inspection + agent-runs +
-    # M48 crawler cockpit. Port 3100 to avoid colliding with `web`.
-    # Gated by the env-driven login (ADMIN_EMAIL / ADMIN_PASSWORD /
-    # ADMIN_SESSION_SECRET); without these set, every route redirects
-    # to /login which shows a "not configured" notice. `env_file`
-    # (not `${VAR:-}` interpolation) so a stray export on the host
-    # shell can't override the file values silently.
-    image: tssp/admin:${IMAGE_TAG:-latest}
-    build:
-      context: .
-      dockerfile: infra/docker/admin.Dockerfile
-    env_file:
-      - .env
-    environment:
-      # RSC / route handlers run inside the container, so address
-      # sector-service / agent-orchestration by their compose hostnames
-      # (not localhost). next.config.ts reads SECTOR_SERVICE_URL.
-      SECTOR_SERVICE_URL: http://sector-service:8001
-      AGENT_ORCHESTRATION_URL: http://agent-orchestration:8002
-    depends_on:
-      - sector-service
-      - agent-orchestration
-    networks:
-      - internal
+  # (M55) The legacy `admin` Next.js app at port 3100 was removed —
+  # SQLAdmin at data-pipeline:8003/admin replaces every surface it
+  # carried (CrawlRun browser, fetcher triggers, proposal queue,
+  # Vision Builder, queue + cron panel). The single-account ADMIN_*
+  # env vars now gate that surface instead.
 
 networks:
   internal:

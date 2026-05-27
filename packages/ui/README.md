@@ -1,8 +1,10 @@
 # @platform/ui
 
-Shared React components used by both `apps/web` and `apps/admin`.
+Shared React components used by `apps/web` (the user-facing app).
 Source-only — no build step; consumers compile the TS directly via
-`transpilePackages` in their `next.config.ts`.
+`transpilePackages` in their `next.config.ts`. The legacy `apps/admin`
+Next.js console was retired in M55 — SQLAdmin (data-pipeline:8003/admin)
+took over every surface it carried.
 
 ## Why this package exists
 

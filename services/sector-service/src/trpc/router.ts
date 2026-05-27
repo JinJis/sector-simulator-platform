@@ -16,7 +16,6 @@ import { authRouter } from "./auth.js";
 import { billingRouter } from "./billing.js";
 import { capabilityRouter } from "./capability.js";
 import { communityProposalRouter } from "./community-proposal.js";
-import { crawlerRouter } from "./crawler.js";
 import { economicsRouter } from "./economics.js";
 import { equityRouter } from "./equity.js";
 import { feasibilityRouter } from "./feasibility.js";
@@ -67,8 +66,6 @@ export const appRouter = router({
   actor: actorRouter,
   // ---- MP5 (was M49e) — per-vision economics datapoints ----
   economics: economicsRouter,
-  // ---- M48 — Phase 4 real-time crawler ----
-  crawler: crawlerRouter,
 });
 
 export type AppRouter = typeof appRouter;
