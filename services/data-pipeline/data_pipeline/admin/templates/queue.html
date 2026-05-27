@@ -1,0 +1,221 @@
+{% extends "sqladmin/layout.html" %}
+
+{# Queue + Cron cockpit. Auto-refreshes every 5s so the operator can
+   leave it open as a status board without manually reloading. #}
+
+{% block content_header %}
+<meta http-equiv="refresh" content="5">
+<div class="row align-items-center">
+  <div class="col">
+    <h2 class="page-title">{{ title }}</h2>
+    <div class="page-pretitle">{{ subtitle }}</div>
+  </div>
+  <div class="col-auto">
+    <span class="text-muted small">checked {{ now_utc }} · auto-refresh 5s</span>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if msg %}
+<div class="col-12">
+  <div class="alert alert-info">{{ msg }}</div>
+</div>
+{% endif %}
+
+{# ─── ARQ queue tiles ────────────────────────────────────────────── #}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">ARQ queue</h3>
+      <div class="ms-auto text-muted small">
+        queue:
+        <span class="font-monospace">{{ queue.queue_name or '—' }}</span>
+      </div>
+    </div>
+    {% if not queue.available %}
+    <div class="card-body">
+      <div class="alert alert-warning mb-0">
+        queue offline — data-pipeline can&apos;t reach Redis. Check
+        <code>docker compose ps redis</code> and the data-pipeline
+        container&apos;s <code>REDIS_URL</code>.
+      </div>
+    </div>
+    {% endif %}
+    <div class="card-body">
+      <div class="row row-cards">
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="subheader">Queued</div>
+              <div class="h1 m-0 {% if not queue.available %}text-muted{% endif %}">
+                {{ '—' if not queue.available else queue.queued }}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="subheader">In flight</div>
+              <div class="h1 m-0 {% if queue.in_progress > 0 %}text-blue{% endif %} {% if not queue.available %}text-muted{% endif %}">
+                {{ '—' if not queue.available else queue.in_progress }}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="subheader">Workers</div>
+              <div class="h1 m-0
+                {% if not queue.available %}text-muted
+                {% elif queue.workers == 0 %}text-red
+                {% else %}text-green{% endif %}">
+                {{ '—' if not queue.available else queue.workers }}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="subheader">Deferred</div>
+              <div class="h1 m-0 {% if not queue.available %}text-muted{% endif %}">
+                {{ '—' if not queue.available else queue.deferred }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ─── APScheduler armed jobs ─────────────────────────────────────── #}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">APScheduler — armed jobs</h3>
+      <div class="ms-auto text-muted small">
+        scheduler {{ 'armed' if scheduler_present else 'off' }}
+      </div>
+    </div>
+    {% if rows %}
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table">
+        <thead>
+          <tr>
+            <th>State</th>
+            <th>Job</th>
+            <th>Cadence</th>
+            <th>Next run</th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td>
+              {% if row.paused %}
+              <span class="badge bg-yellow-lt">paused</span>
+              {% else %}
+              <span class="badge bg-green-lt">armed</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="fw-bold">{{ row.label }}</div>
+              <div class="text-muted small font-monospace">{{ row.id }}</div>
+              {% if row.note %}
+              <div class="text-muted small">{{ row.note }}</div>
+              {% endif %}
+            </td>
+            <td class="text-muted">{{ row.cadence }}</td>
+            <td class="font-monospace small">
+              {% if row.next_run_iso %}
+              {{ row.next_run_iso[11:19] }} UTC
+              {% else %}
+              —
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <div class="btn-list justify-content-end">
+                {% if row.paused %}
+                <form method="post"
+                      action="{{ url_for('admin:resume_job', job_id=row.id) }}"
+                      class="d-inline">
+                  <button type="submit" class="btn btn-sm btn-success">resume</button>
+                </form>
+                {% else %}
+                <form method="post"
+                      action="{{ url_for('admin:pause_job', job_id=row.id) }}"
+                      class="d-inline">
+                  <button type="submit" class="btn btn-sm btn-warning">pause</button>
+                </form>
+                {% endif %}
+                <form method="post"
+                      action="{{ url_for('admin:run_now', job_id=row.id) }}"
+                      class="d-inline">
+                  <button type="submit" class="btn btn-sm btn-outline-primary">run now</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body">
+      <p class="text-muted text-center mb-0">
+        No armed cron jobs. Check the data-pipeline container env (e.g.
+        <code>INGEST_SCHEDULE=on</code>) and restart.
+      </p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ─── Env-gated jobs that aren't armed ───────────────────────────── #}
+{% if disabled %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Disabled (env gate)</h3>
+      <div class="ms-auto text-muted small">
+        Flip the env to <code>on</code> in <code>.env</code> and restart
+        the data-pipeline container.
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table">
+        <thead>
+          <tr>
+            <th>Job</th>
+            <th>Cadence</th>
+            <th>Env var</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in disabled %}
+          <tr>
+            <td>
+              <div class="fw-bold text-muted">{{ d.label }}</div>
+              <div class="text-muted small font-monospace">{{ d.id }}</div>
+              {% if d.note %}
+              <div class="text-muted small">{{ d.note }}</div>
+              {% endif %}
+            </td>
+            <td class="text-muted">{{ d.cadence }}</td>
+            <td>
+              <code>{{ d.env_gate }}=on</code>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

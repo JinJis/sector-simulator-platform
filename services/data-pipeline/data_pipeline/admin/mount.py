@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Final
 
 from fastapi import FastAPI
@@ -25,6 +26,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from data_pipeline.admin.auth import AdminAuth
+from data_pipeline.admin.queue_view import QueueView
 from data_pipeline.admin.views import ALL_VIEWS
 
 log = logging.getLogger(__name__)
@@ -147,12 +149,18 @@ def mount_admin(app: FastAPI) -> Admin | None:
         app.add_middleware(_ForceSchemeMiddleware, scheme=forced)
         log.info("admin: ADMIN_FORCE_URL_SCHEME=%s — scheme pinned for url_for", forced)
 
+    # `templates_dir` is added to the Jinja loader BEFORE SQLAdmin's
+    # own PackageLoader, so files we drop in `admin/templates/` take
+    # precedence — that's how `queue.html` (rendered by QueueView)
+    # extends `sqladmin/layout.html` cleanly.
+    templates_dir = str(Path(__file__).parent / "templates")
     admin = Admin(
         app=app,
         engine=engine,
         base_url=ADMIN_BASE_URL,
         title="data-pipeline admin",
         authentication_backend=AdminAuth(secret_key=secret),
+        templates_dir=templates_dir,
     )
     # SQLAdmin creates its own inner Starlette and mounts it on `app`.
     # `request.app` inside any action handler resolves to the INNER
@@ -164,6 +172,8 @@ def mount_admin(app: FastAPI) -> Admin | None:
 
     for view_cls in ALL_VIEWS:
         admin.add_view(view_cls)
+    # Custom Queue + Crons page — not tied to a SQLAlchemy model.
+    admin.add_base_view(QueueView)
 
     app.state.admin = admin
     app.state._sqladmin_mounted = True  # noqa: SLF001
