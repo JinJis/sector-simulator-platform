@@ -31,6 +31,12 @@ from pydantic import BaseModel
 from agent_orchestration.prompts import load_prompt
 from agent_orchestration.repo import InMemoryWorkflowRepository, WorkflowRepository
 from agent_orchestration.schemas import (
+    AddActorPayload,
+    AddCapabilityPayload,
+    AddDriverPayload,
+    AddEquityPayload,
+    AddRiskPayload,
+    AddSignalSourcePayload,
     CapabilityKeywordSet,
     CapabilityScoreUpdate,
     CapabilityScoreUpdaterRequest,
@@ -49,6 +55,7 @@ from agent_orchestration.schemas import (
     FullPipelineRequest,
     FullPipelineResult,
     PromptValidationResult,
+    ProposalPayloadDraftRequest,
     ProposeSectorRequest,
     ProposeSectorResult,
     ResearchBrief,
@@ -1370,3 +1377,85 @@ class DataSourceSelectorWorkflow:
             "Total keyword sets MUST equal the capability count."
         )
         return "\n".join(parts)
+
+
+# =====================================================================
+# M55 follow-up — ProposalPayloadDrafterWorkflow (haiku tier)
+# =====================================================================
+#
+# Fills the structured `proposed_payload` for a community proposal
+# from just the (kind, sector, title, body) the user typed in steps
+# 1-3 of the New Proposal wizard. Replaces the hand-typed step 4 form
+# — user reviews + confirms instead of filling.
+#
+# Prompt: prompts/proposal_payload_drafter.md
+# Cost target: ≤$0.001 per call (haiku; regenerate is cheap).
+# =====================================================================
+
+
+_PROPOSAL_PAYLOAD_SCHEMA_BY_KIND: dict[str, type[BaseModel]] = {
+    "add_capability": AddCapabilityPayload,
+    "add_risk": AddRiskPayload,
+    "add_actor": AddActorPayload,
+    "add_driver": AddDriverPayload,
+    "add_equity": AddEquityPayload,
+    "add_signal_source": AddSignalSourcePayload,
+}
+
+
+class ProposalPayloadDrafterWorkflow:
+    """Draft a structured `proposed_payload` from the user's free-text
+    proposal title + body. One haiku call; consumer (sector-service
+    tRPC + UI) re-validates against Zod before persisting."""
+
+    kind = "proposal_payload_drafter"
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+
+    async def run(
+        self,
+        request: ProposalPayloadDraftRequest,
+        *,
+        cost_meter: CostMeter,
+    ) -> BaseModel:
+        schema_cls = _PROPOSAL_PAYLOAD_SCHEMA_BY_KIND.get(request.target_kind)
+        if schema_cls is None:
+            # Caller already gated on the Literal type; this is defensive
+            # in case a future kind gets added to the Literal without a
+            # matching schema entry.
+            raise ValueError(
+                f"proposal_payload_drafter: unsupported target_kind {request.target_kind!r}"
+            )
+        llm = self._llm.clone(cost_meter=cost_meter)
+        system = load_prompt("proposal_payload_drafter")
+        user = self._format_user_turn(request)
+        result = await asyncio.to_thread(
+            llm.call,
+            tier="haiku",
+            system=system,
+            user=user,
+            max_tokens=1024,
+            adaptive_thinking=False,
+            response_model=schema_cls,
+        )
+        if result.parsed is None:
+            raise RuntimeError(
+                f"proposal_payload_drafter returned unparseable output "
+                f"(stop_reason={result.stop_reason})"
+            )
+        return result.parsed
+
+    @staticmethod
+    def _format_user_turn(request: ProposalPayloadDraftRequest) -> str:
+        return (
+            f"target_kind: {request.target_kind}\n"
+            f"sector_slug: {request.sector_slug}\n"
+            f"sector_name: {request.sector_name}\n"
+            f"title: {request.title}\n"
+            f"body: {request.body}\n"
+            "\n"
+            "Emit the JSON object matching the per-kind schema. "
+            "No prose, no markdown fences, no commentary."
+        )
+

@@ -416,16 +416,25 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
                 os.environ.get("NEWS_INGEST_SCHEDULE", "on").lower() != "off"
             )
             if news_armed:
+                # NEWS_INGEST_INTERVAL_MIN lets local dev fire every 1 min
+                # to validate the queue → worker → CrawlRun chain end-to-end
+                # without waiting 5 min. Float-parsed so 0.5 is allowed.
+                news_interval = float(
+                    os.environ.get("NEWS_INGEST_INTERVAL_MIN", "5")
+                )
                 scheduler.add_job(
                     _run_news_ingest_5min,
-                    trigger=IntervalTrigger(minutes=5),
+                    trigger=IntervalTrigger(minutes=news_interval),
                     kwargs={"app": app},
                     id="news_ingest_5min",
                     replace_existing=True,
                     max_instances=1,
                     coalesce=True,
                 )
-                log.info("data-pipeline: news_ingest_5min armed (every 5 min)")
+                log.info(
+                    "data-pipeline: news_ingest_5min armed (every %s min)",
+                    news_interval,
+                )
             else:
                 log.info(
                     "data-pipeline: news_ingest_5min disabled "
@@ -436,16 +445,31 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
             # 7-min offset spreads load away from `:00` where most
             # crons cluster.
             if os.environ.get("RESEARCH_INGEST_SCHEDULE", "on").lower() != "off":
-                scheduler.add_job(
-                    _run_research_ingest_hourly,
-                    trigger=CronTrigger.from_crontab("7 * * * *", timezone="UTC"),
-                    kwargs={"app": app},
-                    id="research_ingest_hourly",
-                    replace_existing=True,
-                    max_instances=1,
-                    coalesce=True,
-                )
-                log.info("data-pipeline: research_ingest_hourly armed (cron='7 * * * *' UTC)")
+                research_cron = os.environ.get("RESEARCH_INGEST_CRON", "7 * * * *")
+                try:
+                    research_trigger = CronTrigger.from_crontab(
+                        research_cron, timezone="UTC"
+                    )
+                except ValueError as e:
+                    log.error(
+                        "data-pipeline: bad RESEARCH_INGEST_CRON=%r (%s)",
+                        research_cron,
+                        e,
+                    )
+                else:
+                    scheduler.add_job(
+                        _run_research_ingest_hourly,
+                        trigger=research_trigger,
+                        kwargs={"app": app},
+                        id="research_ingest_hourly",
+                        replace_existing=True,
+                        max_instances=1,
+                        coalesce=True,
+                    )
+                    log.info(
+                        "data-pipeline: research_ingest_hourly armed (cron=%r UTC)",
+                        research_cron,
+                    )
             else:
                 log.info(
                     "data-pipeline: research_ingest_hourly disabled "
@@ -454,19 +478,34 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
 
             # ── recompute_feasibility_hourly: 18 min after the research
             # sweep so freshly-written signals have time to settle
-            # before ScoreUpdater reads them.
-            scheduler.add_job(
-                _run_recompute_feasibility_job,
-                trigger=CronTrigger.from_crontab("25 * * * *", timezone="UTC"),
-                kwargs={"app": app},
-                id="recompute_feasibility_hourly",
-                replace_existing=True,
-                max_instances=1,
-                coalesce=True,
-            )
-            log.info(
-                "data-pipeline: recompute_feasibility_hourly armed (cron='25 * * * *' UTC)"
-            )
+            # before ScoreUpdater reads them. Override via
+            # RECOMPUTE_FEASIBILITY_CRON for local testing (e.g.,
+            # "*/2 * * * *" for every 2 min).
+            recompute_cron = os.environ.get("RECOMPUTE_FEASIBILITY_CRON", "25 * * * *")
+            try:
+                recompute_trigger = CronTrigger.from_crontab(
+                    recompute_cron, timezone="UTC"
+                )
+            except ValueError as e:
+                log.error(
+                    "data-pipeline: bad RECOMPUTE_FEASIBILITY_CRON=%r (%s)",
+                    recompute_cron,
+                    e,
+                )
+            else:
+                scheduler.add_job(
+                    _run_recompute_feasibility_job,
+                    trigger=recompute_trigger,
+                    kwargs={"app": app},
+                    id="recompute_feasibility_hourly",
+                    replace_existing=True,
+                    max_instances=1,
+                    coalesce=True,
+                )
+                log.info(
+                    "data-pipeline: recompute_feasibility_hourly armed (cron=%r UTC)",
+                    recompute_cron,
+                )
 
             # ── digest_daily: grounded gemini synthesis per vision.
             # DIGEST_SCHEDULE=off (default) keeps it manual-only so
@@ -513,9 +552,12 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
             os.environ.get("CRAWLER_SCHEDULE", "off"),
         ).lower()
         if orch_mode != "off" and app.state.crawl_runs_repo is not None:
+            orch_interval = float(
+                os.environ.get("ORCHESTRATOR_INTERVAL_MIN", "15")
+            )
             scheduler.add_job(
                 _run_orchestrator_tick_job,
-                trigger=IntervalTrigger(minutes=15),
+                trigger=IntervalTrigger(minutes=orch_interval),
                 kwargs={"app": app},
                 id="orchestrator_tick_15min",
                 replace_existing=True,
@@ -523,7 +565,8 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
                 coalesce=True,
             )
             log.info(
-                "data-pipeline: orchestrator cron armed (every 15min) — schedule=%s",
+                "data-pipeline: orchestrator cron armed (every %s min) — schedule=%s",
+                orch_interval,
                 orch_mode,
             )
         elif orch_mode == "off":

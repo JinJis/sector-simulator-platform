@@ -923,3 +923,134 @@ class VisionBuilderRunResult(BaseModel):
     stages: list[StageMetricDto]
     total_cost_usd: float
     total_duration_ms: int
+
+
+# ====================================================================
+# M55 follow-up — Community Proposal Payload Drafter
+#
+# Light haiku agent that fills in the `proposed_payload` JSON for a
+# user-filed CommunityProposal, given the kind + sector + title + body.
+# The user reviews the draft and either confirms or regenerates. Each
+# target_kind has its own field set — we use per-kind Pydantic models
+# rather than a single dict-of-Any so Gemini's response_schema gets
+# real structure to fill in.
+# ====================================================================
+
+
+# ---- per-kind payload schemas ----
+
+class AddCapabilityPayload(BaseModel):
+    key: str = Field(min_length=2, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
+    name: str = Field(min_length=2, max_length=120)
+    description: str = Field(min_length=20, max_length=600)
+    rationale: str = Field(min_length=20, max_length=600)
+    weight: float = Field(ge=0.02, le=0.5, default=0.10)
+    initial_technical: int = Field(ge=0, le=100, default=50)
+    initial_economic: int = Field(ge=0, le=100, default=50)
+    initial_regulatory: int = Field(ge=0, le=100, default=50)
+    initial_supply: int = Field(ge=0, le=100, default=50)
+
+
+class AddRiskPayload(BaseModel):
+    key: str = Field(min_length=2, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
+    name: str = Field(min_length=2, max_length=120)
+    category: Literal[
+        "political",
+        "legal",
+        "supply",
+        "safety",
+        "environmental",
+        "financial",
+        "social",
+    ]
+    severity: Literal["low", "medium", "high", "critical"] = "medium"
+    likelihood: Literal["low", "medium", "high"] = "medium"
+    time_horizon: Literal["immediate", "1y", "3y", "5y", "10y"] = "3y"
+    description: str = Field(min_length=20, max_length=600)
+    affected_capability_keys: list[str] = Field(default_factory=list, max_length=10)
+
+
+class AddActorPayload(BaseModel):
+    key: str = Field(min_length=2, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
+    name: str = Field(min_length=2, max_length=160)
+    iso_country: str = Field(pattern=r"^[A-Z]{2}$")
+    category: Literal[
+        "public_corp",
+        "private_startup",
+        "government_lab",
+        "national_lab",
+        "academic_lab",
+        "standards_body",
+        "ngo",
+    ]
+    stage: Literal["research", "pilot", "commercial", "scaling"] = "commercial"
+    relevance: int = Field(ge=0, le=100, default=70)
+    blurb: str = Field(min_length=20, max_length=400)
+    signal_keywords: list[str] = Field(default_factory=list, max_length=12)
+
+
+class AddDriverPayload(BaseModel):
+    name: str = Field(min_length=2, max_length=80, pattern=r"^[a-z][a-z0-9_]*$")
+    group: str = Field(min_length=1, max_length=40)
+    unit: str = Field(min_length=1, max_length=40)
+    default: float
+    min: float
+    max: float
+    description: str = Field(min_length=20, max_length=600)
+
+
+class AddEquityPayload(BaseModel):
+    ticker: str = Field(min_length=1, max_length=16)
+    exchange: str = Field(min_length=2, max_length=20)
+    company_name: str = Field(min_length=2, max_length=120)
+    iso_country: str = Field(pattern=r"^[A-Z]{2}$")
+    sector_exposure_pct: int = Field(ge=0, le=100, default=50)
+    rationale: str = Field(min_length=20, max_length=600)
+
+
+class AddSignalSourcePayload(BaseModel):
+    capability_key: str = Field(min_length=2, max_length=64)
+    arxiv_keywords: list[str] = Field(default_factory=list, max_length=10)
+    uspto_keywords: list[str] = Field(default_factory=list, max_length=10)
+    news_keywords: list[str] = Field(default_factory=list, max_length=10)
+
+
+# ---- request / response envelopes ----
+
+
+# Discriminates which Pydantic schema the workflow asks the LLM to fill.
+# `edit` / `other` are intentionally not in this list — those payloads are
+# free-form prose; the wizard keeps the manual textarea for them.
+ProposalDrafterKind = Literal[
+    "add_capability",
+    "add_risk",
+    "add_actor",
+    "add_driver",
+    "add_equity",
+    "add_signal_source",
+]
+
+
+class ProposalPayloadDraftRequest(BaseModel):
+    """Inputs the drafter sees. `sector_name` is human-readable context
+    (the LLM uses it to keep terminology consistent); `sector_slug` is
+    the canonical id used elsewhere."""
+
+    target_kind: ProposalDrafterKind
+    sector_slug: str = Field(min_length=1, max_length=120)
+    sector_name: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class ProposalPayloadDraftResult(BaseModel):
+    """Workflow output. `payload` is the per-kind model dumped to a dict
+    — it's typed `dict[str, Any]` here because the union of all six
+    kind schemas isn't worth modeling as a discriminated union just to
+    bounce out of the HTTP boundary. The Node side re-validates with
+    the existing Zod schemas in `community-proposal.ts` before write."""
+
+    target_kind: ProposalDrafterKind
+    payload: dict[str, Any]
+    cost_usd: float
+    duration_ms: int

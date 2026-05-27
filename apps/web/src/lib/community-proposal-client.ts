@@ -69,3 +69,23 @@ export async function toggleProposalVote(
     `toggleProposalVote(${proposal_id})`,
   );
 }
+
+export type ProposalDraftPayloadInput =
+  Inputs["communityProposal"]["draftPayload"];
+export type ProposalDraftPayloadResult =
+  Outputs["communityProposal"]["draftPayload"];
+
+/**
+ * M55 follow-up — auto-draft `proposed_payload` for the wizard's step 4.
+ * Single haiku call (~$0.001); user reviews + confirms or hits regenerate.
+ * Only six kinds are supported (capability/risk/actor/driver/equity/
+ * signal_source). The wizard keeps a manual textarea for `edit` / `other`.
+ */
+export async function draftProposalPayload(
+  input: ProposalDraftPayloadInput,
+): Promise<ProposalDraftPayloadResult> {
+  return rethrow(
+    () => trpc.communityProposal.draftPayload.mutate(input),
+    "draftProposalPayload",
+  );
+}

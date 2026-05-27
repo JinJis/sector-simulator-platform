@@ -46,6 +46,8 @@ from agent_orchestration.schemas import (
     DriverInferenceRequest,
     FullPipelineRequest,
     PromptValidatorRunResult,
+    ProposalPayloadDraftRequest,
+    ProposalPayloadDraftResult,
     ProposeSectorRequest,
     ResearchRequest,
     SignalExtractorRequest,
@@ -68,6 +70,7 @@ from agent_orchestration.workflows import (
     DecompositionWorkflow,
     DriverInferenceWorkflow,
     FullPipelineWorkflow,
+    ProposalPayloadDrafterWorkflow,
     PromptValidatorWorkflow,
     ProposeSectorWorkflow,
     ResearchWorkflow,
@@ -289,6 +292,39 @@ def create_app() -> FastAPI:
         duration_ms = int((time.perf_counter() - t0) * 1000)
         return SignalExtractorRunResult(
             scoring=scoring,
+            cost_usd=cost_meter.total_usd,
+            duration_ms=duration_ms,
+        )
+
+    @app.post(
+        "/proposal-payload/draft",
+        response_model=ProposalPayloadDraftResult,
+    )
+    async def proposal_payload_draft(
+        req: ProposalPayloadDraftRequest,
+    ) -> ProposalPayloadDraftResult:
+        """M55 follow-up — fill a community proposal's `proposed_payload`
+        from the (target_kind, sector, title, body) the user typed in the
+        wizard's first 3 steps. Single haiku call (~$0.001 each), so
+        regenerate is cheap; user just confirms instead of hand-typing
+        the per-kind form. Caller (sector-service tRPC) re-validates
+        with the existing Zod schemas before persisting."""
+        llm: LLMClient = app.state.llm
+        workflow = ProposalPayloadDrafterWorkflow(llm=llm)
+        cost_meter = CostMeter()
+        t0 = time.perf_counter()
+        try:
+            payload_model = await workflow.run(req, cost_meter=cost_meter)
+        except Exception as e:
+            log.exception("proposal-payload draft failed: %s", e)
+            raise HTTPException(
+                status_code=502,
+                detail=f"proposal-payload drafter failed: {e}",
+            ) from e
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        return ProposalPayloadDraftResult(
+            target_kind=req.target_kind,
+            payload=payload_model.model_dump(),
             cost_usd=cost_meter.total_usd,
             duration_ms=duration_ms,
         )

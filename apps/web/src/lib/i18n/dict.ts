@@ -195,14 +195,14 @@ export const DICT: Record<string, Entry> = {
   // ---- Proposal wizard --------------------------------------------
   "proposal.new.title": { ko: "새 제안 작성", en: "New proposal" },
   "proposal.new.subtitle": {
-    ko: "5단계로 끝납니다 — 종류 고르기 → 섹터 고르기 → 본문 → 상세 → 근거 첨부.",
-    en: "Five quick steps — pick a kind, pick a sector, write the gist, fill in details, attach evidence.",
+    ko: "5단계 — 종류 고르기 → 섹터 고르기 → 본문 → AI가 상세 자동 채움 (확인만) → 근거 첨부.",
+    en: "Five steps — pick a kind, pick a sector, write the gist, AI fills the details (just confirm), attach evidence.",
   },
   "proposal.new.backLink": { ko: "← 제안 목록", en: "← Proposals" },
   "proposal.steps.kind": { ko: "종류", en: "Kind" },
   "proposal.steps.sector": { ko: "섹터", en: "Sector" },
   "proposal.steps.describe": { ko: "설명", en: "Describe" },
-  "proposal.steps.details": { ko: "상세", en: "Details" },
+  "proposal.steps.details": { ko: "AI 상세", en: "AI details" },
   "proposal.steps.evidence": { ko: "근거", en: "Evidence" },
   "proposal.kind.heading": { ko: "어떤 걸 제안하시겠어요?", en: "What are you proposing?" },
   "proposal.kind.subheading": {
@@ -260,14 +260,31 @@ export const DICT: Record<string, Entry> = {
   "proposal.describe.titleMinErr": { ko: "조금 더 길게 적어주세요", en: "A bit more, please" },
   "proposal.describe.body": { ko: "본문 — 왜 이게 중요한가요?", en: "Body — why does this matter?" },
   "proposal.describe.bodyMinErr": { ko: "조금 더 자세히 적어주세요", en: "A few more words, please" },
-  "proposal.payload.heading": { ko: "상세 정보를 채워주세요", en: "Fill in the details" },
+  "proposal.payload.heading": {
+    ko: "AI가 채운 상세 — 확인만 해주세요",
+    en: "AI-drafted details — just review",
+  },
   "proposal.payload.subheading": {
-    ko: "여기 입력한 값이 승인 시 그대로 데이터로 들어갑니다. 모르는 항목은 비워두면 관리자가 채워요.",
-    en: "These values are written to the DB on acceptance. Skip what you don't know — an admin fills the gaps.",
+    ko: "제목과 본문을 보고 가벼운 LLM이 구조화 필드를 채웠어요. 마음에 안 들면 [다시 생성] 또는 직접 편집할 수 있어요.",
+    en: "A light LLM filled the structured fields from your title + body. Hit Regenerate if it's off, or edit by hand.",
   },
   "proposal.payload.editOtherHint": {
     ko: "이 종류는 구조화 필드가 없어요. 본문과 근거만으로 관리자가 검토해 반영합니다.",
     en: "No structured fields for this kind — admins decide from your body + evidence.",
+  },
+  "proposal.payload.loading": {
+    ko: "초안 생성 중… (한두 초)",
+    en: "Drafting… (a second or two)",
+  },
+  "proposal.payload.regenerate": { ko: "다시 생성", en: "Regenerate" },
+  "proposal.payload.editManually": { ko: "직접 편집하기", en: "Edit manually" },
+  "proposal.payload.draftCost": {
+    ko: "생성 비용",
+    en: "Draft cost",
+  },
+  "proposal.payload.draftFailed": {
+    ko: "초안 생성 실패 — 직접 편집해주세요",
+    en: "Drafting failed — please fill in manually",
   },
   "proposal.review.heading": { ko: "근거 첨부 + 최종 확인", en: "Evidence + final review" },
   "proposal.review.subheading": {

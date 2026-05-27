@@ -149,6 +149,9 @@ export function ProposalWizard({ sectorChoices, defaultSector }: Props) {
         {step === 4 && draft.target_kind && (
           <StepPayload
             targetKind={draft.target_kind}
+            sectorSlug={draft.sector_slug}
+            title={draft.title}
+            body={draft.body}
             payload={draft.payload}
             onChange={setPayload}
           />

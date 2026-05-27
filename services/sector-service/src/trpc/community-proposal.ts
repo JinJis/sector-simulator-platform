@@ -21,6 +21,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { agentFetch } from "../lib/agent-proxy.js";
 import {
   readReputation,
   recordPointDelta,
@@ -606,5 +607,70 @@ export const communityProposalRouter = router({
         }
       });
       return { decided_count: decidedCount, skipped_ids: skipped };
+    }),
+
+  /**
+   * M55 follow-up — auto-draft the `proposed_payload` for a community
+   * proposal from the (target_kind, sector, title, body) the user has
+   * typed so far. Proxies to agent-orchestration `/proposal-payload/
+   * draft` (haiku tier, ~$0.001/call). Returned payload is loosely
+   * typed (`z.record(z.any())`) here because the drafter emits a
+   * different shape per kind; the final `create` mutation re-validates
+   * via the per-kind branch in its zod input. `edit` and `other` kinds
+   * are rejected up front — those payloads are free-form prose and the
+   * wizard keeps a manual textarea for them.
+   */
+  draftPayload: publicProcedure
+    .input(
+      z.object({
+        target_kind: z.enum([
+          "add_capability",
+          "add_risk",
+          "add_actor",
+          "add_driver",
+          "add_equity",
+          "add_signal_source",
+        ]),
+        sector_slug: z.string().min(1).max(120),
+        title: z.string().min(1).max(200),
+        body: z.string().min(1).max(4000),
+      }),
+    )
+    .output(
+      z.object({
+        target_kind: z.string(),
+        payload: z.record(z.any()),
+        cost_usd: z.number(),
+        duration_ms: z.number().int(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const sector = await ctx.prisma.sector.findUnique({
+        where: { slug: input.sector_slug },
+        select: { name: true },
+      });
+      if (!sector) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `sector '${input.sector_slug}' not found`,
+        });
+      }
+      const out = await agentFetch<{
+        target_kind: string;
+        payload: Record<string, unknown>;
+        cost_usd: number;
+        duration_ms: number;
+      }>("/proposal-payload/draft", {
+        method: "POST",
+        body: {
+          target_kind: input.target_kind,
+          sector_slug: input.sector_slug,
+          sector_name: sector.name,
+          title: input.title,
+          body: input.body,
+        },
+        context: "communityProposal.draftPayload",
+      });
+      return out;
     }),
 });
