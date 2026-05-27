@@ -122,8 +122,7 @@ export function TriggerSelectors({
     <div className="flex flex-col gap-1.5">
       {visionsError ? (
         <p className="rounded border border-rose-800/60 bg-rose-950/30 px-2 py-1 text-[10px] text-rose-200">
-          vision lookup failed — restart sector-service if it predates
-          this UI (added 2026-05-26).{" "}
+          vision lookup failed —{" "}
           <span className="font-mono text-rose-300">{visionsError}</span>
         </p>
       ) : null}
@@ -153,9 +152,10 @@ export function TriggerSelectors({
           className="w-52 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm text-neutral-100 focus:border-cyan-500 focus:outline-none"
         >
           {visions.map((v) => (
+            // `<option>` only allows text children — nested elements
+            // (even a styled <span>) trigger a hydration mismatch.
             <option key={v.slug} value={v.slug}>
-              {v.name}{" "}
-              <span className="text-neutral-500">— {v.slug}</span>
+              {v.name} — {v.slug}
             </option>
           ))}
         </select>
@@ -191,8 +191,7 @@ export function TriggerSelectors({
             >
               {secondary.map((o) => (
                 <option key={o.key} value={o.key}>
-                  {o.name}{" "}
-                  <span className="text-neutral-500">— {o.key}</span>
+                  {o.name} — {o.key}
                 </option>
               ))}
             </select>

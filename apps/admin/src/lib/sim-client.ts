@@ -18,40 +18,6 @@ export const SECTOR_SERVICE_URL =
   process.env.SECTOR_SERVICE_URL ?? "http://localhost:8001";
 
 /**
- * fetch wrapper that:
- *   - disables Next.js's HTTP cache (admin polling needs fresh reads)
- *   - dumps the raw body to console when the upstream returns non-2xx
- *     OR a non-JSON content-type. Without this, every tRPC failure
- *     surfaces as the opaque "Unable to transform response from
- *     server" because the client only knows the parse failed. With
- *     it, the actual `<!DOCTYPE html>...` / `Bad Gateway` / Fastify
- *     error page lands in dev tools so we can fix the real cause
- *     (sector-service down, route 404, Prisma 500, etc.).
- */
-async function diagnosticFetch(
-  input: RequestInfo | URL,
-  init?: RequestInit,
-): Promise<Response> {
-  const res = await fetch(input, { ...(init ?? {}), cache: "no-store" });
-  const ct = res.headers.get("content-type") ?? "";
-  if (!res.ok || !ct.toLowerCase().includes("json")) {
-    const cloned = res.clone();
-    let body = "<body read failed>";
-    try {
-      body = await cloned.text();
-    } catch {
-      /* ignore */
-    }
-    const url = typeof input === "string" ? input : input.toString();
-    // eslint-disable-next-line no-console
-    console.error(
-      `[trpc fetch] non-JSON response from ${url} — status=${res.status} content-type="${ct}" body[0..400]=${body.slice(0, 400)}`,
-    );
-  }
-  return res;
-}
-
-/**
  * Why httpLink instead of httpBatchLink:
  *   httpBatchLink combines parallel queries into a single GET like
  *     /trpc/proc1,proc2,proc3?batch=1&input=...
@@ -67,7 +33,7 @@ export const trpc = createTRPCClient<AppRouter>({
   links: [
     httpLink({
       url: TRPC_URL,
-      fetch: diagnosticFetch,
+      fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
     }),
   ],
 });
@@ -708,21 +674,21 @@ async function rethrow<T>(fn: () => Promise<T>, label: string): Promise<T> {
     return await fn();
   } catch (e) {
     if (e instanceof TRPCClientError) {
-      // Surface httpStatus + code so vague errors like "Unable to
-      // transform response from server" (typically a 404 returning
-      // HTML, or sector-service throwing a non-JSON 500) carry the
-      // diagnostic info needed to fix them without opening the
-      // Network tab.
+      // Append the tRPC error code + HTTP status when present —
+      // turns generic messages into something operators can act on.
       const data = (e as TRPCClientError<never>).data as
         | { httpStatus?: number; code?: string }
         | undefined;
-      const status = data?.httpStatus ?? "?";
-      const code = data?.code ?? "";
-      const suffix = code ? ` [${code} · http ${status}]` : ` [http ${status}]`;
-      // Also dump the raw client error to console so dev tools shows
-      // the full stack + .data payload.
-      // eslint-disable-next-line no-console
-      console.error(`[${label}]`, e);
+      const status = data?.httpStatus;
+      const code = data?.code;
+      const suffix =
+        code && status != null
+          ? ` [${code} · http ${status}]`
+          : code
+            ? ` [${code}]`
+            : status != null
+              ? ` [http ${status}]`
+              : "";
       throw new Error(`${label} failed: ${e.message}${suffix}`);
     }
     throw e;

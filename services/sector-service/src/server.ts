@@ -72,18 +72,14 @@ async function main(): Promise<void> {
   try {
     await fastify.listen({ host: cfg.HOST, port: cfg.PORT });
     fastify.log.info(
-      { port: cfg.PORT, host: cfg.HOST, upstream: cfg.SIMULATION_SERVICE_URL },
+      {
+        port: cfg.PORT,
+        host: cfg.HOST,
+        upstream: cfg.SIMULATION_SERVICE_URL,
+        trpc_procedure_count: Object.keys(appRouter._def.procedures).length,
+      },
       "sector-service listening",
     );
-    // Dump every registered Fastify route + every tRPC procedure on
-    // startup. Lets ops verify after a deploy that the route table
-    // matches expectations without curl-ing every endpoint. Tagged
-    // "boot.routes" + "boot.trpc" so log filters can pick them up.
-    fastify.log.info({ tag: "boot.routes" }, "registered routes:");
-    fastify.log.info("\n" + fastify.printRoutes({ commonPrefix: false }));
-    const trpcProcs = Object.keys(appRouter._def.procedures).sort();
-    fastify.log.info({ tag: "boot.trpc", count: trpcProcs.length }, "tRPC procedures registered");
-    fastify.log.info("\n  " + trpcProcs.join("\n  "));
   } catch (err) {
     fastify.log.error(err, "sector-service failed to start");
     process.exit(1);
