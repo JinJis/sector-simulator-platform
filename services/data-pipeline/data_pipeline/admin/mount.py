@@ -22,6 +22,7 @@ from fastapi import FastAPI
 from sqladmin import Admin
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from data_pipeline.admin.auth import AdminAuth
 from data_pipeline.admin.views import ALL_VIEWS
@@ -31,6 +32,34 @@ log = logging.getLogger(__name__)
 ADMIN_BASE_URL: Final = "/admin"
 _ENGINE_ATTR: Final = "_sqladmin_engine"
 _MOUNTED_ATTR: Final = "_sqladmin_mounted"
+
+
+class _ForceSchemeMiddleware:
+    """Pin the ASGI scope's `scheme` to a fixed value (http/https).
+
+    Use when running behind a TLS-terminating proxy that doesn't set
+    `X-Forwarded-Proto` — e.g., the Google Cloud Workstation proxy
+    serving `*.proxy.googlers.com`. Without it, uvicorn's `--proxy-
+    headers` flag has no header to honor and SQLAdmin's templates render
+    `http://` static URLs on an `https://` page, which every modern
+    browser blocks as Mixed Content. The admin then shows up as raw
+    HTML with no styling.
+
+    Gate this with `ADMIN_FORCE_URL_SCHEME=https` in the env when the
+    proxy is known to terminate TLS. Leave unset in environments where
+    the upstream `X-Forwarded-Proto` header is actually trustworthy.
+    """
+
+    def __init__(self, app: ASGIApp, *, scheme: str) -> None:
+        if scheme not in ("http", "https"):
+            raise ValueError(f"scheme must be http|https, got {scheme!r}")
+        self.app = app
+        self.scheme = scheme
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope.get("type") in ("http", "websocket"):
+            scope = {**scope, "scheme": self.scheme}
+        await self.app(scope, receive, send)
 
 
 def _async_dsn() -> str | None:
@@ -107,6 +136,16 @@ def mount_admin(app: FastAPI) -> Admin | None:
         # 7 days — matches the AuthenticationBackend's max_age check.
         max_age=7 * 24 * 3600,
     )
+
+    # Optional scheme override for environments behind a proxy that
+    # strips / omits X-Forwarded-Proto. See _ForceSchemeMiddleware
+    # docstring for the rationale. Starlette wraps middlewares in LIFO
+    # order, so adding this AFTER SessionMiddleware means the scheme
+    # override runs first on the inbound path — which is what we want.
+    forced = os.environ.get("ADMIN_FORCE_URL_SCHEME", "").strip().lower()
+    if forced in ("http", "https"):
+        app.add_middleware(_ForceSchemeMiddleware, scheme=forced)
+        log.info("admin: ADMIN_FORCE_URL_SCHEME=%s — scheme pinned for url_for", forced)
 
     admin = Admin(
         app=app,

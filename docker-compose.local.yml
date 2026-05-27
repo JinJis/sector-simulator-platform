@@ -64,6 +64,11 @@ services:
       # Scheduler off by default in local — manual /jobs/refresh-quotes
       # only. Override with `INGEST_SCHEDULE=on docker compose up`.
       INGEST_SCHEDULE: ${INGEST_SCHEDULE:-off}
+      # When running behind a TLS-terminating proxy that doesn't set
+      # X-Forwarded-Proto (e.g., Cloud Workstation's *.proxy.googlers.com),
+      # set ADMIN_FORCE_URL_SCHEME=https in .env so SQLAdmin renders
+      # https:// static URLs. Leave unset for plain http://localhost.
+      ADMIN_FORCE_URL_SCHEME: ${ADMIN_FORCE_URL_SCHEME:-}
     volumes:
       - ./services/data-pipeline:/repo/services/data-pipeline
     ports:
