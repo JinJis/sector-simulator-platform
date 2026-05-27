@@ -1,0 +1,319 @@
+{% extends "sqladmin/layout.html" %}
+
+{# Vision Builder — step 2 review. Three render branches:
+   - rejected: PromptValidator declined; show reason + restart link
+   - gate_failed: ValidationGate found errors; show errors + restart link
+   - success: draft passed; show summary + Commit form (hidden draft JSON)
+#}
+
+{% block content %}
+
+{# ─── Stages strip (always shown — cost transparency) ───────────── #}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Pipeline stages</h3>
+      <div class="ms-auto text-muted small">
+        total ${{ '%.4f'|format(result.total_cost_usd) }} ·
+        {{ (result.total_duration_ms / 1000)|round(1) }}s
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table">
+        <thead>
+          <tr>
+            <th>Stage</th>
+            <th class="text-end">Duration</th>
+            <th class="text-end">Cost (USD)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in result.stages %}
+          <tr>
+            <td>{{ stage_labels.get(s.name, s.name) }}</td>
+            <td class="text-end font-monospace small">
+              {{ '%.2f'|format(s.duration_ms / 1000) }}s
+            </td>
+            <td class="text-end font-monospace small">
+              ${{ '%.4f'|format(s.cost_usd) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ─── Rejected by PromptValidator ────────────────────────────────── #}
+{% if rejected %}
+<div class="col-12">
+  <div class="card border-warning">
+    <div class="card-header bg-warning-lt">
+      <h3 class="card-title">
+        <i class="fa-solid fa-circle-exclamation me-2"></i>
+        Prompt rejected — {{ validation.rejection_kind }}
+      </h3>
+    </div>
+    <div class="card-body">
+      <p>{{ validation.rejection_reason }}</p>
+      {% if validation.guidance %}
+      <div class="alert alert-info mb-3">
+        <strong>Guidance:</strong> {{ validation.guidance }}
+      </div>
+      {% endif %}
+      <a href="{{ url_for('admin:prompt_page') }}" class="btn btn-primary">
+        Re-prompt
+      </a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ─── ValidationGate failed ──────────────────────────────────────── #}
+{% if gate_failed and gate %}
+<div class="col-12">
+  <div class="card border-danger">
+    <div class="card-header bg-danger-lt">
+      <h3 class="card-title">
+        <i class="fa-solid fa-shield-exclamation me-2"></i>
+        Validation gate failed
+      </h3>
+    </div>
+    <div class="card-body">
+      <p class="text-muted">
+        The decomposer's draft didn't pass the pure-Python gate
+        (DAG / weight-sum / FK checks). Re-prompt with the specific
+        thing to fix — opus has been wrong about the same issue twice
+        in a row before.
+      </p>
+      {% if gate.errors %}
+      <h4 class="mt-3">Errors</h4>
+      <ul class="list-group list-group-flush">
+        {% for err in gate.errors %}
+        <li class="list-group-item bg-transparent text-danger">
+          <code>{{ err }}</code>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if gate.warnings %}
+      <h4 class="mt-3">Warnings</h4>
+      <ul class="list-group list-group-flush">
+        {% for warn in gate.warnings %}
+        <li class="list-group-item bg-transparent text-warning">
+          <code>{{ warn }}</code>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      <a href="{{ url_for('admin:prompt_page') }}" class="btn btn-primary mt-3">
+        Re-prompt
+      </a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ─── Success — draft summary + commit ───────────────────────────── #}
+{% if success and draft and summary %}
+
+{% if gate and gate.warnings %}
+<div class="col-12">
+  <div class="alert alert-warning">
+    <strong>Gate warnings ({{ gate.warnings|length }}):</strong>
+    <ul class="mb-0 mt-2">
+      {% for warn in gate.warnings %}
+      <li><code>{{ warn }}</code></li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Draft summary</h3>
+      <div class="ms-auto">
+        <span class="badge bg-success-lt">passed gate</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <div class="datagrid">
+            <div class="datagrid-item">
+              <div class="datagrid-title">slug</div>
+              <div class="datagrid-content"><code>{{ summary.slug }}</code></div>
+            </div>
+            <div class="datagrid-item">
+              <div class="datagrid-title">name</div>
+              <div class="datagrid-content">{{ summary.name }}</div>
+            </div>
+            <div class="datagrid-item">
+              <div class="datagrid-title">vision question</div>
+              <div class="datagrid-content">{{ summary.vision_question }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="datagrid">
+            <div class="datagrid-item">
+              <div class="datagrid-title">initial feasibility</div>
+              <div class="datagrid-content font-monospace">
+                {% if summary.initial_composite is not none %}
+                  {{ '%.1f'|format(summary.initial_composite) }}
+                {% else %}—{% endif %}
+              </div>
+            </div>
+            <div class="datagrid-item">
+              <div class="datagrid-title">binding capability</div>
+              <div class="datagrid-content font-monospace">
+                {{ summary.binding_capability_key or '—' }}
+              </div>
+            </div>
+            <div class="datagrid-item">
+              <div class="datagrid-title">ETA (years)</div>
+              <div class="datagrid-content font-monospace">
+                {% if summary.eta_median_years is not none %}
+                  {{ '%.1f'|format(summary.eta_median_years) }}
+                {% else %}—{% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mt-3">
+        <div class="col-sm-6 col-lg">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="subheader">Capabilities</div>
+              <div class="h1 m-0">{{ summary.capability_count }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="subheader">Dependencies</div>
+              <div class="h1 m-0">{{ summary.dependencies_count }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="subheader">Risks</div>
+              <div class="h1 m-0">{{ summary.risk_count }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="subheader">Actors</div>
+              <div class="h1 m-0">{{ summary.actor_count }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="subheader">Cap↔Actor links</div>
+              <div class="h1 m-0">{{ summary.capability_actors_count }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Capability list (key + name + weight) so the operator can sanity-check
+   the tree without expanding the full JSON. #}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Capabilities ({{ summary.capability_count }})</h3>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table">
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Name</th>
+            <th class="text-end">Weight</th>
+            <th class="text-end">Order</th>
+            <th>Driver</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in draft.capabilities %}
+          <tr>
+            <td class="font-monospace small">{{ c.key }}</td>
+            <td>{{ c.name }}</td>
+            <td class="text-end font-monospace">{{ '%.2f'|format(c.weight) }}</td>
+            <td class="text-end font-monospace text-muted">{{ c.display_order }}</td>
+            <td class="text-muted small">{{ c.primary_driver_name or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# Full draft JSON in a collapsed details element — power-user escape
+   hatch for inspecting what's about to be committed. #}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Full draft JSON</h3>
+    </div>
+    <div class="card-body">
+      <details>
+        <summary class="text-muted small">expand</summary>
+        <pre class="mt-3"
+             style="max-height: 400px; overflow:auto;"><code>{{ draft_json }}</code></pre>
+      </details>
+    </div>
+  </div>
+</div>
+
+{# Commit form — draft JSON travels in a hidden textarea, no server-side state. #}
+<div class="col-12">
+  <div class="card border-primary">
+    <div class="card-header bg-primary-lt">
+      <h3 class="card-title">Commit</h3>
+    </div>
+    <div class="card-body">
+      <p class="text-muted mb-3">
+        One Prisma transaction — writes Sector + Capabilities + Risks +
+        Actors + VisionActor + CapabilityActor + initial CapabilityScores
+        + seed VisionFeasibility. Sector status starts as <code>draft</code>;
+        promote to <code>live</code> from the Sector detail page when ready.
+      </p>
+      <form method="post"
+            action="{{ url_for('admin:commit') }}"
+            onsubmit="this.querySelector('button[type=submit]').disabled = true;">
+        <textarea name="draft_json" style="display:none;">{{ draft_json }}</textarea>
+        <textarea name="signal_config_json" style="display:none;">{{ signal_config_json }}</textarea>
+        <div class="d-flex justify-content-between align-items-center">
+          <a href="{{ url_for('admin:prompt_page') }}"
+             class="btn btn-outline-secondary">
+            Discard + re-prompt
+          </a>
+          <button type="submit" class="btn btn-primary btn-lg">
+            <i class="fa-solid fa-database me-2"></i>
+            Commit vision
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}

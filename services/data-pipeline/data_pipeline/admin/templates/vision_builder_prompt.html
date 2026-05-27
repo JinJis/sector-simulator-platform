@@ -1,0 +1,87 @@
+{% extends "sqladmin/layout.html" %}
+
+{# Vision Builder — step 1 prompt form. POSTs to /admin/vision-builder/propose.
+   On failure the propose handler redirects back here with ?error=…  #}
+
+{% block content %}
+{% if error %}
+<div class="col-12">
+  <div class="alert alert-danger">{{ error }}</div>
+</div>
+{% endif %}
+
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">New vision — draft</h3>
+      <div class="ms-auto text-muted small">
+        agent pipeline: PromptValidator → Decomposition → DataSources → ValidationGate
+      </div>
+    </div>
+    <div class="card-body">
+      <form method="post"
+            action="{{ url_for('admin:propose') }}">
+        <div class="mb-3">
+          <label for="prompt" class="form-label required">
+            Vision question
+          </label>
+          <textarea
+            id="prompt"
+            name="prompt"
+            class="form-control"
+            rows="3"
+            minlength="15"
+            maxlength="4000"
+            required
+            placeholder="e.g., {{ examples[0] }}"></textarea>
+          <small class="form-hint">
+            One concrete, falsifiable question. The PromptValidator rejects
+            anything too vague, too narrow, or already an existing vision.
+          </small>
+        </div>
+
+        <div class="mb-3">
+          <label for="research_brief" class="form-label">
+            Research brief
+            <span class="text-muted small">(optional)</span>
+          </label>
+          <textarea
+            id="research_brief"
+            name="research_brief"
+            class="form-control"
+            rows="4"
+            maxlength="20000"
+            placeholder="Optional context the decomposer can lean on (existing research, market notes, etc.). Skip unless you have something specific."></textarea>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center">
+          <div class="text-muted small">
+            Synchronous opus call — expect 15-60s wall time. Budget ≤$0.55.
+          </div>
+          <button type="submit" class="btn btn-primary">
+            <i class="fa-solid fa-wand-magic-sparkles me-2"></i>
+            Propose
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Examples</h3>
+    </div>
+    <div class="card-body">
+      <ul class="list-group list-group-flush">
+        {% for ex in examples %}
+        <li class="list-group-item bg-transparent">
+          <code class="text-muted">{{ ex }}</code>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

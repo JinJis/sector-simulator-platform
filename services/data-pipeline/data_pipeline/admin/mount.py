@@ -28,6 +28,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from data_pipeline.admin.auth import AdminAuth
 from data_pipeline.admin.queue_view import QueueView
 from data_pipeline.admin.views import ALL_VIEWS
+from data_pipeline.admin.vision_builder_view import VisionBuilderView
 
 log = logging.getLogger(__name__)
 
@@ -174,6 +175,9 @@ def mount_admin(app: FastAPI) -> Admin | None:
         admin.add_view(view_cls)
     # Custom Queue + Crons page — not tied to a SQLAlchemy model.
     admin.add_base_view(QueueView)
+    # Vision Builder wizard — three-step Jinja flow that forwards to
+    # sector-service tRPC for the heavy commit transaction.
+    admin.add_base_view(VisionBuilderView)
 
     app.state.admin = admin
     app.state._sqladmin_mounted = True  # noqa: SLF001

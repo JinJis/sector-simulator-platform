@@ -189,6 +189,9 @@ services:
       # ARQ queue — Redis broker for the data-pipeline worker.
       # Same hostname in the local + dev overrides.
       REDIS_URL: redis://redis:6379/0
+      # M55 Vision Builder — SQLAdmin's wizard forwards propose/commit to
+      # sector-service tRPC (which owns the Prisma transaction).
+      SECTOR_SERVICE_URL: http://sector-service:8001
     volumes:
       - ./infra/secrets:/secrets:ro
     depends_on:
