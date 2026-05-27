@@ -7,7 +7,7 @@
  */
 
 import type { AppRouter } from "@platform/sector-service";
-import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
+import { createTRPCClient, httpLink, TRPCClientError } from "@trpc/client";
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 
 const BROWSER_BASE = "/api/sim/trpc";
@@ -51,9 +51,21 @@ async function diagnosticFetch(
   return res;
 }
 
+/**
+ * Why httpLink instead of httpBatchLink:
+ *   httpBatchLink combines parallel queries into a single GET like
+ *     /trpc/proc1,proc2,proc3?batch=1&input=...
+ *   The comma-joined procedure list in the URL path was hitting a
+ *   404 from Fastify in our cockpit (12 trigger components each
+ *   firing listVisionsForLookup simultaneously). httpLink sends each
+ *   call as its own request — clearer in dev tools network tab,
+ *   doesn't rely on the server's batched URL parser, no comma-in-
+ *   path-segment ambiguity. Throughput cost is minor for an
+ *   admin-only surface.
+ */
 export const trpc = createTRPCClient<AppRouter>({
   links: [
-    httpBatchLink({
+    httpLink({
       url: TRPC_URL,
       fetch: diagnosticFetch,
     }),
