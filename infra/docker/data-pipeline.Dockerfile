@@ -61,8 +61,14 @@ FROM deps AS dev
 ENV PYTHONPATH=/repo/services/data-pipeline:/repo/packages/agent-tools
 WORKDIR /repo/services/data-pipeline
 EXPOSE 8003
+# --proxy-headers + --forwarded-allow-ips=* so the SQLAdmin templates
+# render https:// absolute URLs when this service runs behind a TLS-
+# terminating proxy (Cloud Shell IDE proxy, Cloudflare, etc). Without
+# them request.url_for builds http:// links and the browser blocks
+# them as Mixed Content, leaving /admin as unstyled HTML.
 CMD ["uvicorn", "data_pipeline.main:app", \
      "--host", "0.0.0.0", "--port", "8003", \
+     "--proxy-headers", "--forwarded-allow-ips=*", \
      "--reload", \
      "--reload-dir", "/repo/services/data-pipeline", \
      "--reload-dir", "/repo/packages/agent-tools"]
@@ -74,4 +80,5 @@ USER app
 WORKDIR /repo/services/data-pipeline
 EXPOSE 8003
 CMD ["uvicorn", "data_pipeline.main:app", \
-     "--host", "0.0.0.0", "--port", "8003"]
+     "--host", "0.0.0.0", "--port", "8003", \
+     "--proxy-headers", "--forwarded-allow-ips=*"]
