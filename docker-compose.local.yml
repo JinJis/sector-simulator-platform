@@ -70,6 +70,22 @@ services:
       - "8003:8003"
     restart: "no"
 
+  # data-pipeline and data-pipeline-worker share `tssp/data-pipeline:latest`.
+  # Without forcing dev here too, `docker compose up --build` would rebuild
+  # the worker with the default (prod) target last, overwriting the dev
+  # image data-pipeline needs — and prod's `USER app` then can't read the
+  # host-owned bind mount, so the HTTP container dies with
+  # `ModuleNotFoundError: data_pipeline` on boot.
+  data-pipeline-worker:
+    build:
+      target: dev
+    environment:
+      PYTHONUNBUFFERED: "1"
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ./services/data-pipeline:/repo/services/data-pipeline
+    restart: "no"
+
   # Bind-mount packages/db so host edits to schema.prisma / migrations are
   # picked up without rebuilding the image. node_modules stays on a named
   # volume so the in-image linux-musl install isn't shadowed.
