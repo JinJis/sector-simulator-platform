@@ -17,11 +17,45 @@ const TRPC_URL = typeof window === "undefined" ? SERVER_BASE : BROWSER_BASE;
 export const SECTOR_SERVICE_URL =
   process.env.SECTOR_SERVICE_URL ?? "http://localhost:8001";
 
+/**
+ * fetch wrapper that:
+ *   - disables Next.js's HTTP cache (admin polling needs fresh reads)
+ *   - dumps the raw body to console when the upstream returns non-2xx
+ *     OR a non-JSON content-type. Without this, every tRPC failure
+ *     surfaces as the opaque "Unable to transform response from
+ *     server" because the client only knows the parse failed. With
+ *     it, the actual `<!DOCTYPE html>...` / `Bad Gateway` / Fastify
+ *     error page lands in dev tools so we can fix the real cause
+ *     (sector-service down, route 404, Prisma 500, etc.).
+ */
+async function diagnosticFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const res = await fetch(input, { ...(init ?? {}), cache: "no-store" });
+  const ct = res.headers.get("content-type") ?? "";
+  if (!res.ok || !ct.toLowerCase().includes("json")) {
+    const cloned = res.clone();
+    let body = "<body read failed>";
+    try {
+      body = await cloned.text();
+    } catch {
+      /* ignore */
+    }
+    const url = typeof input === "string" ? input : input.toString();
+    // eslint-disable-next-line no-console
+    console.error(
+      `[trpc fetch] non-JSON response from ${url} — status=${res.status} content-type="${ct}" body[0..400]=${body.slice(0, 400)}`,
+    );
+  }
+  return res;
+}
+
 export const trpc = createTRPCClient<AppRouter>({
   links: [
     httpBatchLink({
       url: TRPC_URL,
-      fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
+      fetch: diagnosticFetch,
     }),
   ],
 });
