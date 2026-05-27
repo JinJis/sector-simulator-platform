@@ -5,15 +5,22 @@ introspection default) so a Prisma column add doesn't surprise an
 operator with PII or noise. Heavy / large columns (JSONB payload,
 description text) are kept on the detail page but kept off the list.
 
-Per-row actions (trigger fetcher, approve/reject proposal, toggle cron)
-land in `actions.py` and are wired in here via `column_actions`.
+Per-row trigger / decide actions are decorated via `@action` and call
+helpers in `actions.py` so the trigger logic lives in one place.
 """
 
 from __future__ import annotations
 
-from sqladmin import ModelView
+import logging
 
+from sqladmin import ModelView, action
+from starlette.requests import Request
+from starlette.responses import Response
+
+from data_pipeline.admin import actions
 from data_pipeline.admin import models as m
+
+log = logging.getLogger(__name__)
 
 
 class SectorView(ModelView, model=m.Sector):
@@ -36,6 +43,36 @@ class SectorView(ModelView, model=m.Sector):
     form_excluded_columns = [m.Sector.created_at, m.Sector.updated_at]
     can_create = False
     can_delete = False
+
+    @action(
+        name="trigger_hello_world",
+        label="Trigger: hello-world fetch",
+        confirmation_message="Enqueue a hello-world DR ping for the selected vision(s)?",
+    )
+    async def trigger_hello_world(self, request: Request) -> Response:
+        pks = actions.parse_pks(request)
+        sectors = await actions.load_pks_as_sectors(self, pks)
+        run_ids: list[str] = []
+        for s in sectors:
+            run_ids.append(await actions.enqueue_hello(request, vision_slug=s.slug))
+        return actions.back_to_list(
+            request, self.identity, f"hello-world enqueued ({len(run_ids)})"
+        )
+
+    @action(
+        name="trigger_digest",
+        label="Trigger: Deep Research digest",
+        confirmation_message="Enqueue a daily DR digest for the selected vision(s)?",
+    )
+    async def trigger_digest(self, request: Request) -> Response:
+        pks = actions.parse_pks(request)
+        sectors = await actions.load_pks_as_sectors(self, pks)
+        run_ids: list[str] = []
+        for s in sectors:
+            run_ids.append(await actions.enqueue_digest(request, vision_slug=s.slug))
+        return actions.back_to_list(
+            request, self.identity, f"digest enqueued ({len(run_ids)})"
+        )
 
 
 class CapabilityView(ModelView, model=m.Capability):
@@ -61,6 +98,42 @@ class CapabilityView(ModelView, model=m.Capability):
     column_default_sort = [("sector_slug", False), ("display_order", False)]
     can_create = False
     can_delete = False
+
+    @action(
+        name="trigger_capability_fetch",
+        label="Trigger: capability DR fetch",
+        confirmation_message=(
+            "Enqueue a Capability Deep-Research fetch for the selected capabilities?"
+        ),
+    )
+    async def trigger_capability_fetch(self, request: Request) -> Response:
+        pks = actions.parse_pks(request)
+        caps = await actions.load_pks_as_capabilities(self, pks)
+        for c in caps:
+            await actions.enqueue_capability(
+                request, vision_slug=c.sector_slug, capability_key=c.key
+            )
+        return actions.back_to_list(
+            request, self.identity, f"capability fetch enqueued ({len(caps)})"
+        )
+
+    @action(
+        name="trigger_signal_fetch",
+        label="Trigger: signal ingest (scoped)",
+        confirmation_message=(
+            "Run scoped signal ingest (arxiv + USPTO + news) for the selected capabilities?"
+        ),
+    )
+    async def trigger_signal_fetch(self, request: Request) -> Response:
+        pks = actions.parse_pks(request)
+        caps = await actions.load_pks_as_capabilities(self, pks)
+        for c in caps:
+            await actions.enqueue_signal(
+                request, vision_slug=c.sector_slug, capability_key=c.key
+            )
+        return actions.back_to_list(
+            request, self.identity, f"signal ingest enqueued ({len(caps)})"
+        )
 
 
 class CapabilityScoreView(ModelView, model=m.CapabilityScore):
@@ -137,6 +210,20 @@ class RiskView(ModelView, model=m.Risk):
     can_create = False
     can_delete = False
 
+    @action(
+        name="trigger_risk_fetch",
+        label="Trigger: risk DR fetch",
+        confirmation_message="Enqueue a Risk DR fetch for the selected risk(s)?",
+    )
+    async def trigger_risk_fetch(self, request: Request) -> Response:
+        pks = actions.parse_pks(request)
+        risks = await actions.load_pks_as_risks(self, pks)
+        for r in risks:
+            await actions.enqueue_risk(request, vision_slug=r.sector_slug, risk_key=r.key)
+        return actions.back_to_list(
+            request, self.identity, f"risk fetch enqueued ({len(risks)})"
+        )
+
 
 class ActorView(ModelView, model=m.Actor):
     name = "Actor"
@@ -185,6 +272,26 @@ class VisionActorView(ModelView, model=m.VisionActor):
     column_default_sort = [("sector_slug", False), ("display_order", False)]
     can_create = False
     can_delete = False
+
+    @action(
+        name="trigger_actor_fetch",
+        label="Trigger: actor DR fetch",
+        confirmation_message=(
+            "Enqueue an Actor DR fetch for the actor(s) bound to the selected "
+            "Vision↔Actor rows? (Actor is global; this join row supplies the "
+            "vision context.)"
+        ),
+    )
+    async def trigger_actor_fetch(self, request: Request) -> Response:
+        pks = actions.parse_pks(request)
+        pairs = await actions.load_pks_as_vision_actors(self, pks)
+        for va, actor in pairs:
+            await actions.enqueue_actor(
+                request, vision_slug=va.sector_slug, actor_key=actor.key
+            )
+        return actions.back_to_list(
+            request, self.identity, f"actor fetch enqueued ({len(pairs)})"
+        )
 
 
 class CapabilityActorView(ModelView, model=m.CapabilityActor):
@@ -310,6 +417,37 @@ class CommunityProposalView(ModelView, model=m.CommunityProposal):
     column_default_sort = ("created_at", True)
     can_create = False
     can_delete = False
+
+    @action(
+        name="approve",
+        label="Approve (status → applied)",
+        confirmation_message=(
+            "Approve the selected proposal(s)? Status → applied; the M46e "
+            "applier picks up applied rows separately."
+        ),
+    )
+    async def approve(self, request: Request) -> Response:
+        pks = actions.parse_pks(request)
+        result = await actions.decide_proposals(request, pks, status="applied")
+        return actions.back_to_list(
+            request,
+            self.identity,
+            f"approved {len(result.decided_ids)}, skipped {len(result.skipped_ids)}",
+        )
+
+    @action(
+        name="reject",
+        label="Reject (status → rejected)",
+        confirmation_message="Reject the selected proposal(s)? Status → rejected.",
+    )
+    async def reject(self, request: Request) -> Response:
+        pks = actions.parse_pks(request)
+        result = await actions.decide_proposals(request, pks, status="rejected")
+        return actions.back_to_list(
+            request,
+            self.identity,
+            f"rejected {len(result.decided_ids)}, skipped {len(result.skipped_ids)}",
+        )
 
 
 class UserView(ModelView, model=m.User):

@@ -115,6 +115,14 @@ def mount_admin(app: FastAPI) -> Admin | None:
         title="data-pipeline admin",
         authentication_backend=AdminAuth(secret_key=secret),
     )
+    # SQLAdmin creates its own inner Starlette and mounts it on `app`.
+    # `request.app` inside any action handler resolves to the INNER
+    # Starlette — not the FastAPI app whose lifespan owns
+    # `crawl_runs_repo` / `queue_client` / `proposal_writer`. Stash a
+    # back-reference so `admin/actions.py :: parent_app(request)` can
+    # walk back to the outer app state at action time.
+    admin.admin.state.parent_app = app
+
     for view_cls in ALL_VIEWS:
         admin.add_view(view_cls)
 

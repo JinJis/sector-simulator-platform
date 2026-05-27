@@ -61,8 +61,30 @@ class WriteResult:
     evidence_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class DecideResult:
+    """Outcome of a bulk decide call: how many proposals transitioned to
+    the new terminal status, and how many were skipped because they were
+    already terminal (applied / rejected / stale). Mirrors the sector-
+    service `communityProposal.bulkDecide` mutation's response so the
+    SQLAdmin action and the legacy tRPC procedure are interchangeable."""
+
+    decided_ids: tuple[str, ...]
+    skipped_ids: tuple[str, ...]
+
+
 class ProposalWriter(Protocol):
     async def write(self, draft: ProposalDraft) -> WriteResult: ...
+
+    async def decide(
+        self,
+        proposal_ids: list[str],
+        *,
+        status: str,
+        reason: str | None,
+        decided_by_id: str | None,
+        decided_by_label: str,
+    ) -> DecideResult: ...
 
 
 class PostgresProposalWriter:
@@ -129,3 +151,78 @@ class PostgresProposalWriter:
                 draft.audit_author_label,
             )
         return WriteResult(proposal_id=proposal_id, evidence_count=len(draft.evidence))
+
+    async def decide(
+        self,
+        proposal_ids: list[str],
+        *,
+        status: str,
+        reason: str | None,
+        decided_by_id: str | None,
+        decided_by_label: str,
+    ) -> DecideResult:
+        """Bulk-transition open/review proposals to `applied|rejected`.
+        Mirrors `services/sector-service/src/trpc/community-proposal.ts
+        :: bulkDecide`: one UPDATE per row that's still open/review,
+        skip rows already at a terminal status, and one audit_logs row
+        per decision. All in a single transaction so retrying a half-
+        failed batch is safe.
+        """
+        if status not in ("applied", "rejected"):
+            raise ValueError(f"decide: status must be applied|rejected, got {status!r}")
+        if not proposal_ids:
+            return DecideResult(decided_ids=(), skipped_ids=())
+
+        decided: list[str] = []
+        skipped: list[str] = []
+        async with self._pool.acquire() as conn, conn.transaction():
+            rows = await conn.fetch(
+                """
+                    SELECT id, status, sector_slug, target_kind
+                    FROM community_proposals
+                    WHERE id = ANY($1::text[])
+                    FOR UPDATE
+                """,
+                list(proposal_ids),
+            )
+            for row in rows:
+                if row["status"] in ("applied", "rejected", "stale"):
+                    skipped.append(row["id"])
+                    continue
+                await conn.execute(
+                    """
+                        UPDATE community_proposals
+                        SET status = $2,
+                            decided_at = NOW(),
+                            decided_by_id = $3,
+                            decision_reason = $4,
+                            updated_at = NOW()
+                        WHERE id = $1
+                    """,
+                    row["id"],
+                    status,
+                    decided_by_id,
+                    reason or None,
+                )
+                await conn.execute(
+                    """
+                        INSERT INTO audit_logs (
+                            id, action, sector_slug, payload, author_label
+                        )
+                        VALUES ($1, $2, $3, $4::jsonb, $5)
+                    """,
+                    _new_audit_id(),
+                    f"community_proposal.{status}",
+                    row["sector_slug"],
+                    json.dumps(
+                        {
+                            "id": row["id"],
+                            "target_kind": row["target_kind"],
+                            "prev_status": row["status"],
+                            "reason": reason or None,
+                        }
+                    ),
+                    decided_by_label,
+                )
+                decided.append(row["id"])
+        return DecideResult(decided_ids=tuple(decided), skipped_ids=tuple(skipped))
