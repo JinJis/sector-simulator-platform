@@ -33,6 +33,20 @@ dependencies = [
   # band from the HTTP trigger. CrawlRun rows stay the durable status
   # board; ARQ holds in-flight queue + retry state in Redis.
   "arq>=0.26.0",
+  # SQLAdmin — Django-admin-style web UI mounted at /admin. Backed by
+  # SQLAlchemy 2 async; reads the same Postgres DB Prisma owns.
+  # Prisma stays the migration owner; the SQLAlchemy models defined in
+  # data_pipeline/admin/models.py are read-only mirrors used only for
+  # SQLAdmin to introspect columns + relationships.
+  "sqladmin>=0.20.0",
+  "sqlalchemy[asyncio]>=2.0.30",
+  # AuthenticationBackend signed cookies + the Vision Builder Jinja
+  # forms use itsdangerous for CSRF + session signing.
+  "itsdangerous>=2.2.0",
+  # Vision Builder custom page is rendered with Jinja2 (already a
+  # transitive dep of sqladmin/starlette, listed here explicitly so
+  # the template loader is unambiguous).
+  "jinja2>=3.1.4",
 ]
 
 [build-system]

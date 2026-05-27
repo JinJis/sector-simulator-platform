@@ -1035,6 +1035,12 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # M55 — SQLAdmin replaces apps/admin/ Next.js app. Mount before any
+    # other route so SQLAdmin's static-file routes shadow nothing.
+    from data_pipeline.admin import mount_admin  # noqa: PLC0415
+
+    mount_admin(app)
+
     @app.get("/health")
     def health() -> dict[str, Any]:
         last: RefreshQuotesResult | None = getattr(app.state, "last_result", None)
