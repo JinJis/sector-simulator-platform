@@ -66,24 +66,42 @@ class SignalFetcherError(Exception):
         self.run = run
 
 
-async def run_signal_fetcher(
-    request: SignalFetchRequest,
-    *,
-    runs_repo: CrawlRunRepository,
-    capability_reader: CapabilityReader,
-    signal_ingest_fn: SignalIngestFn,
-) -> SignalFetchResult:
-    plan: dict[str, Any] = {
+def _signal_plan(request: SignalFetchRequest) -> dict[str, Any]:
+    return {
         "fetcher": "signal",
         "vision_slug": request.vision_slug,
         "capability_key": request.capability_key,
         "lookback_days": request.lookback_days,
         "per_capability_limit": request.per_capability_limit,
     }
-    run = await runs_repo.create_queued(
+
+
+async def enqueue_signal_fetcher(
+    request: SignalFetchRequest,
+    *,
+    runs_repo: CrawlRunRepository,
+) -> CrawlRunRow:
+    """HTTP-side: create the queued CrawlRun row. Worker calls
+    `run_signal_fetcher(existing_run=…)` to execute."""
+    return await runs_repo.create_queued(
         vision_slug=request.vision_slug,
         fetcher_kind="signal",
-        plan=plan,
+        plan=_signal_plan(request),
+    )
+
+
+async def run_signal_fetcher(
+    request: SignalFetchRequest,
+    *,
+    runs_repo: CrawlRunRepository,
+    capability_reader: CapabilityReader,
+    signal_ingest_fn: SignalIngestFn,
+    existing_run: CrawlRunRow | None = None,
+) -> SignalFetchResult:
+    run = existing_run or await runs_repo.create_queued(
+        vision_slug=request.vision_slug,
+        fetcher_kind="signal",
+        plan=_signal_plan(request),
     )
     await runs_repo.mark_running(run.id)
 

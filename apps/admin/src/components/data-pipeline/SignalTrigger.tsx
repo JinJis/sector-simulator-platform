@@ -28,16 +28,13 @@ export function SignalTrigger() {
           vision_slug: sel.vision_slug,
           capability_key: sel.secondary_key,
         });
-        if (out.run.status === "ok") {
-          setLastOk(
-            `ok — fetched ${out.raw_signals_fetched} raw · wrote ${out.signals_written} · $${out.extractor_total_cost_usd.toFixed(4)}` +
-              (out.extractor_failures > 0
-                ? ` (${out.extractor_failures} extractor fail)`
-                : ""),
+        if (out.run.status === "error") {
+          setError(
+            `run ${out.run.id} error: ${out.run.error ?? "(no error message)"}`,
           );
         } else {
-          setError(
-            `run ${out.run.id} ${out.run.status}: ${out.run.error ?? "(no error message)"}`,
+          setLastOk(
+            `queued run ${out.run.id} for ${sel.secondary_key} — check Live jobs`,
           );
         }
         router.refresh();
@@ -65,7 +62,7 @@ export function SignalTrigger() {
             disabled={!ready}
             className="rounded bg-cyan-700 px-3 py-1 text-xs font-medium text-cyan-50 hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
           >
-            {pending ? "Running…" : "Run Signal ingest"}
+            {pending ? "Queuing…" : "Queue Signal ingest"}
           </button>
           {pending ? <TriggerPendingHint /> : null}
         </div>

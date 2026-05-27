@@ -39,17 +39,17 @@ export function TriggerOk({ text }: { text: string }) {
 }
 
 /**
- * Inline hint shown next to the "Running…" button while a long-
- * running LLM trigger is in flight. Grounded gemini calls land in
- * 10-40s (DEEP digest can hit 60s) — without this hint operators
- * watch a frozen button and assume failure.
+ * Inline hint shown next to the "Queuing…" button while the enqueue
+ * HTTP call is in flight. Post-ARQ migration the click only inserts
+ * the queued CrawlRun row + pushes a job onto Redis — both sub-second.
+ * The actual grounded-gemini work happens in the worker; the operator
+ * watches Live jobs to see status flip queued → ok / error.
  */
 export function TriggerPendingHint({ kind = "fetcher" }: { kind?: "fetcher" | "digest" }) {
-  const expected = kind === "digest" ? "30-60s" : "10-40s";
+  const worker = kind === "digest" ? "30-60s in worker" : "10-40s in worker";
   return (
     <span className="text-[10px] text-neutral-500">
-      typically {expected} · the run also lands in the Live jobs
-      table below
+      enqueue is &lt;1s · then {worker} — watch the Live jobs table
     </span>
   );
 }

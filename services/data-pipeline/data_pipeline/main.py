@@ -77,6 +77,7 @@ from data_pipeline.db.signal_writer import PostgresSignalWriter, SignalWriter
 from data_pipeline.deep_research.digest import (
     DigestError,
     DigestRequest,
+    enqueue_deep_research_digest,
     run_deep_research_digest,
 )
 from data_pipeline.deep_research.discovery.runner import run_discovery
@@ -84,27 +85,45 @@ from data_pipeline.deep_research.dispatcher import DispatcherClients, dispatch_t
 from data_pipeline.deep_research.fetchers.actor import (
     ActorFetcherError,
     ActorFetchRequest,
+    enqueue_actor_fetcher,
     run_actor_fetcher,
 )
 from data_pipeline.deep_research.fetchers.capability import (
     CapabilityFetcherError,
     CapabilityFetchRequest,
+    enqueue_capability_fetcher,
     run_capability_fetcher,
 )
 from data_pipeline.deep_research.fetchers.hello_world import (
     HelloWorldRunRequest,
+    enqueue_hello_world,
     run_hello_world,
 )
 from data_pipeline.deep_research.fetchers.risk import (
     RiskFetcherError,
     RiskFetchRequest,
+    enqueue_risk_fetcher,
     run_risk_fetcher,
 )
 from data_pipeline.deep_research.fetchers.signal import (
     SignalFetcherError,
     SignalFetchRequest,
     SignalIngestFn,
+    enqueue_signal_fetcher,
     run_signal_fetcher,
+)
+from data_pipeline.queue import (
+    QueueClient,
+    QueueDepthSnapshot,
+    build_queue_client,
+)
+from data_pipeline.queue.client import (
+    TASK_ACTOR,
+    TASK_CAPABILITY,
+    TASK_DIGEST,
+    TASK_HELLO_WORLD,
+    TASK_RISK,
+    TASK_SIGNAL,
 )
 from data_pipeline.deep_research.orchestrator import pick_for_tick
 from data_pipeline.jobs.refresh_quote_history import (
@@ -290,6 +309,22 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
                 "unreachable; capability/actor/risk fetchers will 503"
             )
             app.state.agent_client = None
+
+    # ARQ queue client — used by the /fetchers/*/run endpoints to
+    # enqueue jobs onto the data-pipeline-worker pool. Degrades to
+    # None when REDIS_URL is unset (then the trigger endpoints 503
+    # with a clear "queue unavailable" message rather than blocking).
+    if not hasattr(app.state, "queue_client"):
+        try:
+            app.state.queue_client = await build_queue_client()
+            log.info("data-pipeline: queue_client connected")
+        except Exception as exc:  # noqa: BLE001
+            log.error(
+                "data-pipeline: queue_client connect failed — fetcher "
+                "triggers will 503 (%s)",
+                exc,
+            )
+            app.state.queue_client = None
 
     # In-process signal-ingest closure. Reuses signal_repo (already
     # initialized above) — no new pool. SignalFetcher invokes this
@@ -521,6 +556,9 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         crawl_runs_repo = getattr(app.state, "crawl_runs_repo", None)
         if isinstance(crawl_runs_repo, PostgresCrawlRunRepository):
             await crawl_runs_repo.close()
+        queue_client = getattr(app.state, "queue_client", None)
+        if queue_client is not None:
+            await queue_client.close()
 
 
 async def _run_refresh_job(*, app: FastAPI) -> RefreshQuotesResult:
@@ -698,6 +736,19 @@ async def _run_recompute_feasibility_job(*, app: FastAPI):  # noqa: ANN201
 # in the data-pipeline merger, commit 3/6). Names + fields preserved so
 # admin cockpit + tRPC schema don't need a deploy in lockstep.
 # --------------------------------------------------------------------------
+
+
+# Serialize a `@dataclass(frozen=True, slots=True)` FetchRequest into a
+# msgpack-safe dict for ARQ's wire format. Worker side rehydrates via
+# `Request(**dict)`. Keeping this in one place so adding a field to a
+# request doesn't require touching the queue producer + consumer
+# separately.
+def _request_to_dict(req: Any) -> dict[str, Any]:
+    from dataclasses import asdict, is_dataclass  # noqa: PLC0415
+
+    if is_dataclass(req):
+        return asdict(req)
+    return dict(req)
 
 
 class CrawlRunOut(BaseModel):
@@ -1351,148 +1402,122 @@ def create_app() -> FastAPI:
             )
         return fn
 
+    def _require_queue() -> QueueClient:
+        q = getattr(app.state, "queue_client", None)
+        if q is None:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "data-pipeline unavailable — REDIS_URL not configured "
+                    "or Redis unreachable (no worker queue)"
+                ),
+            )
+        return q
+
     @app.post("/fetchers/capability/run", response_model=CapabilityTriggerOut)
     async def capability_run(body: CapabilityTriggerBody) -> CapabilityTriggerOut:
         repo = _require_crawl_repo()
-        dr = _require_deep_research()
-        reader = _require_capability_reader()
-        writer = _require_signal_writer()
-        agent = _require_agent_client()
-        log.info("crawler: capability triggered vision=%s cap=%s", body.vision_slug, body.capability_key)
-        try:
-            out = await run_capability_fetcher(
-                CapabilityFetchRequest(
-                    vision_slug=body.vision_slug,
-                    capability_key=body.capability_key,
-                    prompt=body.prompt,
-                ),
-                runs_repo=repo,
-                capability_reader=reader,
-                signal_writer=writer,
-                deep_research=dr,
-                agent_client=agent,
-            )
-        except CapabilityFetcherError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        queue = _require_queue()
+        log.info(
+            "capability enqueued vision=%s cap=%s", body.vision_slug, body.capability_key
+        )
+        req = CapabilityFetchRequest(
+            vision_slug=body.vision_slug,
+            capability_key=body.capability_key,
+            prompt=body.prompt,
+        )
+        run = await enqueue_capability_fetcher(req, runs_repo=repo)
+        await queue.enqueue(
+            TASK_CAPABILITY, run.id, _request_to_dict(req), job_id=run.id
+        )
         return CapabilityTriggerOut(
-            run=CrawlRunOut.from_row(out.run),
-            signal_id=out.signal_id,
-            dr_cached=out.deep_research.cached,
-            scoring_confidence=out.scoring.scoring.confidence if out.scoring is not None else None,
+            run=CrawlRunOut.from_row(run),
+            signal_id=None,
+            dr_cached=False,
+            scoring_confidence=None,
         )
 
     @app.post("/fetchers/actor/run", response_model=ActorTriggerOut)
     async def actor_run(body: ActorTriggerBody) -> ActorTriggerOut:
         repo = _require_crawl_repo()
-        dr = _require_deep_research()
-        reader = _require_actor_reader()
-        writer = _require_signal_writer()
-        agent = _require_agent_client()
-        log.info("crawler: actor triggered vision=%s actor=%s", body.vision_slug, body.actor_key)
-        try:
-            out = await run_actor_fetcher(
-                ActorFetchRequest(
-                    vision_slug=body.vision_slug,
-                    actor_key=body.actor_key,
-                    prompt=body.prompt,
-                ),
-                runs_repo=repo,
-                actor_reader=reader,
-                signal_writer=writer,
-                deep_research=dr,
-                agent_client=agent,
-            )
-        except ActorFetcherError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        queue = _require_queue()
+        log.info(
+            "actor enqueued vision=%s actor=%s", body.vision_slug, body.actor_key
+        )
+        req = ActorFetchRequest(
+            vision_slug=body.vision_slug,
+            actor_key=body.actor_key,
+            prompt=body.prompt,
+        )
+        run = await enqueue_actor_fetcher(req, runs_repo=repo)
+        await queue.enqueue(TASK_ACTOR, run.id, _request_to_dict(req), job_id=run.id)
         return ActorTriggerOut(
-            run=CrawlRunOut.from_row(out.run),
-            signal_id=out.signal_id,
-            dr_cached=out.deep_research.cached,
-            scoring_confidence=out.scoring.scoring.confidence if out.scoring is not None else None,
-            matched_actor_key=out.scoring.scoring.matched_actor_key
-            if out.scoring is not None
-            else None,
-            primary_capability_key=out.actor.primary_capability.key
-            if out.actor.primary_capability is not None
-            else None,
+            run=CrawlRunOut.from_row(run),
+            signal_id=None,
+            dr_cached=False,
+            scoring_confidence=None,
+            matched_actor_key=None,
+            primary_capability_key=None,
         )
 
     @app.post("/fetchers/risk/run", response_model=RiskTriggerOut)
     async def risk_run(body: RiskTriggerBody) -> RiskTriggerOut:
         repo = _require_crawl_repo()
-        dr = _require_deep_research()
-        reader = _require_risk_reader()
-        writer = _require_signal_writer()
-        agent = _require_agent_client()
-        log.info("crawler: risk triggered vision=%s risk=%s", body.vision_slug, body.risk_key)
-        try:
-            out = await run_risk_fetcher(
-                RiskFetchRequest(
-                    vision_slug=body.vision_slug,
-                    risk_key=body.risk_key,
-                    prompt=body.prompt,
-                ),
-                runs_repo=repo,
-                risk_reader=reader,
-                signal_writer=writer,
-                deep_research=dr,
-                agent_client=agent,
-            )
-        except RiskFetcherError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        queue = _require_queue()
+        log.info("risk enqueued vision=%s risk=%s", body.vision_slug, body.risk_key)
+        req = RiskFetchRequest(
+            vision_slug=body.vision_slug,
+            risk_key=body.risk_key,
+            prompt=body.prompt,
+        )
+        run = await enqueue_risk_fetcher(req, runs_repo=repo)
+        await queue.enqueue(TASK_RISK, run.id, _request_to_dict(req), job_id=run.id)
         return RiskTriggerOut(
-            run=CrawlRunOut.from_row(out.run),
-            signal_id=out.signal_id,
-            dr_cached=out.deep_research.cached,
-            scoring_confidence=out.scoring.scoring.confidence if out.scoring is not None else None,
-            primary_capability_key=out.risk.primary_capability.key
-            if out.risk.primary_capability is not None
-            else None,
-            risk_severity=out.risk.severity,
-            risk_likelihood=out.risk.likelihood,
+            run=CrawlRunOut.from_row(run),
+            signal_id=None,
+            dr_cached=False,
+            scoring_confidence=None,
+            primary_capability_key=None,
+            risk_severity="unknown",
+            risk_likelihood="unknown",
         )
 
     @app.post("/fetchers/signal/run", response_model=SignalTriggerOut)
     async def signal_run(body: SignalTriggerBody) -> SignalTriggerOut:
         repo = _require_crawl_repo()
-        reader = _require_capability_reader()
-        signal_ingest_fn = _require_signal_ingest_fn()
-        log.info("crawler: signal triggered vision=%s cap=%s", body.vision_slug, body.capability_key)
-        try:
-            out = await run_signal_fetcher(
-                SignalFetchRequest(
-                    vision_slug=body.vision_slug,
-                    capability_key=body.capability_key,
-                    lookback_days=body.lookback_days,
-                    per_capability_limit=body.per_capability_limit,
-                ),
-                runs_repo=repo,
-                capability_reader=reader,
-                signal_ingest_fn=signal_ingest_fn,
-            )
-        except SignalFetcherError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        queue = _require_queue()
+        log.info("signal enqueued vision=%s cap=%s", body.vision_slug, body.capability_key)
+        req = SignalFetchRequest(
+            vision_slug=body.vision_slug,
+            capability_key=body.capability_key,
+            lookback_days=body.lookback_days,
+            per_capability_limit=body.per_capability_limit,
+        )
+        run = await enqueue_signal_fetcher(req, runs_repo=repo)
+        await queue.enqueue(TASK_SIGNAL, run.id, _request_to_dict(req), job_id=run.id)
         return SignalTriggerOut(
-            run=CrawlRunOut.from_row(out.run),
-            raw_signals_fetched=out.ingest.raw_signals_fetched if out.ingest else 0,
-            signals_written=out.ingest.signals_written if out.ingest else 0,
-            extractor_failures=out.ingest.extractor_failures if out.ingest else 0,
-            extractor_total_cost_usd=out.ingest.extractor_total_cost_usd if out.ingest else 0.0,
+            run=CrawlRunOut.from_row(run),
+            raw_signals_fetched=0,
+            signals_written=0,
+            extractor_failures=0,
+            extractor_total_cost_usd=0.0,
         )
 
     @app.post("/fetchers/hello-world/run", response_model=HelloWorldTriggerOut)
     async def hello_world_run(body: HelloWorldTriggerBody) -> HelloWorldTriggerOut:
         repo = _require_crawl_repo()
-        dr = _require_deep_research()
-        log.info("crawler: hello-world triggered vision=%s", body.vision_slug)
-        out = await run_hello_world(
-            HelloWorldRunRequest(vision_slug=body.vision_slug, prompt=body.prompt),
-            repo=repo,
-            deep_research=dr,
+        queue = _require_queue()
+        log.info("hello-world enqueued vision=%s", body.vision_slug)
+        req = HelloWorldRunRequest(
+            vision_slug=body.vision_slug, prompt=body.prompt
+        )
+        run = await enqueue_hello_world(req, repo=repo)
+        await queue.enqueue(
+            TASK_HELLO_WORLD, run.id, _request_to_dict(req), job_id=run.id
         )
         return HelloWorldTriggerOut(
-            run=CrawlRunOut.from_row(out.run),
-            cached=out.cached,
+            run=CrawlRunOut.from_row(run),
+            cached=False,
         )
 
     @app.post("/jobs/orchestrator/tick", response_model=OrchestratorTickOut)
@@ -1567,41 +1592,47 @@ def create_app() -> FastAPI:
         source_kind='research_brief' + source_url='internal://digest/
         {vision}/{YYYY-MM-DD}' so re-runs the same day dedupe."""
         repo = _require_crawl_repo()
-        dr = _require_deep_research()
-        agent = _require_agent_client()
-        writer = _require_signal_writer()
-        sig_repo = getattr(app.state, "signal_repo", None)
-        if sig_repo is None:
-            raise HTTPException(
-                status_code=503,
-                detail="data-pipeline unavailable — signal_repo not configured (DATABASE_URL)",
-            )
+        queue = _require_queue()
         log.info(
-            "data-pipeline: deep-research-digest triggered vision=%s",
-            body.vision_slug,
+            "deep-research-digest enqueued vision=%s", body.vision_slug
         )
-        try:
-            out = await run_deep_research_digest(
-                DigestRequest(vision_slug=body.vision_slug, prompt=body.prompt),
-                runs_repo=repo,
-                signal_repo=sig_repo,
-                signal_writer=writer,
-                deep_research=dr,
-                agent_client=agent,
-            )
-        except DigestError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        req = DigestRequest(vision_slug=body.vision_slug, prompt=body.prompt)
+        run = await enqueue_deep_research_digest(req, runs_repo=repo)
+        await queue.enqueue(TASK_DIGEST, run.id, _request_to_dict(req), job_id=run.id)
         return DigestRunOut(
-            run=CrawlRunOut.from_row(out.run),
-            anchor_capability_key=out.anchor_capability.key
-            if out.anchor_capability is not None
-            else None,
-            signal_id=out.signal_id,
-            dr_cached=out.deep_research.cached,
-            scoring_confidence=out.scoring.scoring.confidence
-            if out.scoring is not None
-            else None,
+            run=CrawlRunOut.from_row(run),
+            anchor_capability_key=None,
+            signal_id=None,
+            dr_cached=False,
+            scoring_confidence=None,
         )
+
+    @app.get("/queue/status")
+    async def queue_status() -> dict[str, Any]:
+        """Lightweight introspection for the cockpit Queue tab —
+        current depth, in-flight, worker count. Returns degraded
+        snapshot (all zeros + `available: false`) when Redis can't
+        be reached, so the panel renders an "offline" indicator
+        rather than crashing."""
+        q = getattr(app.state, "queue_client", None)
+        if q is None:
+            return {
+                "available": False,
+                "queue_name": "",
+                "queued": 0,
+                "in_progress": 0,
+                "workers": 0,
+                "deferred": 0,
+            }
+        snap = await q.snapshot()
+        return {
+            "available": True,
+            "queue_name": snap.queue_name,
+            "queued": snap.queued,
+            "in_progress": snap.in_progress,
+            "workers": snap.workers,
+            "deferred": snap.deferred,
+        }
 
     @app.post("/jobs/discovery/run", response_model=DiscoveryRunOut)
     async def discovery_run(body: DiscoveryRunBody | None = None) -> DiscoveryRunOut:

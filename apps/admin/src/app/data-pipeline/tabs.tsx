@@ -30,6 +30,11 @@ const TABS: { href: string; label: string; matches: (p: string) => boolean }[] =
     label: "Agent runs",
     matches: (p) => p.startsWith("/data-pipeline/agent-runs"),
   },
+  {
+    href: "/data-pipeline/queue",
+    label: "Queue",
+    matches: (p) => p.startsWith("/data-pipeline/queue"),
+  },
 ];
 
 export function DataPipelineTabs() {

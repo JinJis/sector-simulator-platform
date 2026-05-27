@@ -28,6 +28,11 @@ dependencies = [
   # by `python -m playwright install --with-deps chromium` in the
   # data-pipeline Dockerfile.
   "playwright>=1.40.0",
+  # ARQ — async Redis queue (Celery-equivalent for FastAPI async code).
+  # Powers the data-pipeline worker that executes fetcher jobs out-of-
+  # band from the HTTP trigger. CrawlRun rows stay the durable status
+  # board; ARQ holds in-flight queue + retry state in Redis.
+  "arq>=0.26.0",
 ]
 
 [build-system]

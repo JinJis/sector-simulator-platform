@@ -91,6 +91,30 @@ def _synthetic_source_url(*, actor_key: str, vision_slug: str, as_of: datetime) 
     return f"internal://crawler/actor/{vision_slug}/{actor_key}/{day}"
 
 
+def _actor_plan(request: ActorFetchRequest) -> dict[str, Any]:
+    return {
+        "fetcher": "actor",
+        "vision_slug": request.vision_slug,
+        "actor_key": request.actor_key,
+        "prompt_override": request.prompt is not None,
+        "tier": "fast",
+    }
+
+
+async def enqueue_actor_fetcher(
+    request: ActorFetchRequest,
+    *,
+    runs_repo: CrawlRunRepository,
+) -> CrawlRunRow:
+    """HTTP-side: create the queued CrawlRun row. Worker calls
+    `run_actor_fetcher(existing_run=…)` to execute."""
+    return await runs_repo.create_queued(
+        vision_slug=request.vision_slug,
+        fetcher_kind="actor",
+        plan=_actor_plan(request),
+    )
+
+
 async def run_actor_fetcher(
     request: ActorFetchRequest,
     *,
@@ -99,18 +123,12 @@ async def run_actor_fetcher(
     signal_writer: SignalWriter,
     deep_research: GroundedResearchClient,
     agent_client: AgentClient,
+    existing_run: CrawlRunRow | None = None,
 ) -> ActorFetchResult:
-    plan: dict[str, Any] = {
-        "fetcher": "actor",
-        "vision_slug": request.vision_slug,
-        "actor_key": request.actor_key,
-        "prompt_override": request.prompt is not None,
-        "tier": "fast",
-    }
-    run = await runs_repo.create_queued(
+    run = existing_run or await runs_repo.create_queued(
         vision_slug=request.vision_slug,
         fetcher_kind="actor",
-        plan=plan,
+        plan=_actor_plan(request),
     )
     await runs_repo.mark_running(run.id)
 

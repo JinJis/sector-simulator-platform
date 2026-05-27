@@ -152,6 +152,29 @@ def _first_sentence(text: str) -> str:
     return text[:240].strip()
 
 
+def _digest_plan(request: DigestRequest) -> dict[str, Any]:
+    return {
+        "fetcher": "digest",
+        "vision_slug": request.vision_slug,
+        "prompt_override": request.prompt is not None,
+        "tier": "max",
+    }
+
+
+async def enqueue_deep_research_digest(
+    request: DigestRequest,
+    *,
+    runs_repo: CrawlRunRepository,
+) -> CrawlRunRow:
+    """HTTP-side: create the queued CrawlRun row. Worker calls
+    `run_deep_research_digest(existing_run=…)` to execute."""
+    return await runs_repo.create_queued(
+        vision_slug=request.vision_slug,
+        fetcher_kind="digest",
+        plan=_digest_plan(request),
+    )
+
+
 async def run_deep_research_digest(
     request: DigestRequest,
     *,
@@ -160,17 +183,12 @@ async def run_deep_research_digest(
     signal_writer: SignalWriter,
     deep_research: GroundedResearchClient,
     agent_client: AgentClient,
+    existing_run: CrawlRunRow | None = None,
 ) -> DigestResult:
-    plan: dict[str, Any] = {
-        "fetcher": "digest",
-        "vision_slug": request.vision_slug,
-        "prompt_override": request.prompt is not None,
-        "tier": "max",
-    }
-    run = await runs_repo.create_queued(
+    run = existing_run or await runs_repo.create_queued(
         vision_slug=request.vision_slug,
         fetcher_kind="digest",
-        plan=plan,
+        plan=_digest_plan(request),
     )
     await runs_repo.mark_running(run.id)
 

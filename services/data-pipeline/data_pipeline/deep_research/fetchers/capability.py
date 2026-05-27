@@ -74,6 +74,31 @@ def _synthetic_source_url(*, capability_key: str, vision_slug: str, as_of: datet
     return f"internal://crawler/capability/{vision_slug}/{capability_key}/{day}"
 
 
+def _capability_plan(request: CapabilityFetchRequest) -> dict[str, Any]:
+    return {
+        "fetcher": "capability",
+        "vision_slug": request.vision_slug,
+        "capability_key": request.capability_key,
+        "prompt_override": request.prompt is not None,
+        "tier": "fast",
+    }
+
+
+async def enqueue_capability_fetcher(
+    request: CapabilityFetchRequest,
+    *,
+    runs_repo: CrawlRunRepository,
+) -> CrawlRunRow:
+    """HTTP-side: create the queued CrawlRun row so the trigger
+    returns immediately. The worker picks up the row via ARQ and
+    calls `run_capability_fetcher(existing_run=…)`."""
+    return await runs_repo.create_queued(
+        vision_slug=request.vision_slug,
+        fetcher_kind="capability",
+        plan=_capability_plan(request),
+    )
+
+
 async def run_capability_fetcher(
     request: CapabilityFetchRequest,
     *,
@@ -82,18 +107,12 @@ async def run_capability_fetcher(
     signal_writer: SignalWriter,
     deep_research: GroundedResearchClient,
     agent_client: AgentClient,
+    existing_run: CrawlRunRow | None = None,
 ) -> CapabilityFetchResult:
-    plan: dict[str, Any] = {
-        "fetcher": "capability",
-        "vision_slug": request.vision_slug,
-        "capability_key": request.capability_key,
-        "prompt_override": request.prompt is not None,
-        "tier": "fast",
-    }
-    run = await runs_repo.create_queued(
+    run = existing_run or await runs_repo.create_queued(
         vision_slug=request.vision_slug,
         fetcher_kind="capability",
-        plan=plan,
+        plan=_capability_plan(request),
     )
     await runs_repo.mark_running(run.id)
 

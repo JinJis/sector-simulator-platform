@@ -192,16 +192,18 @@ function crawlerBase(): string {
 // a 2.5s ceiling keeps a degraded data-pipeline from freezing the UI.
 const SHORT_TIMEOUT_MS = 2_500;
 
-// For LLM-bound trigger calls (fetchers + digest + orchestrator
-// execute path). The data-pipeline fetcher functions are synchronous
-// from the HTTP layer's perspective — they await the grounded gemini
-// response (10-40s) + the SignalExtractor agent (~1-3s) + DB writes
-// before returning. The 2.5s default would 504 on every trigger
-// click. 180s covers the slowest DEEP-tier digest with margin.
-const TRIGGER_TIMEOUT_MS = 180_000;
+// Fetcher / digest triggers are now enqueue-only — the HTTP path just
+// inserts a queued CrawlRun row + pushes a job onto the ARQ queue and
+// returns. 10s is comfortable for that (queue push + one INSERT) and
+// fails fast if the data-pipeline container or Redis is unreachable.
+// The actual LLM work runs in the data-pipeline-worker container; the
+// cockpit polls `runs.list` to see status flip from queued → ok / error.
+const TRIGGER_TIMEOUT_MS = 10_000;
 
-// Orchestrator tick (dry_run=false) dispatches multiple fetchers
-// sequentially; budget for ~5 candidates × 30s each.
+// Orchestrator tick (dry_run=false) still dispatches synchronously
+// inside the data-pipeline HTTP handler (M49f predates the queue
+// migration). Budget for ~5 candidates × 30s each. Folding the
+// orchestrator into the queue is a follow-up.
 const ORCHESTRATOR_TIMEOUT_MS = 300_000;
 
 async function proxy<T>(
@@ -541,6 +543,34 @@ export const crawlerRouter = router({
         { method: "POST", body: JSON.stringify(input) },
         DiscoveryRunOut,
         { timeoutMs: TRIGGER_TIMEOUT_MS },
+      ),
+    ),
+
+  // ARQ queue introspection — depth, in-flight, worker count.
+  // Cockpit /data-pipeline/queue panel polls this every 5s.
+  queueStatus: publicProcedure
+    .output(
+      z.object({
+        available: z.boolean(),
+        queue_name: z.string(),
+        queued: z.number().int(),
+        in_progress: z.number().int(),
+        workers: z.number().int(),
+        deferred: z.number().int(),
+      }),
+    )
+    .query(async () =>
+      proxy(
+        "/queue/status",
+        { method: "GET" },
+        z.object({
+          available: z.boolean(),
+          queue_name: z.string(),
+          queued: z.number().int(),
+          in_progress: z.number().int(),
+          workers: z.number().int(),
+          deferred: z.number().int(),
+        }),
       ),
     ),
 

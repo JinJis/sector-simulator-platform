@@ -28,18 +28,13 @@ export function RiskTrigger() {
           vision_slug: sel.vision_slug,
           risk_key: sel.secondary_key,
         });
-        if (out.run.status === "ok") {
-          const cost = out.run.cost_usd ?? 0;
-          const conf =
-            out.scoring_confidence != null
-              ? `conf ${out.scoring_confidence.toFixed(2)}`
-              : "no scoring";
-          setLastOk(
-            `ok — signal ${out.signal_id ?? "(none)"} · $${cost.toFixed(4)} · ${conf} · ${out.risk_severity}/${out.risk_likelihood}`,
+        if (out.run.status === "error") {
+          setError(
+            `run ${out.run.id} error: ${out.run.error ?? "(no error message)"}`,
           );
         } else {
-          setError(
-            `run ${out.run.id} ${out.run.status}: ${out.run.error ?? "(no error message)"}`,
+          setLastOk(
+            `queued run ${out.run.id} for ${sel.secondary_key} — check Live jobs`,
           );
         }
         router.refresh();
@@ -66,7 +61,7 @@ export function RiskTrigger() {
             disabled={!ready}
             className="rounded bg-rose-700 px-3 py-1 text-xs font-medium text-rose-50 hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
           >
-            {pending ? "Running…" : "Run Risk fetcher"}
+            {pending ? "Queuing…" : "Queue Risk fetcher"}
           </button>
           {pending ? <TriggerPendingHint /> : null}
         </div>

@@ -25,18 +25,15 @@ export function HelloWorldTrigger() {
     startTransition(async () => {
       try {
         const out = await runHelloWorldFetcher({ vision_slug: sel.vision_slug });
-        // The crawler returns 200 even on fetcher failure so the UI
-        // can render structured feedback — split here on run.status.
-        if (out.run.status === "ok" || out.run.status === "running") {
-          setLastOk(
-            out.cached
-              ? `cache hit — reused run ${out.run.id}`
-              : `ok — created run ${out.run.id} ($${(out.run.cost_usd ?? 0).toFixed(4)})`,
+        // The data-pipeline returns 200 with the queued CrawlRun row;
+        // the worker flips it to ok / error asynchronously. Only treat
+        // an explicit terminal error status as a click-time failure.
+        if (out.run.status === "error") {
+          setError(
+            `run ${out.run.id} error: ${out.run.error ?? "(no error message)"}`,
           );
         } else {
-          setError(
-            `run ${out.run.id} ${out.run.status}: ${out.run.error ?? "(no error message)"}`,
-          );
+          setLastOk(`queued run ${out.run.id} — check Live jobs`);
         }
         router.refresh();
       } catch (err) {
@@ -61,7 +58,7 @@ export function HelloWorldTrigger() {
             disabled={!ready}
             className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-emerald-50 hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
           >
-            {pending ? "Running…" : "Run HelloWorld"}
+            {pending ? "Queuing…" : "Queue HelloWorld"}
           </button>
           {pending ? <TriggerPendingHint /> : null}
         </div>

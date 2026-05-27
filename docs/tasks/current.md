@@ -1,7 +1,7 @@
 # Current task — Phase 4: Real-time Intelligence (M48+)
 
-**Last updated**: 2026-05-26. Phase 4 is in steady state; recent work
-landed two architectural refactors on top of the original M48-M54
+**Last updated**: 2026-05-27. Phase 4 is in steady state; recent work
+landed three architectural refactors on top of the original M48-M54
 milestone chain:
 
 1. **Crawler ↔ data-pipeline merger** (6 commits, 2026-05-26): the
@@ -16,6 +16,20 @@ milestone chain:
    Model names env-driven (`GROUNDED_MODEL_FAST/DEEP`,
    `LLM_{OPUS,SONNET,HAIKU}_MODEL`). NewsAPI source replaced by
    crawl4ai Yahoo + Naver + Finviz adapters.
+3. **ARQ queue decoupling** (2026-05-27): every on-demand fetcher
+   trigger (capability / actor / signal / risk / digest / hello-world)
+   is now an enqueue-only HTTP path — the data-pipeline FastAPI inserts
+   a queued `CrawlRun` row + pushes an ARQ job onto Redis and returns
+   in &lt;1s. A new `data-pipeline-worker` container drains the queue
+   and runs the grounded-gemini work. Cockpit `Trigger` components
+   reworded to "queued — check Live jobs"; new `/admin/data-pipeline/queue`
+   tab shows ARQ depth + workers + in-flight via `crawler.queueStatus`.
+   APScheduler crons + the M49f orchestrator dispatcher are unchanged
+   (still call fetcher functions in-process via `DispatcherClients`);
+   only the cockpit-side HTTP triggers went through the queue. Adds
+   `redis:7-alpine` to docker-compose; `REDIS_URL` documented in
+   `.env.example`. Folding the orchestrator into the queue is a
+   follow-up.
 
 Phase 3 (the pivot from Sector Simulator → Vision Feasibility
 Monitor) is shipped; the data-model + scoring-engine + community-

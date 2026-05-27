@@ -28,19 +28,13 @@ export function CapabilityTrigger() {
           vision_slug: sel.vision_slug,
           capability_key: sel.secondary_key,
         });
-        if (out.run.status === "ok" || out.run.status === "running") {
-          const cost = out.run.cost_usd ?? 0;
-          const conf =
-            out.scoring_confidence != null
-              ? `confidence ${out.scoring_confidence.toFixed(2)}`
-              : "no scoring";
-          const cache = out.dr_cached ? " (DR cache)" : "";
-          setLastOk(
-            `ok — wrote signal ${out.signal_id ?? "(none)"} · $${cost.toFixed(4)} · ${conf}${cache}`,
+        if (out.run.status === "error") {
+          setError(
+            `run ${out.run.id} error: ${out.run.error ?? "(no error message)"}`,
           );
         } else {
-          setError(
-            `run ${out.run.id} ${out.run.status}: ${out.run.error ?? "(no error message)"}`,
+          setLastOk(
+            `queued run ${out.run.id} for ${sel.secondary_key} — check Live jobs`,
           );
         }
         router.refresh();
@@ -67,7 +61,7 @@ export function CapabilityTrigger() {
             disabled={!ready}
             className="rounded bg-sky-700 px-3 py-1 text-xs font-medium text-sky-50 hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
           >
-            {pending ? "Running…" : "Run Capability fetcher"}
+            {pending ? "Queuing…" : "Queue Capability fetcher"}
           </button>
           {pending ? <TriggerPendingHint /> : null}
         </div>

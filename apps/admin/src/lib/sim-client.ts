@@ -449,6 +449,13 @@ export async function runDeepResearchDigest(input: {
   );
 }
 
+// ─── ARQ queue introspection for /admin/data-pipeline/queue ───────────
+export type QueueStatus = RouterOutput["crawler"]["queueStatus"];
+
+export async function fetchQueueStatus(): Promise<QueueStatus> {
+  return rethrow(() => trpc.crawler.queueStatus.query(), "fetchQueueStatus");
+}
+
 // ─── Dropdown lookups for the Data Pipeline triggers ───────────────────
 export type VisionLookupOption = RouterOutput["crawler"]["lookups"]["visions"][number];
 export type LookupOption = RouterOutput["crawler"]["lookups"]["capabilities"][number];

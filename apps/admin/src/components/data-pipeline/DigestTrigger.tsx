@@ -27,18 +27,13 @@ export function DigestTrigger() {
         const out = await runDeepResearchDigest({
           vision_slug: sel.vision_slug,
         });
-        if (out.run.status === "ok") {
-          const conf =
-            out.scoring_confidence != null
-              ? `confidence ${out.scoring_confidence.toFixed(2)}`
-              : "no scoring";
-          const cost = out.run.cost_usd ?? 0;
-          setLastOk(
-            `ok — signal ${out.signal_id ?? "(none)"} on ${out.anchor_capability_key ?? "?"} · $${cost.toFixed(4)} · ${conf}`,
+        if (out.run.status === "error") {
+          setError(
+            `run ${out.run.id} error: ${out.run.error ?? "(no error message)"}`,
           );
         } else {
-          setError(
-            `run ${out.run.id} ${out.run.status}: ${out.run.error ?? "(no error message)"}`,
+          setLastOk(
+            `queued digest run ${out.run.id} — check Live jobs (30-60s in worker)`,
           );
         }
         router.refresh();
@@ -73,7 +68,7 @@ export function DigestTrigger() {
             disabled={!ready}
             className="rounded bg-violet-700 px-3 py-1 text-xs font-medium text-violet-50 hover:bg-violet-600 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
           >
-            {pending ? "Running…" : "Run DR digest"}
+            {pending ? "Queuing…" : "Queue DR digest"}
           </button>
           {pending ? <TriggerPendingHint kind="digest" /> : null}
         </div>

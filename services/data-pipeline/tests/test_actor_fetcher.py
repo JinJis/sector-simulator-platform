@@ -451,6 +451,49 @@ async def test_actor_fetcher_dr_failure_skips_extractor_call() -> None:
 # --------------------------------------------------------------------------
 
 
+
+@dataclass
+class _FakeQueueClient:
+    """Auto-draining stand-in: enqueue() immediately runs the task
+    against a ctx dict pulled lazily from `app.state`. Mirrors the
+    real worker's startup wiring so tests can keep their existing
+    assertions on completed CrawlRun state."""
+
+    app: Any = None
+    calls: list = field(default_factory=list)
+
+    async def enqueue(self, task_name, *args, job_id=None, **kwargs):  # noqa: ANN001,ANN002,ANN003,ANN201
+        from data_pipeline.queue.tasks import TASK_FUNCTIONS
+
+        self.calls.append(
+            {"task": task_name, "args": list(args), "job_id": job_id}
+        )
+        by_name = {f.__name__: f for f in TASK_FUNCTIONS}
+        fn = by_name.get(task_name)
+        if fn is None or self.app is None:
+            return job_id or f"fake_job_{len(self.calls)}"
+        st = self.app.state
+        ctx = {
+            "runs_repo": getattr(st, "crawl_runs_repo", None),
+            "capability_reader": getattr(st, "capability_reader", None),
+            "actor_reader": getattr(st, "actor_reader", None),
+            "risk_reader": getattr(st, "risk_reader", None),
+            "signal_writer": getattr(st, "signal_writer", None),
+            "deep_research": getattr(st, "deep_research", None),
+            "agent_client": getattr(st, "agent_client", None),
+            "signal_ingest_fn": getattr(st, "signal_ingest_fn", None),
+            "signal_repo": getattr(st, "signal_repo", None),
+        }
+        await fn(ctx, *args)
+        return job_id or f"fake_job_{len(self.calls)}"
+
+    async def snapshot(self):  # noqa: ANN201
+        return None
+
+    async def close(self) -> None:
+        pass
+
+
 def _client_with_fakes() -> tuple[TestClient, _InMemorySignalWriter]:
     app = create_app()
     app.state.crawl_runs_repo = _InMemoryRunsRepo()
@@ -460,6 +503,7 @@ def _client_with_fakes() -> tuple[TestClient, _InMemorySignalWriter]:
     writer = _InMemorySignalWriter()
     app.state.signal_writer = writer
     app.state.agent_client = _FakeAgentClient()
+    app.state.queue_client = _FakeQueueClient(app=app)
     return TestClient(app), writer
 
 
@@ -471,14 +515,11 @@ def test_post_actor_returns_run_payload() -> None:
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["run"]["status"] == "ok"
     assert body["run"]["fetcher_kind"] == "actor"
-    assert body["run"]["signals_written"] == 1
-    assert body["signal_id"] is not None
-    assert body["dr_cached"] is False
-    assert body["scoring_confidence"] == 0.82
-    assert body["matched_actor_key"] == "spacex"
-    assert body["primary_capability_key"] == "cheap-launch"
+    run_id = body["run"]["id"]
+    final = client.app.state.crawl_runs_repo.rows[run_id]
+    assert final.status == "ok"
+    assert final.signals_written == 1
     assert len(writer.rows) == 1
 
 
@@ -488,7 +529,11 @@ def test_post_actor_404_when_actor_missing() -> None:
         "/fetchers/actor/run",
         json={"vision_slug": "space-data-center", "actor_key": "does-not-exist"},
     )
-    assert r.status_code == 404, r.text
+    assert r.status_code == 200, r.text
+    run_id = r.json()["run"]["id"]
+    final = client.app.state.crawl_runs_repo.rows[run_id]
+    assert final.status == "error"
+    assert final.error and "no actor" in final.error
 
 
 def test_post_actor_503_when_actor_reader_unavailable() -> None:

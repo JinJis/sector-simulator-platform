@@ -7,6 +7,20 @@
 name: tech-sector-simulator
 
 services:
+  # Redis broker for the ARQ queue (data-pipeline fetcher jobs). Same
+  # network as postgres; container-internal hostname `redis:6379`.
+  # Persistence off — queue state is recreatable from CrawlRun rows.
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - internal
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -172,6 +186,9 @@ services:
       # Tiered signal ingest gates.
       NEWS_INGEST_SCHEDULE: ${NEWS_INGEST_SCHEDULE:-on}
       RESEARCH_INGEST_SCHEDULE: ${RESEARCH_INGEST_SCHEDULE:-on}
+      # ARQ queue — Redis broker for the data-pipeline worker.
+      # Same hostname in the local + dev overrides.
+      REDIS_URL: redis://redis:6379/0
     volumes:
       - ./infra/secrets:/secrets:ro
     depends_on:
@@ -181,6 +198,41 @@ services:
         condition: service_completed_successfully
       agent-orchestration:
         condition: service_started
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+
+  # ARQ worker — pulls fetcher jobs off the Redis queue and runs them
+  # out-of-band from the data-pipeline HTTP API. Same image, different
+  # entrypoint (`arq data_pipeline.queue.worker.WorkerSettings`).
+  # Scale horizontally with `docker compose up -d --scale
+  # data-pipeline-worker=N`; default 1 is fine for the 4-vision MVP.
+  data-pipeline-worker:
+    image: tssp/data-pipeline:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: infra/docker/data-pipeline.Dockerfile
+    command:
+      ["arq", "data_pipeline.queue.worker.WorkerSettings"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
+      AGENT_ORCHESTRATION_URL: http://agent-orchestration:8002
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/vertex-ai-sa.json
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./infra/secrets:/secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+      agent-orchestration:
+        condition: service_started
+      redis:
+        condition: service_healthy
     networks:
       - internal
 

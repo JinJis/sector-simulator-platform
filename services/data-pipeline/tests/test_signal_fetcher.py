@@ -289,6 +289,49 @@ async def test_signal_fetcher_zero_signals_still_ok() -> None:
 # --------------------------------------------------------------------------
 
 
+
+@dataclass
+class _FakeQueueClient:
+    """Auto-draining stand-in: enqueue() immediately runs the task
+    against a ctx dict pulled lazily from `app.state`. Mirrors the
+    real worker's startup wiring so tests can keep their existing
+    assertions on completed CrawlRun state."""
+
+    app: Any = None
+    calls: list = field(default_factory=list)
+
+    async def enqueue(self, task_name, *args, job_id=None, **kwargs):  # noqa: ANN001,ANN002,ANN003,ANN201
+        from data_pipeline.queue.tasks import TASK_FUNCTIONS
+
+        self.calls.append(
+            {"task": task_name, "args": list(args), "job_id": job_id}
+        )
+        by_name = {f.__name__: f for f in TASK_FUNCTIONS}
+        fn = by_name.get(task_name)
+        if fn is None or self.app is None:
+            return job_id or f"fake_job_{len(self.calls)}"
+        st = self.app.state
+        ctx = {
+            "runs_repo": getattr(st, "crawl_runs_repo", None),
+            "capability_reader": getattr(st, "capability_reader", None),
+            "actor_reader": getattr(st, "actor_reader", None),
+            "risk_reader": getattr(st, "risk_reader", None),
+            "signal_writer": getattr(st, "signal_writer", None),
+            "deep_research": getattr(st, "deep_research", None),
+            "agent_client": getattr(st, "agent_client", None),
+            "signal_ingest_fn": getattr(st, "signal_ingest_fn", None),
+            "signal_repo": getattr(st, "signal_repo", None),
+        }
+        await fn(ctx, *args)
+        return job_id or f"fake_job_{len(self.calls)}"
+
+    async def snapshot(self):  # noqa: ANN201
+        return None
+
+    async def close(self) -> None:
+        pass
+
+
 def _client_with_fakes() -> tuple[TestClient, _FakeSignalIngestFn]:
     app = create_app()
     app.state.crawl_runs_repo = _InMemoryRunsRepo()
@@ -300,6 +343,7 @@ def _client_with_fakes() -> tuple[TestClient, _FakeSignalIngestFn]:
     app.state.signal_repo = object()  # truthy → health flag on
     ingest = _FakeSignalIngestFn()
     app.state.signal_ingest_fn = ingest
+    app.state.queue_client = _FakeQueueClient(app=app)
     return TestClient(app), ingest
 
 
@@ -307,18 +351,14 @@ def test_post_signal_returns_run_payload() -> None:
     client, ingest = _client_with_fakes()
     r = client.post(
         "/fetchers/signal/run",
-        json={
-            "vision_slug": "space-data-center",
-            "capability_key": "rad-hard-compute",
-        },
+        json={"vision_slug": "space-data-center", "capability_key": "rad-hard-compute"},
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["run"]["status"] == "ok"
     assert body["run"]["fetcher_kind"] == "signal"
-    assert body["signals_written"] == 5
-    assert body["raw_signals_fetched"] == 5
-    assert body["extractor_total_cost_usd"] == pytest.approx(0.0042)
+    run_id = body["run"]["id"]
+    final = client.app.state.crawl_runs_repo.rows[run_id]
+    assert final.status == "ok"
     assert len(ingest.calls) == 1
 
 
@@ -326,12 +366,13 @@ def test_post_signal_404_when_capability_missing() -> None:
     client, _ = _client_with_fakes()
     r = client.post(
         "/fetchers/signal/run",
-        json={
-            "vision_slug": "space-data-center",
-            "capability_key": "does-not-exist",
-        },
+        json={"vision_slug": "space-data-center", "capability_key": "does-not-exist"},
     )
-    assert r.status_code == 404, r.text
+    assert r.status_code == 200, r.text
+    run_id = r.json()["run"]["id"]
+    final = client.app.state.crawl_runs_repo.rows[run_id]
+    assert final.status == "error"
+    assert final.error and "no capability" in final.error
 
 
 def test_post_signal_503_when_pipeline_unavailable() -> None:

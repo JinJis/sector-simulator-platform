@@ -39,25 +39,50 @@ class HelloWorldRunResult:
     cached: bool
 
 
-async def run_hello_world(
-    request: HelloWorldRunRequest,
-    *,
-    repo: CrawlRunRepository,
-    deep_research: GroundedResearchClient,
-) -> HelloWorldRunResult:
+def _plan(request: HelloWorldRunRequest) -> dict[str, Any]:
     prompt = (request.prompt or _DEFAULT_PROMPT).format(
         vision_slug=request.vision_slug
     )
-    plan: dict[str, Any] = {
+    return {
         "fetcher": "hello_world",
         "prompt": prompt,
         "tier": "fast",
     }
 
-    row = await repo.create_queued(
+
+async def enqueue_hello_world(
+    request: HelloWorldRunRequest,
+    *,
+    repo: CrawlRunRepository,
+) -> CrawlRunRow:
+    """Phase 1 (HTTP trigger): create the CrawlRun(status=queued) row.
+    The caller pushes the run.id onto the ARQ queue; the worker
+    invokes `run_hello_world(existing_run=…)` to do the work."""
+    return await repo.create_queued(
         vision_slug=request.vision_slug,
         fetcher_kind="hello_world",
-        plan=plan,
+        plan=_plan(request),
+    )
+
+
+async def run_hello_world(
+    request: HelloWorldRunRequest,
+    *,
+    repo: CrawlRunRepository,
+    deep_research: GroundedResearchClient,
+    existing_run: CrawlRunRow | None = None,
+) -> HelloWorldRunResult:
+    """Execute the fetcher against either a freshly-created queued
+    row (caller passes `existing_run=None`, default) or an existing
+    one (worker path — `existing_run` came from the ARQ task).
+    Direct/test callers don't need to think about the split."""
+    prompt = (request.prompt or _DEFAULT_PROMPT).format(
+        vision_slug=request.vision_slug
+    )
+    row = existing_run or await repo.create_queued(
+        vision_slug=request.vision_slug,
+        fetcher_kind="hello_world",
+        plan=_plan(request),
     )
     await repo.mark_running(row.id)
 

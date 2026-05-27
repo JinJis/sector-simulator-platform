@@ -92,6 +92,30 @@ def _synthetic_source_url(*, risk_key: str, vision_slug: str, as_of: datetime) -
     return f"internal://crawler/risk/{vision_slug}/{risk_key}/{day}"
 
 
+def _risk_plan(request: RiskFetchRequest) -> dict[str, Any]:
+    return {
+        "fetcher": "risk",
+        "vision_slug": request.vision_slug,
+        "risk_key": request.risk_key,
+        "prompt_override": request.prompt is not None,
+        "tier": "fast",
+    }
+
+
+async def enqueue_risk_fetcher(
+    request: RiskFetchRequest,
+    *,
+    runs_repo: CrawlRunRepository,
+) -> CrawlRunRow:
+    """HTTP-side: create the queued CrawlRun row. Worker calls
+    `run_risk_fetcher(existing_run=…)` to execute."""
+    return await runs_repo.create_queued(
+        vision_slug=request.vision_slug,
+        fetcher_kind="risk",
+        plan=_risk_plan(request),
+    )
+
+
 async def run_risk_fetcher(
     request: RiskFetchRequest,
     *,
@@ -100,18 +124,12 @@ async def run_risk_fetcher(
     signal_writer: SignalWriter,
     deep_research: GroundedResearchClient,
     agent_client: AgentClient,
+    existing_run: CrawlRunRow | None = None,
 ) -> RiskFetchResult:
-    plan: dict[str, Any] = {
-        "fetcher": "risk",
-        "vision_slug": request.vision_slug,
-        "risk_key": request.risk_key,
-        "prompt_override": request.prompt is not None,
-        "tier": "fast",
-    }
-    run = await runs_repo.create_queued(
+    run = existing_run or await runs_repo.create_queued(
         vision_slug=request.vision_slug,
         fetcher_kind="risk",
-        plan=plan,
+        plan=_risk_plan(request),
     )
     await runs_repo.mark_running(run.id)
 
