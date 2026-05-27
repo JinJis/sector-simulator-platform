@@ -662,7 +662,22 @@ async function rethrow<T>(fn: () => Promise<T>, label: string): Promise<T> {
     return await fn();
   } catch (e) {
     if (e instanceof TRPCClientError) {
-      throw new Error(`${label} failed: ${e.message}`);
+      // Surface httpStatus + code so vague errors like "Unable to
+      // transform response from server" (typically a 404 returning
+      // HTML, or sector-service throwing a non-JSON 500) carry the
+      // diagnostic info needed to fix them without opening the
+      // Network tab.
+      const data = (e as TRPCClientError<never>).data as
+        | { httpStatus?: number; code?: string }
+        | undefined;
+      const status = data?.httpStatus ?? "?";
+      const code = data?.code ?? "";
+      const suffix = code ? ` [${code} · http ${status}]` : ` [http ${status}]`;
+      // Also dump the raw client error to console so dev tools shows
+      // the full stack + .data payload.
+      // eslint-disable-next-line no-console
+      console.error(`[${label}]`, e);
+      throw new Error(`${label} failed: ${e.message}${suffix}`);
     }
     throw e;
   }
