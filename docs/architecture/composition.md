@@ -286,21 +286,27 @@ link is the discoverability hook for the transparency story.
 
 ---
 
-## 7. Admin cockpit (M52)
+## 7. Admin cockpit (M52 → M55 SQLAdmin)
 
-`/admin/crawler` is one page with four panes:
+The M52 admin cockpit was a hand-rolled Next.js app at
+`apps/admin/` (port 3100). M55 deleted it and moved everything to
+**SQLAdmin** mounted on the data-pipeline FastAPI at
+`http://localhost:8003/admin`. Same operator concerns, fewer
+moving parts.
 
-1. **Live jobs table** — currently running fetches, ETA, $ spent so far,
-   abort button.
-2. **24h health** — per-source success rate, P95 latency, dedup rate,
-   $/day spent vs cap, error feed.
-3. **Bot proposal queue** — pending bot-authored proposals, sortable by
-   confidence × vote_score, with bulk-approve / bulk-reject + reason
-   capture for audit log.
-4. **Fetcher schedule editor** — per-vision weights, $/day cap, cadence
-   knobs, "Run now" button per surface.
+The four original M52 panes map onto SQLAdmin like this:
 
-Stripe Status + Linear Triage are the two reference UX patterns.
+| M52 pane | M55 SQLAdmin surface |
+|---|---|
+| Live jobs table | **Crawl runs** ModelView (read-only, sortable by `started_at`) |
+| 24h health | (deferred — `/health` JSON still exists; not surfaced as a tile yet) |
+| Bot proposal queue | **Community proposals** ModelView with `Approve` / `Reject` row actions that mirror `bulkDecide` tRPC |
+| Fetcher schedule editor | **Queue + Crons** custom BaseView — ARQ depth + APScheduler list with pause/resume/run-now |
+
+Additionally, M55 added the **Vision Builder** wizard as a custom
+BaseView (3 Jinja pages — prompt / review / commit) that forwards to
+sector-service `visionBuilder.propose` + `commit` so the heavy Prisma
+transaction stays in one place.
 
 ---
 

@@ -87,38 +87,40 @@ from overcomplication, clarifying questions arrive *before* implementation.
 
 ## Current Phase
 
-**Phase 4 — Real-time Intelligence (M48+).** 모든 vision이 살아있는
-대상. 실제 인터넷 데이터를 계속 흘려보내고, 유저는 그 흐름을 *보고*,
-모든 점수는 source까지 traceable, 새 entity가 발견되면 봇이
-proposal을 제출 → 커뮤니티 투표.
+**Phase 4 (real-time intelligence) — steady state. M55 admin reset
+in progress.** Phase 4 originally shipped M48–M54: crawler service,
+6 per-surface fetchers, bot proposals, Live Pulse UX, an
+`apps/admin/` Next.js cockpit, vision visualizations, and 4 seeded
+visions. Those landed and the data path works.
 
-배경: Phase 3 (Sector Simulator → Vision Feasibility Monitor pivot)
-는 끝났음. 데이터 스키마 (M36 Capability/Signal/Risk/Feasibility +
-M45 Actor + M46 CommunityProposal) + scoring engine (M40 Liebig
-rollup + ScoreUpdater) + Vision Builder agent (M41) 가 Phase 4가
-올라서는 토대. 시간 순서대로 보고 싶다면 git log (또는 historical
-context 가 필요할 때는 [docs/archive/pivot.md](./docs/archive/pivot.md)).
+What changed in M55: the `apps/admin/` console got tangled
+(login + tRPC + 14 hand-rolled pages, drift between trigger UIs and
+the actual fetcher contracts), so we **deleted it and moved the
+admin surface into SQLAdmin** mounted at `data-pipeline:8003/admin`:
 
-Phase 4 milestones (자세한 sequence는
-[docs/tasks/current.md](./docs/tasks/current.md), 설계 ground-truth는
-[docs/architecture/composition.md](./docs/architecture/composition.md)):
+- 14 read-only model views (Sector, Capability, Signal, Risk,
+  Actor, CrawlRun, CommunityProposal, AuditLog, …)
+- 8 row actions (trigger the 6 fetchers + approve/reject proposal)
+- a custom **Queue + Crons** page (ARQ depth + APScheduler
+  pause/resume/run-now)
+- a custom **Vision Builder** wizard (prompt → review → commit,
+  forwarding to the same sector-service tRPC that powered the
+  React form)
 
-- **M48** — Crawler Docker service + Gemini Deep Research wrapper
-- **M49** — Per-surface fetcher set (capability / actor / signal /
-  risk / economics) + cost-aware orchestrator
-- **M50** — Bot user (`@feasibility_bot`) + EntityDetector + auto-
-  proposal via existing `CommunityProposal` flow
-- **M51** — Live Pulse UX (Hero ticker · per-tab sync pill · "why"
-  drawer on every score number)
-- **M52** — Admin Crawler Cockpit (`/admin/crawler` — live jobs ·
-  health · bot proposal queue · schedule editor)
-- **M53** — Vision Visualization pack (CapabilityRadar ·
-  FeasibilityTimeline · CostCurveCrossover · ActorRelevanceBubble ·
-  RiskHeatmap)
-- **M54** — 4-vision full seeding (SDC · Fusion · Memory · SOFC)
+Side effects: `apps/admin/` deleted, `services/sector-service/src/
+trpc/crawler.ts` deleted (its only consumer was apps/admin), port
+3100 freed. The historical M48–M54 milestone log lives in git;
+[docs/tasks/current.md](./docs/tasks/current.md) is now M55-focused.
 
-매 milestone 시작 전: composition.md 관련 §-section → current.md
-의 milestone entry → 한 슬라이스 = 한 PR.
+What didn't change: data pipeline (data-pipeline + agent-
+orchestration), Prisma schema, scoring engine, public web app at
+`/visions`, all the tier routing in
+[docs/architecture/composition.md](./docs/architecture/composition.md).
+Phase 3 context lives in
+[docs/archive/pivot.md](./docs/archive/pivot.md).
+
+매 변경 시작 전: composition.md 관련 §-section → current.md → 한
+슬라이스 = 한 PR.
 
 ---
 
@@ -126,7 +128,7 @@ Phase 4 milestones (자세한 sequence는
 
 | Layer | Stack |
 |---|---|
-| Frontend (`apps/web`, `apps/admin`) | Next.js 15 (App Router, RSC), TS strict, shadcn/ui + Tailwind, Recharts, React Flow, TanStack Query, tRPC client |
+| Frontend (`apps/web`) | Next.js 15 (App Router, RSC), TS strict, shadcn/ui + Tailwind, Recharts, React Flow, TanStack Query, tRPC client. Admin surface is SQLAdmin (Tabler) at `data-pipeline:8003/admin` — see M55 in current.md. |
 | Backend Node (`services/sector-service`) | Fastify + tRPC, Prisma (Postgres), Zod, Node 20 |
 | Backend Python (`services/{simulation,data-pipeline,agent-orchestration}-service`) | FastAPI, NumPy/Pandas/SciPy, PyMC (Monte Carlo), Pydantic v2, Python 3.12+ |
 | Agent / LLM | Anthropic Claude (opus) + Google Gemini (sonnet/haiku), dual-provider via Vertex AI |
@@ -177,12 +179,11 @@ Phase 4 milestones (자세한 sequence는
 
 ```
 apps/
-├── web/                          Next.js, end users → /visions
-└── admin/                        Admin console (Vision Builder UI, proposals queue)
+└── web/                          Next.js, end users → /visions
 services/
 ├── sector-service/               Fastify + tRPC entry point
 ├── simulation-service/           Python sim runner + feasibility engine
-├── data-pipeline/                Signal ingest (arXiv / USPTO / crawl4ai Yahoo+Naver+Finviz) + crons + grounded research
+├── data-pipeline/                Signal ingest (arXiv / USPTO / crawl4ai Yahoo+Naver+Finviz) + crons + grounded research + SQLAdmin at /admin (M55)
 └── agent-orchestration/          Vision Builder Conductor + extractor / updater agents
 packages/
 ├── sdk-python/                   SimulationBase, Driver, Output
@@ -280,14 +281,16 @@ pnpm deploy:prod                         # main merge → GitHub Actions
 
 ## Common Tasks
 
-### New Vision (M41 — shipped)
-1. Admin opens `/admin/visions/new`, types a one-line question
-2. Conductor runs PromptValidator (haiku) → VisionResearch (sonnet) →
+### New Vision (M41 conductor + M55 SQLAdmin wizard)
+1. Admin opens `data-pipeline:8003/admin` → sidebar **Vision Builder**,
+   types a one-line question
+2. SQLAdmin POSTs to sector-service `visionBuilder.propose` tRPC →
+   Conductor runs PromptValidator (haiku) → VisionResearch (sonnet) →
    VisionDecomposition (opus) → DataSourceSelector (sonnet) →
    ValidationGate (DAG + FK + weight-sum checks)
-3. Admin reviews proposed capability tree + risk drafts + actor list
-4. Approve → tRPC commits Capabilities + Risks + Actors + Feasibility
-   snapshot in one Prisma transaction → live at `/visions/<slug>`
+3. Admin reviews the draft summary (capabilities / risks / actors)
+4. Commit → sector-service `visionBuilder.commit` writes everything in
+   one Prisma transaction → redirects to `/admin/sector/list?search=<slug>`
 
 ### New sim (manual, edge case)
 1. `services/simulation-service/simulation_service/sims/<slug>.py`

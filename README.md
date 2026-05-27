@@ -73,8 +73,9 @@ pnpm seed
 pnpm dev                                # all apps + services via Turbo
 ```
 
-Open `http://localhost:3000` (user app — auto-redirects to `/visions`),
-`http://localhost:3100` (admin console).
+Open `http://localhost:3000` (user app — auto-redirects to `/visions`)
+or `http://localhost:8003/admin` (SQLAdmin — login with `ADMIN_EMAIL`
++ `ADMIN_PASSWORD` from `.env`).
 
 ### Run a single milestone PR locally
 
@@ -150,10 +151,12 @@ sector suggestion / pre-pivot community gated by
 `ENABLE_LEGACY_INVESTMENT_FEATURES` (default false). Tables preserved;
 routes 410 when flag off. Reversible config flip.
 
-**Coming in Phase 4** (M48–M54) — Crawler Docker service · Gemini Deep
-Research integration · per-surface fetchers + orchestrator ·
-`@feasibility_bot` auto-proposals · Live Pulse UX · admin crawler
-cockpit · visualization pack · 4-vision full seeding. See
+**Phase 4 shipped** (M48–M54) — Crawler service · Gemini Deep
+Research · 6 per-surface fetchers · orchestrator · `@feasibility_bot`
+auto-proposals · Live Pulse UX · cockpit · visualization pack ·
+4-vision seeding. Then **M55** swapped the Next.js admin (`apps/admin/`,
+port 3100) for **SQLAdmin** at `data-pipeline:8003/admin` — same data,
+much less hand-rolled UI. See
 [docs/tasks/current.md](./docs/tasks/current.md).
 
 ---
@@ -178,8 +181,9 @@ curl -X POST 'http://localhost:8001/trpc/feasibility.recompute' \
 
 ### Create a new vision
 
-Via admin UI: `http://localhost:3100/visions/new`. Submit a one-line
-question. The Vision Builder Conductor runs:
+Via SQLAdmin: `http://localhost:8003/admin` → sidebar **Vision
+Builder**. Submit a one-line question. The Vision Builder Conductor
+runs:
 
 ```
 PromptValidator (haiku)
