@@ -87,21 +87,28 @@ async def _trpc_mutation(
     procedure: str, *, payload: dict[str, Any], timeout_sec: float = 120.0
 ) -> dict[str, Any]:
     """Call a sector-service tRPC mutation. The Fastify adapter mounts
-    the router at `/trpc/*`; the JSON envelope is `{"json": <input>}`
-    for input and `{"result":{"data":{"json": <output>}}}` for success.
+    the router at `/trpc/*`.
+
+    sector-service runs tRPC v11 WITHOUT a transformer (no superjson),
+    so the un-batched HTTP wire format is:
+      - request body: the input object directly (no `{"json": ...}`
+        wrapping — that only applies when superjson is configured)
+      - response body: `{"result": {"data": <output>}}` (again, no
+        `.json` sub-wrap)
 
     Raises RuntimeError on tRPC error responses — the caller catches +
     flashes the message to the operator. Timeout is deliberately long
-    because the propose call chains 4 LLM stages including a synchronous
-    opus call (15-60s wall time)."""
+    because propose chains 4 LLM stages including a synchronous opus
+    call (15-60s wall time)."""
     url = f"{_sector_service_url()}/trpc/{procedure}"
-    body = {"json": payload}
     async with httpx.AsyncClient(timeout=timeout_sec) as client:
-        resp = await client.post(url, json=body)
+        resp = await client.post(url, json=payload)
     if resp.status_code != 200:
         # Try to extract tRPC error envelope; fall back to raw body.
+        # The error envelope IS still `{error: {message, ...}}` — no
+        # transformer wrapping on errors either.
         try:
-            err = resp.json().get("error", {}).get("json", {})
+            err = resp.json().get("error", {})
             msg = err.get("message") or resp.text
         except (ValueError, AttributeError):
             msg = resp.text
@@ -109,9 +116,8 @@ async def _trpc_mutation(
             f"sector-service tRPC {procedure} returned {resp.status_code}: {msg}"
         )
     data = resp.json()
-    # New-style tRPC envelope: result.data.json
     try:
-        return data["result"]["data"]["json"]
+        return data["result"]["data"]
     except (KeyError, TypeError) as exc:
         raise RuntimeError(
             f"sector-service tRPC {procedure} returned unexpected envelope: {data}"
