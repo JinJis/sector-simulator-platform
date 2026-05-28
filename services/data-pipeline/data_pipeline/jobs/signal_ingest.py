@@ -213,6 +213,7 @@ async def run_signal_ingest(
                 stats.capabilities_processed += 1
 
                 for source in sources:
+                    tag = f"[signal_ingest|{slug}|{cap_key}|{source.name}]"
                     raw_signals = await source.fetch(
                         sector_slug=slug,
                         capability_key=cap_key,
@@ -221,6 +222,14 @@ async def run_signal_ingest(
                         max_results=per_capability_limit,
                     )
                     stats.raw_signals_fetched += len(raw_signals)
+                    if raw_signals:
+                        log.info(
+                            "%s → %d raw signals; scoring + writing…",
+                            tag,
+                            len(raw_signals),
+                        )
+                    else:
+                        log.info("%s → 0 raw signals", tag)
 
                     for raw in raw_signals:
                         scoring = None

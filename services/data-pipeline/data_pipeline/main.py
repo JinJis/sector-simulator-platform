@@ -660,8 +660,14 @@ async def _run_refresh_job(*, app: FastAPI) -> RefreshQuotesResult:
     repo: EquityRepository = app.state.repo
     source: DataSource = app.state.source
     throttle = int(app.state.throttle_ms)
+    log.info(
+        "[cron refresh_quotes] START source=%s throttle_ms=%d",
+        type(source).__name__,
+        throttle,
+    )
     result = await refresh_quotes(source=source, repo=repo, throttle_ms=throttle)
     app.state.last_result = result
+    log.info("[cron refresh_quotes] DONE %s", result.model_dump())
     return result
 
 
@@ -672,10 +678,12 @@ async def _run_resolve_predictions_v2_job(
     bets resolve as soon as the corresponding EquityQuote row lands."""
     repo: PredictionV2ResolverRepository | None = app.state.resolver_v2_repo
     if repo is None:
-        log.warning("resolve_predictions_v2: repo not configured — skipping")
+        log.warning("[cron resolve_predictions_v2] repo not configured — skipping")
         return None
+    log.info("[cron resolve_predictions_v2] START")
     result = await resolve_due_predictions_v2(repo=repo)
     app.state.last_resolve_v2_result = result
+    log.info("[cron resolve_predictions_v2] DONE %s", result.model_dump())
     return result
 
 
@@ -720,8 +728,13 @@ async def _run_news_ingest_5min(*, app: FastAPI):  # noqa: ANN201
     no actors seeded yet)."""
     repo = app.state.signal_repo
     if repo is None:
+        log.warning("[cron news_ingest_5min] signal_repo unset — skipping")
         return None
     visions: list[str] = app.state.signal_ingest_visions
+    log.info(
+        "[cron news_ingest_5min] START visions=%s",
+        ",".join(visions) or "<none>",
+    )
 
     async def db_ticker_provider(sector_slug: str):  # noqa: ANN202
         from data_pipeline.signals.tickers import (  # noqa: PLC0415
@@ -748,6 +761,10 @@ async def _run_news_ingest_5min(*, app: FastAPI):  # noqa: ANN201
         per_capability_limit=10,
     )
     app.state.last_signal_ingest_result = stats
+    log.info(
+        "[cron news_ingest_5min] DONE %s",
+        getattr(stats, "model_dump", lambda: stats)(),
+    )
     return stats
 
 
@@ -758,8 +775,13 @@ async def _run_research_ingest_hourly(*, app: FastAPI):  # noqa: ANN201
     load away from `:00` where most crons cluster."""
     repo = app.state.signal_repo
     if repo is None:
+        log.warning("[cron research_ingest_hourly] signal_repo unset — skipping")
         return None
     visions: list[str] = app.state.signal_ingest_visions
+    log.info(
+        "[cron research_ingest_hourly] START visions=%s sources=arxiv,uspto",
+        ",".join(visions) or "<none>",
+    )
     stats = await run_signal_ingest(
         sector_slugs=visions,
         repo=repo,
@@ -768,6 +790,10 @@ async def _run_research_ingest_hourly(*, app: FastAPI):  # noqa: ANN201
         per_capability_limit=10,
     )
     app.state.last_signal_ingest_result = stats
+    log.info(
+        "[cron research_ingest_hourly] DONE %s",
+        getattr(stats, "model_dump", lambda: stats)(),
+    )
     return stats
 
 
@@ -783,14 +809,19 @@ async def _run_digest_daily_job(*, app: FastAPI):  # noqa: ANN201
     agent = getattr(app.state, "agent_client", None)
     if any(x is None for x in (repo, sig_repo, writer, dr, agent)):
         log.warning(
-            "digest_daily: missing dep(s) — skipping "
+            "[cron digest_daily] missing dep(s) — skipping "
             "(crawl_runs=%s signal_repo=%s writer=%s dr=%s agent=%s)",
             *[("on" if x is not None else "off") for x in (repo, sig_repo, writer, dr, agent)],
         )
         return None
     visions: list[str] = app.state.signal_ingest_visions
+    log.info(
+        "[cron digest_daily] START visions=%s",
+        ",".join(visions) or "<none>",
+    )
     ok = err = 0
     for slug in visions:
+        log.info("[cron digest_daily] vision=%s — calling DR digest", slug)
         try:
             await run_deep_research_digest(
                 DigestRequest(vision_slug=slug),
@@ -802,9 +833,14 @@ async def _run_digest_daily_job(*, app: FastAPI):  # noqa: ANN201
             )
             ok += 1
         except Exception as exc:  # noqa: BLE001
-            log.error("digest_daily: vision=%s failed: %s", slug, exc)
+            log.error("[cron digest_daily] vision=%s failed: %s", slug, exc)
             err += 1
-    log.info("digest_daily: complete ok=%d err=%d (of %d visions)", ok, err, len(visions))
+    log.info(
+        "[cron digest_daily] DONE ok=%d err=%d visions=%d",
+        ok,
+        err,
+        len(visions),
+    )
     return {"ok": ok, "err": err, "visions": len(visions)}
 
 
@@ -818,11 +854,19 @@ async def _run_recompute_feasibility_job(*, app: FastAPI):  # noqa: ANN201
 
     repo = app.state.signal_repo
     if repo is None:
-        log.warning("recompute-feasibility: repo not configured — skipping")
+        log.warning("[cron recompute_feasibility] repo not configured — skipping")
         return None
     visions: list[str] = app.state.signal_ingest_visions
+    log.info(
+        "[cron recompute_feasibility] START visions=%s",
+        ",".join(visions) or "<none>",
+    )
     stats = await run_recompute_feasibility(sector_slugs=visions, repo=repo)
     app.state.last_feasibility_recompute_result = stats
+    log.info(
+        "[cron recompute_feasibility] DONE %s",
+        getattr(stats, "model_dump", lambda: stats)(),
+    )
     return stats
 
 
@@ -1069,17 +1113,24 @@ async def _run_orchestrator_tick_job(*, app: FastAPI) -> None:
     tick doesn't kill the scheduler."""
     reader = getattr(app.state, "orchestrator_reader", None)
     if reader is None:
-        log.warning("orchestrator cron: orchestrator_reader unset — skipping tick")
+        log.warning("[cron orchestrator_tick] orchestrator_reader unset — skipping tick")
         return
+    log.info("[cron orchestrator_tick] START")
     try:
         pick = await pick_for_tick(reader=reader)
         if not pick.picked:
             log.info(
-                "orchestrator cron: tick picked 0/%d (over_budget=%d)",
+                "[cron orchestrator_tick] DONE picked=0 candidates=%d over_budget=%d",
                 pick.total_candidates,
                 pick.over_budget_skipped,
             )
             return
+        log.info(
+            "[cron orchestrator_tick] picked %d/%d (over_budget=%d) — dispatching",
+            len(pick.picked),
+            pick.total_candidates,
+            pick.over_budget_skipped,
+        )
         deps = [
             getattr(app.state, "crawl_runs_repo", None),
             getattr(app.state, "deep_research", None),
@@ -1092,7 +1143,7 @@ async def _run_orchestrator_tick_job(*, app: FastAPI) -> None:
         ]
         if any(d is None for d in deps):
             log.warning(
-                "orchestrator cron: missing dep(s) — skipping dispatch "
+                "[cron orchestrator_tick] missing dep(s) — skipping dispatch "
                 "(runs=%s dr=%s agent=%s cap=%s actor=%s risk=%s writer=%s ingest_fn=%s)",
                 *["on" if d is not None else "off" for d in deps],
             )
@@ -1110,7 +1161,7 @@ async def _run_orchestrator_tick_job(*, app: FastAPI) -> None:
         summary = await dispatch_tick(pick=pick, clients=clients)
         app.state.last_orchestrator_tick = summary.to_summary_dict()
     except Exception as exc:  # noqa: BLE001
-        log.error("orchestrator cron: tick failed: %s", exc)
+        log.error("[cron orchestrator_tick] tick failed: %s", exc)
 
 
 def create_app() -> FastAPI:

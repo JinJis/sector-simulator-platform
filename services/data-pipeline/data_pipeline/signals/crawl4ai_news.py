@@ -118,20 +118,30 @@ class _Crawl4aiBase:
         since: datetime,
         max_results: int = 20,
     ) -> list[RawSignal]:
+        # Tag every log line during this call with the job context so the
+        # operator can demux interleaved crawl4ai output across visions /
+        # capabilities. crawl4ai's own [FETCH]/[SCRAPE]/[COMPLETE] lines
+        # come from its internal logger and we can't prefix those — but
+        # the surrounding "start"/"list-url"/"article"/"done" lines we
+        # emit are enough to identify the run.
+        tag = f"[{self.name}|{sector_slug}|{capability_key}]"
         try:
             tickers = await self._ticker_provider(sector_slug)
         except Exception as exc:  # noqa: BLE001
-            # DB-backed provider could fail (missing column, connection
-            # drop). Fall back to the static map so news_ingest doesn't
-            # silently stop returning signals.
             log.warning(
-                "%s: ticker_provider raised %s — falling back to static map",
-                self.name,
+                "%s ticker_provider raised %s — falling back to static map",
+                tag,
                 exc,
             )
             tickers = tickers_for(sector_slug)
         list_urls = self._per_vision_urls(tickers)
         if not list_urls:
+            log.info(
+                "%s skipped — no tickers mapped (us=%d kr=%d)",
+                tag,
+                len(tickers.us or []),
+                len(tickers.kr or []),
+            )
             return []
         try:
             from crawl4ai import AsyncWebCrawler  # noqa: PLC0415
@@ -140,19 +150,32 @@ class _Crawl4aiBase:
             )
         except ImportError:
             log.warning(
-                "crawl4ai not installed — %s skipped (pip install crawl4ai)",
-                self.name,
+                "%s crawl4ai not installed — skipped (pip install crawl4ai)",
+                tag,
             )
             return []
+
+        log.info(
+            "%s start — %d list URLs, kw=%d, max=%d",
+            tag,
+            len(list_urls),
+            len(keywords),
+            max_results,
+        )
 
         # One AsyncWebCrawler instance reused across list + body scrapes
         # — shares the underlying playwright browser context, much faster.
         results: list[RawSignal] = []
         seen_urls: set[str] = set()
         list_strategy = JsonCssExtractionStrategy(self._list_extraction_schema())
+        list_pages_ok = 0
+        articles_seen = 0
+        articles_matched = 0
+        articles_fetched = 0
 
         async with AsyncWebCrawler(verbose=False) as crawler:
             for url in list_urls:
+                log.info("%s list-page → %s", tag, url)
                 page = await _crawl_url(
                     crawler,
                     url,
@@ -160,11 +183,14 @@ class _Crawl4aiBase:
                     extraction_strategy=list_strategy,
                 )
                 if page is None or not getattr(page, "extracted_content", None):
+                    log.info("%s list-page empty: %s", tag, url)
                     continue
                 articles = _safe_json(page.extracted_content)
                 if not isinstance(articles, list):
                     continue
+                list_pages_ok += 1
                 for art in articles[: max_results * 3]:  # over-fetch; filter below
+                    articles_seen += 1
                     if not isinstance(art, dict):
                         continue
                     href = str(art.get("url") or "").strip()
@@ -176,8 +202,10 @@ class _Crawl4aiBase:
                     seen_urls.add(href)
                     if not _matches_any(title, keywords):
                         continue
-                    # Fetch the article body — markdown-cleaned.
+                    articles_matched += 1
+                    log.info("%s article → %s — %.80s", tag, href, title)
                     body = await _crawl_url(crawler, href, bypass_cache=True)
+                    articles_fetched += 1
                     summary = _first_chars(
                         getattr(body, "markdown", None) or "", 400
                     )
@@ -194,7 +222,25 @@ class _Crawl4aiBase:
                         )
                     )
                     if len(results) >= max_results:
+                        log.info(
+                            "%s done — hit max_results=%d (list_ok=%d seen=%d matched=%d)",
+                            tag,
+                            max_results,
+                            list_pages_ok,
+                            articles_seen,
+                            articles_matched,
+                        )
                         return results
+        log.info(
+            "%s done — raw_signals=%d (list_ok=%d/%d seen=%d matched=%d fetched=%d)",
+            tag,
+            len(results),
+            list_pages_ok,
+            len(list_urls),
+            articles_seen,
+            articles_matched,
+            articles_fetched,
+        )
         return results
 
 
