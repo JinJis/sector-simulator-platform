@@ -1,0 +1,133 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Crawl run</h3>
+      <div class="ms-auto">
+        <a class="btn btn-sm btn-outline-secondary"
+           href="/admin/vision/{{ run.vision_slug }}/dashboard">
+          ← {{ run.vision_slug }} dashboard
+        </a>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="datagrid">
+        <div class="datagrid-item">
+          <div class="datagrid-title">ID</div>
+          <div class="datagrid-content font-monospace small">{{ run.id }}</div>
+        </div>
+        <div class="datagrid-item">
+          <div class="datagrid-title">Vision</div>
+          <div class="datagrid-content">{{ run.vision_slug }}</div>
+        </div>
+        <div class="datagrid-item">
+          <div class="datagrid-title">Fetcher</div>
+          <div class="datagrid-content">{{ run.fetcher_kind }}</div>
+        </div>
+        <div class="datagrid-item">
+          <div class="datagrid-title">Status</div>
+          <div class="datagrid-content">
+            {% if run.status == 'ok' %}
+            <span class="badge bg-green-lt">ok</span>
+            {% elif run.status == 'failed' %}
+            <span class="badge bg-red-lt">failed</span>
+            {% else %}
+            <span class="badge bg-neutral-lt">{{ run.status }}</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="datagrid-item">
+          <div class="datagrid-title">Cost (USD)</div>
+          <div class="datagrid-content font-monospace">
+            {% if run.cost_usd is not none %}${{ '%.4f'|format(run.cost_usd) }}{% else %}—{% endif %}
+          </div>
+        </div>
+        <div class="datagrid-item">
+          <div class="datagrid-title">Signals written (recorded)</div>
+          <div class="datagrid-content font-monospace">{{ run.signals_written }}</div>
+        </div>
+        <div class="datagrid-item">
+          <div class="datagrid-title">Started</div>
+          <div class="datagrid-content font-monospace small">
+            {{ run.started_at.isoformat() }}
+          </div>
+        </div>
+        <div class="datagrid-item">
+          <div class="datagrid-title">Ended</div>
+          <div class="datagrid-content font-monospace small">
+            {% if run.ended_at %}{{ run.ended_at.isoformat() }}{% else %}—{% endif %}
+          </div>
+        </div>
+      </div>
+      {% if run.error %}
+      <div class="alert alert-danger mt-3">
+        <strong>Error:</strong>
+        <pre class="mb-0 small">{{ run.error }}</pre>
+      </div>
+      {% endif %}
+      {% if run.result_summary %}
+      <details class="mt-3">
+        <summary class="text-muted small" style="cursor: pointer;">
+          Result summary (JSON)
+        </summary>
+        <pre class="mt-2 small bg-dark-lt p-2 rounded">{{ run.result_summary }}</pre>
+      </details>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Linked signals ({{ signals|length }})</h3>
+      <div class="ms-auto text-muted small">
+        Match: <code>sector_slug = {{ run.vision_slug }}</code> AND
+        <code>ingested_at ∈ [started_at, ended_at+5s]</code>
+      </div>
+    </div>
+    {% if signals %}
+    <ul class="list-group list-group-flush">
+      {% for s in signals %}
+      <li class="list-group-item">
+        <div class="d-flex justify-content-between gap-2">
+          <div class="text-truncate" style="min-width: 0;">
+            {% if s.is_highlight %}
+            <span class="badge bg-yellow-lt me-1">★</span>
+            {% endif %}
+            <a href="{{ s.source_url }}" target="_blank" rel="noopener">
+              {{ s.title }}
+            </a>
+            <div class="text-muted small">
+              <span class="font-monospace">{{ s.source_kind }}</span>
+              · {{ s.published_at.strftime('%m-%d %H:%M') }}
+              · <a href="/admin/signal/details/{{ s.id }}">detail →</a>
+            </div>
+          </div>
+          <div class="text-end small font-monospace text-muted" style="min-width: 110px;">
+            {% if s.delta_technical is not none %}T{{ '%+.1f'|format(s.delta_technical) }}{% endif %}
+            {% if s.delta_economic is not none %}E{{ '%+.1f'|format(s.delta_economic) }}{% endif %}
+            {% if s.delta_regulatory is not none %}R{{ '%+.1f'|format(s.delta_regulatory) }}{% endif %}
+            {% if s.delta_supply is not none %}S{{ '%+.1f'|format(s.delta_supply) }}{% endif %}
+          </div>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="card-body">
+      <p class="text-muted text-center mb-0">
+        No signals matched. Either this run wrote zero signals
+        (check <code>signals_written</code> + <code>error</code> above)
+        or the heuristic window didn't catch them (very long-running
+        ingest that flushed signals after <code>ended_at + 5s</code>).
+      </p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

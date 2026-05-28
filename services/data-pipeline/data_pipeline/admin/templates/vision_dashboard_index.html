@@ -1,0 +1,53 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Pick a vision</h3>
+    </div>
+    {% if sectors %}
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table">
+        <thead>
+          <tr>
+            <th>Slug</th>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Vision question</th>
+            <th class="text-end">Dashboard</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in sectors %}
+          <tr>
+            <td class="font-monospace small">{{ s.slug }}</td>
+            <td class="fw-bold">{{ s.name }}</td>
+            <td>
+              <span class="badge bg-{% if s.status == 'live' %}green{% elif s.status == 'draft' %}yellow{% else %}neutral{% endif %}-lt">
+                {{ s.status }}
+              </span>
+            </td>
+            <td class="text-muted small">{{ s.vision_question or '—' }}</td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-primary"
+                 href="/admin/vision/{{ s.slug }}/dashboard">
+                Open →
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body">
+      <p class="text-muted text-center mb-0">
+        No vision-eligible sectors found. Run <code>pnpm db:seed:all</code>
+        or use the Vision Builder.
+      </p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -110,6 +110,7 @@
             <th>Job</th>
             <th>Cadence</th>
             <th>Next run</th>
+            <th>Last run</th>
             <th class="text-end">Actions</th>
           </tr>
         </thead>
@@ -138,6 +139,35 @@
               —
               {% endif %}
             </td>
+            <td>
+              {% if row.last %}
+                {% if row.last.status == 'ok' %}
+                <span class="badge bg-green-lt">ok</span>
+                {% elif row.last.status == 'error' %}
+                <span class="badge bg-red-lt">error</span>
+                {% elif row.last.status == 'missed' %}
+                <span class="badge bg-yellow-lt">missed</span>
+                {% elif row.last.status == 'max_instances' %}
+                <span class="badge bg-orange-lt">overlap</span>
+                {% else %}
+                <span class="badge bg-blue-lt">{{ row.last.status }}</span>
+                {% endif %}
+                <div class="text-muted small font-monospace">
+                  {{ row.last.started_at.strftime('%H:%M:%S') }} UTC
+                  {% if row.last.duration_ms is not none %}
+                  · {{ row.last.duration_ms }}ms
+                  {% endif %}
+                </div>
+                {% if row.last.output_summary %}
+                <div class="text-muted small">{{ row.last.output_summary[:120] }}</div>
+                {% endif %}
+                {% if row.last.error %}
+                <div class="text-danger small font-monospace">{{ row.last.error[:120] }}</div>
+                {% endif %}
+              {% else %}
+                <span class="text-muted small">— never fired —</span>
+              {% endif %}
+            </td>
             <td class="text-end">
               <div class="btn-list justify-content-end">
                 {% if row.paused %}
@@ -161,6 +191,62 @@
               </div>
             </td>
           </tr>
+          {% if row.recent %}
+          <tr>
+            <td></td>
+            <td colspan="5" class="bg-dark-lt">
+              <details>
+                <summary class="text-muted small" style="cursor: pointer;">
+                  Recent runs ({{ row.recent|length }})
+                </summary>
+                <table class="table table-sm mt-2 mb-0">
+                  <thead>
+                    <tr>
+                      <th>Started</th>
+                      <th>Status</th>
+                      <th>Duration</th>
+                      <th>Output / error</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for ex in row.recent %}
+                    <tr>
+                      <td class="font-monospace small">
+                        {{ ex.started_at.strftime('%H:%M:%S') }}
+                      </td>
+                      <td>
+                        {% if ex.status == 'ok' %}
+                        <span class="badge bg-green-lt">ok</span>
+                        {% elif ex.status == 'error' %}
+                        <span class="badge bg-red-lt">error</span>
+                        {% elif ex.status == 'missed' %}
+                        <span class="badge bg-yellow-lt">missed</span>
+                        {% elif ex.status == 'max_instances' %}
+                        <span class="badge bg-orange-lt">overlap</span>
+                        {% else %}
+                        <span class="badge bg-blue-lt">{{ ex.status }}</span>
+                        {% endif %}
+                      </td>
+                      <td class="font-monospace small text-muted">
+                        {% if ex.duration_ms is not none %}{{ ex.duration_ms }}ms{% else %}—{% endif %}
+                      </td>
+                      <td class="small">
+                        {% if ex.error %}
+                        <code class="text-danger">{{ ex.error }}</code>
+                        {% elif ex.output_summary %}
+                        <code class="text-muted">{{ ex.output_summary }}</code>
+                        {% else %}
+                        —
+                        {% endif %}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </details>
+            </td>
+          </tr>
+          {% endif %}
           {% endfor %}
         </tbody>
       </table>

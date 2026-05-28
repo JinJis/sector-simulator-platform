@@ -47,6 +47,13 @@ from datetime import UTC, datetime
 from typing import Any
 
 from agent_tools import GroundedResearchClient
+from apscheduler.events import (
+    EVENT_JOB_ERROR,
+    EVENT_JOB_EXECUTED,
+    EVENT_JOB_MAX_INSTANCES,
+    EVENT_JOB_MISSED,
+    EVENT_JOB_SUBMITTED,
+)
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -576,6 +583,43 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
             )
 
         if scheduler.get_jobs():
+            # Wire the cron-history buffer BEFORE start() so the very
+            # first job firing is captured. The buffer is read by the
+            # SQLAdmin Queue + Crons page so an operator can verify
+            # crons are actually firing (and what their last output was)
+            # without grepping `docker logs`.
+            from data_pipeline.admin.cron_history import (  # noqa: PLC0415
+                CronHistoryBuffer,
+            )
+
+            history = CronHistoryBuffer()
+            app.state.cron_history = history
+
+            def _on_event(event: Any) -> None:
+                code = event.code
+                if code == EVENT_JOB_SUBMITTED:
+                    history.on_submitted(event.job_id)
+                elif code == EVENT_JOB_EXECUTED:
+                    history.on_executed(event.job_id, getattr(event, "retval", None))
+                elif code == EVENT_JOB_ERROR:
+                    history.on_error(
+                        event.job_id, getattr(event, "exception", None)
+                    )
+                elif code == EVENT_JOB_MISSED:
+                    history.on_missed(
+                        event.job_id, getattr(event, "scheduled_run_time", None)
+                    )
+                elif code == EVENT_JOB_MAX_INSTANCES:
+                    history.on_max_instances(event.job_id)
+
+            scheduler.add_listener(
+                _on_event,
+                EVENT_JOB_SUBMITTED
+                | EVENT_JOB_EXECUTED
+                | EVENT_JOB_ERROR
+                | EVENT_JOB_MISSED
+                | EVENT_JOB_MAX_INSTANCES,
+            )
             scheduler.start()
         else:
             log.warning("data-pipeline: no scheduler jobs were registered")
@@ -583,6 +627,14 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
     else:
         log.info("data-pipeline: scheduler disabled by INGEST_SCHEDULE=off")
     app.state.scheduler = scheduler
+    if not hasattr(app.state, "cron_history"):
+        # Always set the attr so SQLAdmin can read it safely even with
+        # INGEST_SCHEDULE=off — empty buffer renders "no runs yet".
+        from data_pipeline.admin.cron_history import (  # noqa: PLC0415
+            CronHistoryBuffer,
+        )
+
+        app.state.cron_history = CronHistoryBuffer()
 
     log.info("data-pipeline ready")
     try:

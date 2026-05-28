@@ -158,6 +158,13 @@ class WorkerSettings:
     # Retry pause is exponential; bump if grounded gemini quota
     # errors start dominating.
     max_tries = int(os.environ.get("WORKER_MAX_TRIES", "2"))
+    # Heartbeat cadence. Default ARQ is 3600s (1h) which is fine for
+    # long-running prod but blinds the SQLAdmin Queue + Crons page —
+    # if the worker dies mid-hour the key still claims "alive". 30s
+    # gets near-realtime visibility without measurable Redis load.
+    health_check_interval = int(
+        os.environ.get("WORKER_HEALTH_CHECK_INTERVAL", "30")
+    )
 
     # redis_settings has to be set at class-construction (not import)
     # because env may load later in a real container. Use a property-

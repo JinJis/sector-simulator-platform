@@ -37,6 +37,8 @@ from sqladmin import BaseView, expose
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 
+from data_pipeline.admin.cron_history import CronExecution, CronHistoryBuffer
+
 log = logging.getLogger(__name__)
 
 
@@ -104,8 +106,9 @@ JOB_ORDER: dict[str, int] = {
 class _SchedulerRowVM:
     """Per-cron-job view model the Jinja template renders into one
     table row. Carries the bits the operator needs at a glance — label
-    / cadence / paused state / next-run wall-clock — and the env gate
-    name to point them at the permanent off switch."""
+    / cadence / paused state / next-run wall-clock / latest execution
+    outcome — and the env gate name to point them at the permanent off
+    switch."""
 
     id: str
     label: str
@@ -114,6 +117,12 @@ class _SchedulerRowVM:
     env_gate: str
     paused: bool
     next_run_iso: str | None
+    # Execution history from the in-memory CronHistoryBuffer. `last`
+    # drives the per-row badge; `recent` is shown in a per-row
+    # disclosure so the operator can scan recent outcomes without
+    # leaving the page.
+    last: CronExecution | None
+    recent: list[CronExecution]
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,12 +182,15 @@ def _scheduler_rows(app: FastAPI) -> tuple[list[_SchedulerRowVM], bool]:
     scheduler: AsyncIOScheduler | None = getattr(app.state, "scheduler", None)
     if scheduler is None:
         return [], False
+    history: CronHistoryBuffer | None = getattr(app.state, "cron_history", None)
     rows: list[_SchedulerRowVM] = []
     for job in scheduler.get_jobs():
         info = JOB_INFO.get(
             job.id,
             {"label": job.id, "cadence": "—", "note": "", "env_gate": ""},
         )
+        last = history.last(job.id) if history is not None else None
+        recent = history.recent(job.id, limit=8) if history is not None else []
         rows.append(
             _SchedulerRowVM(
                 id=job.id,
@@ -194,6 +206,8 @@ def _scheduler_rows(app: FastAPI) -> tuple[list[_SchedulerRowVM], bool]:
                     if job.next_run_time is not None
                     else None
                 ),
+                last=last,
+                recent=recent,
             )
         )
     rows.sort(key=lambda r: (JOB_ORDER.get(r.id, 99), r.id))

@@ -1,0 +1,357 @@
+{% extends "sqladmin/layout.html" %}
+
+{# Per-vision dashboard. 24h activity rollup so the operator can see
+   in one glance whether ingest is healthy + whether scoring is moving. #}
+
+{% block content_header %}
+<meta http-equiv="refresh" content="15">
+<div class="row align-items-center">
+  <div class="col">
+    <h2 class="page-title">{{ header.name }}</h2>
+    <div class="page-pretitle">
+      <span class="font-monospace">{{ header.slug }}</span>
+      · status <span class="badge bg-{% if header.status == 'live' %}green{% elif header.status == 'draft' %}yellow{% else %}neutral{% endif %}-lt">{{ header.status }}</span>
+    </div>
+  </div>
+  <div class="col-auto">
+    <a href="/admin/vision-dashboard" class="btn btn-sm btn-outline-secondary">
+      ← all visions
+    </a>
+    <span class="text-muted small ms-2">refreshed {{ now_utc }} · auto 15s</span>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Header card: feasibility composite + binding cap + ETA ──────── #}
+<div class="col-12">
+  <div class="card">
+    <div class="card-body">
+      <div class="row g-3 align-items-center">
+        <div class="col-md-8">
+          {% if header.vision_question %}
+          <p class="mb-2 text-muted">{{ header.vision_question }}</p>
+          {% endif %}
+          <div class="datagrid">
+            <div class="datagrid-item">
+              <div class="datagrid-title">Binding capability</div>
+              <div class="datagrid-content font-monospace">
+                {{ header.binding_capability_key or '—' }}
+              </div>
+            </div>
+            <div class="datagrid-item">
+              <div class="datagrid-title">ETA (median years)</div>
+              <div class="datagrid-content font-monospace">
+                {% if header.eta_median_years is not none %}
+                {{ '%.1f'|format(header.eta_median_years) }}
+                {% else %}—{% endif %}
+              </div>
+            </div>
+            <div class="datagrid-item">
+              <div class="datagrid-title">Last recompute</div>
+              <div class="datagrid-content small text-muted font-monospace">
+                {% if header.feasibility_as_of %}
+                {{ header.feasibility_as_of.strftime('%Y-%m-%d %H:%M UTC') }}
+                {% else %}—{% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4 text-center">
+          <div class="text-muted small">Current composite</div>
+          <div class="display-4 fw-bold
+            {% if header.composite is not none and header.composite >= 70 %}text-green
+            {% elif header.composite is not none and header.composite >= 40 %}text-yellow
+            {% else %}text-red{% endif %}">
+            {% if header.composite is not none %}
+            {{ '%.1f'|format(header.composite) }}
+            {% else %}—{% endif %}
+          </div>
+          {% if header.composite_p10 is not none and header.composite_p90 is not none %}
+          <div class="text-muted small font-monospace">
+            p10–p90: {{ '%.1f'|format(header.composite_p10) }}–{{ '%.1f'|format(header.composite_p90) }}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── 24h activity tiles ──────────────────────────────────────────── #}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Last 24h</h3>
+    </div>
+    <div class="card-body">
+      <div class="row row-cards">
+        <div class="col-sm-6 col-md-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="subheader">Signals ingested</div>
+              <div class="h1 m-0
+                {% if tiles.signals_24h == 0 %}text-muted{% endif %}">
+                {{ tiles.signals_24h }}
+              </div>
+              {% if tiles.signals_highlighted_24h > 0 %}
+              <div class="text-muted small">
+                {{ tiles.signals_highlighted_24h }} highlighted
+              </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-md-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="subheader">Crawl runs</div>
+              <div class="h1 m-0">
+                {{ tiles.crawl_runs_24h }}
+              </div>
+              <div class="text-muted small">
+                <span class="text-green">{{ tiles.crawl_runs_ok_24h }} ok</span>
+                {% if tiles.crawl_runs_failed_24h > 0 %}
+                · <span class="text-red">{{ tiles.crawl_runs_failed_24h }} failed</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-md-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="subheader">Score writes</div>
+              <div class="h1 m-0
+                {% if tiles.score_writes_24h == 0 %}text-muted{% endif %}">
+                {{ tiles.score_writes_24h }}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-md-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="subheader">LLM cost (USD)</div>
+              <div class="h1 m-0 font-monospace">
+                ${{ '%.4f'|format(tiles.cost_usd_24h) }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% if tiles.signals_24h == 0 and tiles.crawl_runs_24h == 0 %}
+      <div class="alert alert-warning mt-3 mb-0">
+        <strong>No activity in the last 24h.</strong> Either crons are
+        disabled (check <code>INGEST_SCHEDULE</code> + per-job
+        <code>*_SCHEDULE</code> envs) or the scheduler is firing but
+        the fetchers are erroring. Check the
+        <a href="/admin/queue">Queue + Crons</a> page for per-cron status,
+        or trigger a fetcher manually from a Capability/Risk/VisionActor
+        row.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ── Capability scores table ─────────────────────────────────────── #}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Capability scores (current)</h3>
+    </div>
+    {% if scores %}
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table">
+        <thead>
+          <tr>
+            <th>Capability</th>
+            <th class="text-end">Weight</th>
+            <th class="text-end">Composite</th>
+            <th class="text-end">Tech</th>
+            <th class="text-end">Econ</th>
+            <th class="text-end">Reg</th>
+            <th class="text-end">Supply</th>
+            <th class="text-end">As of</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in scores %}
+          <tr>
+            <td>
+              <div class="fw-bold">{{ s.capability_name }}</div>
+              <div class="text-muted small font-monospace">{{ s.capability_key }}</div>
+            </td>
+            <td class="text-end font-monospace">{{ '%.2f'|format(s.weight) }}</td>
+            <td class="text-end font-monospace fw-bold
+              {% if s.composite is not none and s.composite < 40 %}text-red
+              {% elif s.composite is not none and s.composite >= 70 %}text-green
+              {% endif %}">
+              {% if s.composite is not none %}{{ '%.1f'|format(s.composite) }}{% else %}—{% endif %}
+            </td>
+            <td class="text-end font-monospace small text-muted">
+              {% if s.technical is not none %}{{ '%.1f'|format(s.technical) }}{% else %}—{% endif %}
+            </td>
+            <td class="text-end font-monospace small text-muted">
+              {% if s.economic is not none %}{{ '%.1f'|format(s.economic) }}{% else %}—{% endif %}
+            </td>
+            <td class="text-end font-monospace small text-muted">
+              {% if s.regulatory is not none %}{{ '%.1f'|format(s.regulatory) }}{% else %}—{% endif %}
+            </td>
+            <td class="text-end font-monospace small text-muted">
+              {% if s.supply is not none %}{{ '%.1f'|format(s.supply) }}{% else %}—{% endif %}
+            </td>
+            <td class="text-end small text-muted font-monospace">
+              {{ s.as_of.strftime('%m-%d %H:%M') }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body">
+      <p class="text-muted text-center mb-0">
+        No capabilities yet. Build the vision via SQLAdmin's
+        <a href="/admin/vision-builder">Vision Builder</a>.
+      </p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Recent crawl runs ───────────────────────────────────────────── #}
+<div class="col-12 col-xl-6">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Recent crawl runs ({{ runs|length }})</h3>
+      <div class="ms-auto">
+        <a class="btn btn-sm btn-outline-secondary"
+           href="/admin/crawl-run/list?search={{ header.slug }}">
+          All →
+        </a>
+      </div>
+    </div>
+    {% if runs %}
+    <div class="table-responsive">
+      <table class="table table-sm card-table">
+        <thead>
+          <tr>
+            <th>Started</th>
+            <th>Kind</th>
+            <th>Status</th>
+            <th class="text-end">Sigs</th>
+            <th class="text-end">Cost</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in runs %}
+          <tr>
+            <td class="font-monospace small">
+              {{ r.started_at.strftime('%m-%d %H:%M:%S') }}
+            </td>
+            <td class="small">{{ r.fetcher_kind }}</td>
+            <td>
+              {% if r.status == 'ok' %}
+              <span class="badge bg-green-lt">ok</span>
+              {% elif r.status == 'failed' %}
+              <span class="badge bg-red-lt">failed</span>
+              {% elif r.status == 'over_budget' %}
+              <span class="badge bg-orange-lt">over_budget</span>
+              {% elif r.status == 'running' %}
+              <span class="badge bg-blue-lt">running</span>
+              {% else %}
+              <span class="badge bg-neutral-lt">{{ r.status }}</span>
+              {% endif %}
+            </td>
+            <td class="text-end font-monospace">{{ r.signals_written }}</td>
+            <td class="text-end font-monospace small text-muted">
+              {% if r.cost_usd is not none %}${{ '%.3f'|format(r.cost_usd) }}{% else %}—{% endif %}
+            </td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-primary"
+                 href="/admin/crawl-run/{{ r.id }}/signals">
+                signals
+              </a>
+            </td>
+          </tr>
+          {% if r.error_excerpt %}
+          <tr>
+            <td colspan="6" class="bg-dark-lt small text-danger font-monospace">
+              {{ r.error_excerpt }}
+            </td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body">
+      <p class="text-muted text-center mb-0">
+        No crawl runs for this vision yet. (Note: bulk-sweep crons —
+        news_ingest, research_ingest, recompute_feasibility — don't
+        write crawl_run rows; only fetcher triggers + digest +
+        orchestrator do.)
+      </p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Recent signals ──────────────────────────────────────────────── #}
+<div class="col-12 col-xl-6">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Recent signals ({{ signals|length }})</h3>
+      <div class="ms-auto">
+        <a class="btn btn-sm btn-outline-secondary"
+           href="/admin/signal/list?search={{ header.slug }}">
+          All →
+        </a>
+      </div>
+    </div>
+    {% if signals %}
+    <ul class="list-group list-group-flush">
+      {% for s in signals %}
+      <li class="list-group-item">
+        <div class="d-flex justify-content-between gap-2">
+          <div class="text-truncate" style="min-width: 0;">
+            {% if s.is_highlight %}
+            <span class="badge bg-yellow-lt me-1">★</span>
+            {% endif %}
+            <a href="{{ s.source_url }}" target="_blank" rel="noopener"
+               class="text-reset text-decoration-none">
+              {{ s.title }}
+            </a>
+            <div class="text-muted small">
+              <span class="font-monospace">{{ s.source_kind }}</span>
+              · {{ s.published_at.strftime('%m-%d %H:%M') }}
+            </div>
+          </div>
+          <div class="text-end small font-monospace text-muted" style="min-width: 110px;">
+            {% if s.delta_technical is not none %}T{{ '%+.1f'|format(s.delta_technical) }}{% endif %}
+            {% if s.delta_economic is not none %}E{{ '%+.1f'|format(s.delta_economic) }}{% endif %}
+            {% if s.delta_regulatory is not none %}R{{ '%+.1f'|format(s.delta_regulatory) }}{% endif %}
+            {% if s.delta_supply is not none %}S{{ '%+.1f'|format(s.delta_supply) }}{% endif %}
+          </div>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="card-body">
+      <p class="text-muted text-center mb-0">
+        No signals ingested yet. If cron is on and you see crawl runs
+        with <code>signals_written=0</code>, check the agent-orchestration
+        container log for SignalExtractor errors.
+      </p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<div class="col-12">
+  <div class="empty">
+    <div class="empty-icon">
+      <i class="fa-solid fa-triangle-exclamation fa-2x text-muted"></i>
+    </div>
+    <p class="empty-title">{{ title }}</p>
+    <p class="empty-subtitle text-muted">{{ subtitle }}</p>
+    <div class="empty-action">
+      <a href="/admin/vision-dashboard" class="btn btn-primary">
+        ← pick a vision
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}
