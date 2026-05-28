@@ -52,13 +52,13 @@
         <div class="datagrid-item">
           <div class="datagrid-title">Started</div>
           <div class="datagrid-content font-monospace small">
-            {{ run.started_at.isoformat() }}
+            {{ run.started_at | kst('%Y-%m-%d %H:%M:%S', true) }}
           </div>
         </div>
         <div class="datagrid-item">
           <div class="datagrid-title">Ended</div>
           <div class="datagrid-content font-monospace small">
-            {% if run.ended_at %}{{ run.ended_at.isoformat() }}{% else %}—{% endif %}
+            {% if run.ended_at %}{{ run.ended_at | kst('%Y-%m-%d %H:%M:%S', true) }}{% else %}—{% endif %}
           </div>
         </div>
       </div>
@@ -103,7 +103,7 @@
             </a>
             <div class="text-muted small">
               <span class="font-monospace">{{ s.source_kind }}</span>
-              · {{ s.published_at.strftime('%m-%d %H:%M') }}
+              · {{ s.published_at | kst('%m-%d %H:%M') }}
               · <a href="/admin/signal/details/{{ s.id }}">detail →</a>
             </div>
           </div>

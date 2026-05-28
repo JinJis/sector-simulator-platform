@@ -54,19 +54,22 @@ JOB_INFO: dict[str, dict[str, str]] = {
     },
     "research_ingest_hourly": {
         "label": "Research ingest",
-        "cadence": "hourly · :07 UTC",
+        "cadence": "hourly · :07",
         "note": "arXiv + USPTO per capability keyword set",
         "env_gate": "RESEARCH_INGEST_SCHEDULE",
     },
     "recompute_feasibility_hourly": {
         "label": "Recompute feasibility",
-        "cadence": "hourly · :25 UTC",
+        "cadence": "hourly · :25",
         "note": "ScoreUpdater agent per capability → vision rollup",
         "env_gate": "",
     },
     "digest_daily": {
+        # 06:00 UTC = 15:00 KST default. Cadence string shown in
+        # display-tz; operators in other timezones get the conversion
+        # via ADMIN_DISPLAY_TZ.
         "label": "DR digest (grounded)",
-        "cadence": "daily · 06:00 UTC default",
+        "cadence": "daily · 15:00 KST default",
         "note": "gemini-3.1-pro-preview synthesis per vision · ~$0.30/run",
         "env_gate": "DIGEST_SCHEDULE",
     },
@@ -77,14 +80,15 @@ JOB_INFO: dict[str, dict[str, str]] = {
         "env_gate": "ORCHESTRATOR_SCHEDULE",
     },
     "refresh_quotes_daily": {
+        # 08:30 UTC = 17:30 KST default.
         "label": "Refresh quotes",
-        "cadence": "daily · 08:30 UTC default",
+        "cadence": "daily · 17:30 KST default",
         "note": "yfinance equity snapshot for PredictionV2 anchor",
         "env_gate": "INGEST_SCHEDULE",
     },
     "resolve_predictions_v2_hourly": {
         "label": "Resolve predictions v2",
-        "cadence": "hourly · :05 UTC",
+        "cadence": "hourly · :05",
         "note": "M46b band-based prediction resolver",
         "env_gate": "",
     },

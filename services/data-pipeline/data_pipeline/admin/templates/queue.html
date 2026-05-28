@@ -11,7 +11,7 @@
     <div class="page-pretitle">{{ subtitle }}</div>
   </div>
   <div class="col-auto">
-    <span class="text-muted small">checked {{ now_utc }} · auto-refresh 5s</span>
+    <span class="text-muted small">checked {{ now_utc | kst('%H:%M:%S', true) }} · auto-refresh 5s</span>
   </div>
 </div>
 {% endblock %}
@@ -134,7 +134,7 @@
             <td class="text-muted">{{ row.cadence }}</td>
             <td class="font-monospace small">
               {% if row.next_run_iso %}
-              {{ row.next_run_iso[11:19] }} UTC
+              {{ row.next_run_iso | kst('%H:%M:%S') }} {{ kst_label }}
               {% else %}
               —
               {% endif %}
@@ -153,7 +153,7 @@
                 <span class="badge bg-blue-lt">{{ row.last.status }}</span>
                 {% endif %}
                 <div class="text-muted small font-monospace">
-                  {{ row.last.started_at.strftime('%H:%M:%S') }} UTC
+                  {{ row.last.started_at | kst('%H:%M:%S') }} {{ kst_label }}
                   {% if row.last.duration_ms is not none %}
                   · {{ row.last.duration_ms }}ms
                   {% endif %}
@@ -212,7 +212,7 @@
                     {% for ex in row.recent %}
                     <tr>
                       <td class="font-monospace small">
-                        {{ ex.started_at.strftime('%H:%M:%S') }}
+                        {{ ex.started_at | kst('%H:%M:%S') }}
                       </td>
                       <td>
                         {% if ex.status == 'ok' %}

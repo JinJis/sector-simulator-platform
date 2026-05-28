@@ -17,7 +17,7 @@
     <a href="/admin/vision-dashboard" class="btn btn-sm btn-outline-secondary">
       ← all visions
     </a>
-    <span class="text-muted small ms-2">refreshed {{ now_utc }} · auto 15s</span>
+    <span class="text-muted small ms-2">refreshed {{ now_utc | kst('%H:%M:%S', true) }} · auto 15s</span>
   </div>
 </div>
 {% endblock %}
@@ -52,7 +52,7 @@
               <div class="datagrid-title">Last recompute</div>
               <div class="datagrid-content small text-muted font-monospace">
                 {% if header.feasibility_as_of %}
-                {{ header.feasibility_as_of.strftime('%Y-%m-%d %H:%M UTC') }}
+                {{ header.feasibility_as_of | kst('%Y-%m-%d %H:%M', true) }}
                 {% else %}—{% endif %}
               </div>
             </div>
@@ -204,7 +204,7 @@
               {% if s.supply is not none %}{{ '%.1f'|format(s.supply) }}{% else %}—{% endif %}
             </td>
             <td class="text-end small text-muted font-monospace">
-              {{ s.as_of.strftime('%m-%d %H:%M') }}
+              {{ s.as_of | kst('%m-%d %H:%M') }}
             </td>
           </tr>
           {% endfor %}
@@ -251,7 +251,7 @@
           {% for r in runs %}
           <tr>
             <td class="font-monospace small">
-              {{ r.started_at.strftime('%m-%d %H:%M:%S') }}
+              {{ r.started_at | kst('%m-%d %H:%M:%S') }}
             </td>
             <td class="small">{{ r.fetcher_kind }}</td>
             <td>
@@ -329,7 +329,7 @@
             </a>
             <div class="text-muted small">
               <span class="font-monospace">{{ s.source_kind }}</span>
-              · {{ s.published_at.strftime('%m-%d %H:%M') }}
+              · {{ s.published_at | kst('%m-%d %H:%M') }}
             </div>
           </div>
           <div class="text-end small font-monospace text-muted" style="min-width: 110px;">

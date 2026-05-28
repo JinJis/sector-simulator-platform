@@ -19,11 +19,24 @@ from starlette.responses import Response
 
 from data_pipeline.admin import actions
 from data_pipeline.admin import models as m
+from data_pipeline.admin.format import KST_TYPE_FORMATTERS
 
 log = logging.getLogger(__name__)
 
 
-class SectorView(ModelView, model=m.Sector):
+class _BaseModelView(ModelView):
+    """Shared defaults for every cockpit ModelView. Currently just the
+    timezone-aware datetime formatter (KST or whatever
+    ADMIN_DISPLAY_TZ resolves to) so the operator never sees a raw
+    UTC timestamp in a list / details view."""
+
+    # SQLAdmin overrides BASE_FORMATTERS per-view, so we hand it the
+    # full map (None + bool + datetime) — losing the bool tick/cross
+    # icon would be a regression.
+    column_type_formatters = KST_TYPE_FORMATTERS
+
+
+class SectorView(_BaseModelView, model=m.Sector):
     name = "Vision"
     name_plural = "Visions"
     icon = "fa-solid fa-bullseye"
@@ -75,7 +88,7 @@ class SectorView(ModelView, model=m.Sector):
         )
 
 
-class CapabilityView(ModelView, model=m.Capability):
+class CapabilityView(_BaseModelView, model=m.Capability):
     name = "Capability"
     name_plural = "Capabilities"
     icon = "fa-solid fa-cubes"
@@ -136,7 +149,7 @@ class CapabilityView(ModelView, model=m.Capability):
         )
 
 
-class CapabilityScoreView(ModelView, model=m.CapabilityScore):
+class CapabilityScoreView(_BaseModelView, model=m.CapabilityScore):
     name = "Capability score"
     name_plural = "Capability scores"
     icon = "fa-solid fa-chart-line"
@@ -159,7 +172,7 @@ class CapabilityScoreView(ModelView, model=m.CapabilityScore):
     can_delete = False
 
 
-class SignalView(ModelView, model=m.Signal):
+class SignalView(_BaseModelView, model=m.Signal):
     name = "Signal"
     name_plural = "Signals"
     icon = "fa-solid fa-tower-broadcast"
@@ -185,7 +198,7 @@ class SignalView(ModelView, model=m.Signal):
     can_delete = False
 
 
-class RiskView(ModelView, model=m.Risk):
+class RiskView(_BaseModelView, model=m.Risk):
     name = "Risk"
     name_plural = "Risks"
     icon = "fa-solid fa-triangle-exclamation"
@@ -225,7 +238,7 @@ class RiskView(ModelView, model=m.Risk):
         )
 
 
-class ActorView(ModelView, model=m.Actor):
+class ActorView(_BaseModelView, model=m.Actor):
     name = "Actor"
     name_plural = "Actors"
     icon = "fa-solid fa-building"
@@ -251,7 +264,7 @@ class ActorView(ModelView, model=m.Actor):
     can_delete = False
 
 
-class VisionActorView(ModelView, model=m.VisionActor):
+class VisionActorView(_BaseModelView, model=m.VisionActor):
     name = "Vision↔Actor"
     name_plural = "Vision↔Actors"
     icon = "fa-solid fa-link"
@@ -294,7 +307,7 @@ class VisionActorView(ModelView, model=m.VisionActor):
         )
 
 
-class CapabilityActorView(ModelView, model=m.CapabilityActor):
+class CapabilityActorView(_BaseModelView, model=m.CapabilityActor):
     name = "Capability↔Actor"
     name_plural = "Capability↔Actors"
     icon = "fa-solid fa-link"
@@ -313,7 +326,7 @@ class CapabilityActorView(ModelView, model=m.CapabilityActor):
     can_delete = False
 
 
-class EconomicsDatapointView(ModelView, model=m.EconomicsDatapoint):
+class EconomicsDatapointView(_BaseModelView, model=m.EconomicsDatapoint):
     name = "Economics datapoint"
     name_plural = "Economics datapoints"
     icon = "fa-solid fa-coins"
@@ -339,7 +352,7 @@ class EconomicsDatapointView(ModelView, model=m.EconomicsDatapoint):
     can_delete = False
 
 
-class VisionFeasibilityView(ModelView, model=m.VisionFeasibility):
+class VisionFeasibilityView(_BaseModelView, model=m.VisionFeasibility):
     name = "Feasibility snapshot"
     name_plural = "Feasibility snapshots"
     icon = "fa-solid fa-gauge-high"
@@ -365,7 +378,7 @@ class VisionFeasibilityView(ModelView, model=m.VisionFeasibility):
     can_delete = False
 
 
-class CrawlRunView(ModelView, model=m.CrawlRun):
+class CrawlRunView(_BaseModelView, model=m.CrawlRun):
     name = "Crawl run"
     name_plural = "Crawl runs"
     icon = "fa-solid fa-spinner"
@@ -393,7 +406,7 @@ class CrawlRunView(ModelView, model=m.CrawlRun):
     can_delete = False
 
 
-class CommunityProposalView(ModelView, model=m.CommunityProposal):
+class CommunityProposalView(_BaseModelView, model=m.CommunityProposal):
     name = "Community proposal"
     name_plural = "Community proposals"
     icon = "fa-solid fa-comments"
@@ -450,7 +463,7 @@ class CommunityProposalView(ModelView, model=m.CommunityProposal):
         )
 
 
-class UserView(ModelView, model=m.User):
+class UserView(_BaseModelView, model=m.User):
     name = "User"
     name_plural = "Users"
     icon = "fa-solid fa-user"
@@ -474,7 +487,7 @@ class UserView(ModelView, model=m.User):
     can_delete = False
 
 
-class AuditLogView(ModelView, model=m.AuditLog):
+class AuditLogView(_BaseModelView, model=m.AuditLog):
     name = "Audit log"
     name_plural = "Audit log"
     icon = "fa-solid fa-clipboard-list"

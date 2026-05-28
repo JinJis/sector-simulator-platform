@@ -26,6 +26,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from data_pipeline.admin.auth import AdminAuth
+from data_pipeline.admin.format import register_jinja_filters
 from data_pipeline.admin.queue_view import QueueView
 from data_pipeline.admin.views import ALL_VIEWS
 from data_pipeline.admin.vision_builder_view import VisionBuilderView
@@ -171,6 +172,11 @@ def mount_admin(app: FastAPI) -> Admin | None:
     # back-reference so `admin/actions.py :: parent_app(request)` can
     # walk back to the outer app state at action time.
     admin.admin.state.parent_app = app
+
+    # Register the `kst` Jinja filter + `kst_label` global so custom
+    # templates can render every datetime in the operator's display
+    # timezone (ADMIN_DISPLAY_TZ, default Asia/Seoul).
+    register_jinja_filters(admin.templates.env)
 
     for view_cls in ALL_VIEWS:
         admin.add_view(view_cls)
