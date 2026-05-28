@@ -1,21 +1,18 @@
 """Tests for the crawl4ai news adapters (Yahoo / Naver / Finviz).
 
 Real crawl4ai isn't exercised — it pulls in playwright + chromium which
-would balloon CI. Instead we monkeypatch `crawl4ai.AsyncWebCrawler` +
-`JsonCssExtractionStrategy` with stubs that return canned `list_pages`
-+ `article_bodies` per URL. The tests assert:
+would balloon CI. Instead we monkeypatch `crawl4ai.AsyncWebCrawler` with
+a stub whose `arun` returns canned markdown per URL.
 
-  - Per-vision ticker map drives which list URLs get hit.
-  - Keyword filtering culls articles whose title doesn't match.
-  - Empty / unmapped visions no-op (zero crawls, zero RawSignals).
-  - Missing crawl4ai package degrades gracefully (returns []).
+M56-5: extraction switched from CSS selectors to markdown regex (Yahoo
+DOM redesign broke the selectors). The fake now renders each test's
+`list_pages[url] = [(title, href), ...]` as a stream of `[title](href)`
+markdown links — exactly what the production adapters now parse.
 """
 
 from __future__ import annotations
 
-import json
 import sys
-from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -36,18 +33,22 @@ from data_pipeline.signals import (
 
 @dataclass
 class _FakePage:
-    extracted_content: Any = None
+    """Mirrors the bits of crawl4ai's CrawlResult our extractors read.
+    Markdown only — the new adapters don't use extracted_content."""
+
     markdown: str = "<article body markdown>"
 
 
 @dataclass
 class _FakeCrawler:
-    """Stand-in for crawl4ai.AsyncWebCrawler. Lookup table by URL:
-    `list_pages[url] = list[dict]` for list-scrape pages,
-    `bodies[url] = str` for article-scrape pages. Records every
-    `arun` call into `calls` so tests can assert URLs hit."""
+    """Stand-in for crawl4ai.AsyncWebCrawler. Lookup tables by URL:
+      - `list_pages[url] = list[(title, href)]` — list-scrape pages
+        get rendered as `[title](href)` markdown lines.
+      - `bodies[url] = str` — article-scrape pages return that string
+        verbatim as `.markdown`.
+    Records every `arun` call into `calls` so tests can assert URLs hit."""
 
-    list_pages: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    list_pages: dict[str, list[Any]] = field(default_factory=dict)
     bodies: dict[str, str] = field(default_factory=dict)
     calls: list[str] = field(default_factory=list)
 
@@ -60,19 +61,21 @@ class _FakeCrawler:
     async def arun(self, *, url: str, **_: Any) -> _FakePage:
         self.calls.append(url)
         if url in self.list_pages:
-            return _FakePage(extracted_content=json.dumps(self.list_pages[url]))
+            entries = self.list_pages[url]
+            lines: list[str] = []
+            for entry in entries:
+                # Accept either the new (title, href) tuple form or the
+                # old {"title": ..., "url": ...} dict form for back-compat.
+                if isinstance(entry, dict):
+                    title = str(entry.get("title", ""))
+                    href = str(entry.get("url", ""))
+                else:
+                    title, href = entry
+                lines.append(f"[{title}]({href})")
+            return _FakePage(markdown="\n".join(lines))
         if url in self.bodies:
             return _FakePage(markdown=self.bodies[url])
-        # Unknown URL → empty extraction
-        return _FakePage(extracted_content=None, markdown="")
-
-
-class _FakeStrategy:
-    """JsonCssExtractionStrategy stand-in — we don't care about
-    the schema in tests, only that the constructor accepts a dict."""
-
-    def __init__(self, schema: dict[str, Any]) -> None:
-        self.schema = schema
+        return _FakePage(markdown="")
 
 
 @pytest.fixture
@@ -87,11 +90,7 @@ def fake_crawl4ai(monkeypatch: pytest.MonkeyPatch):
     fake_pkg = type(sys)("crawl4ai")
     fake_pkg.AsyncWebCrawler = lambda **_: crawler  # type: ignore[attr-defined]
 
-    fake_strat_mod = type(sys)("crawl4ai.extraction_strategy")
-    fake_strat_mod.JsonCssExtractionStrategy = _FakeStrategy  # type: ignore[attr-defined]
-
     monkeypatch.setitem(sys.modules, "crawl4ai", fake_pkg)
-    monkeypatch.setitem(sys.modules, "crawl4ai.extraction_strategy", fake_strat_mod)
     yield crawler
 
 

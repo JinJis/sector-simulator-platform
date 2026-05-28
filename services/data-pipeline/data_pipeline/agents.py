@@ -76,6 +76,36 @@ class AgentClient(Protocol):
     ) -> SignalExtractorRunResult: ...
 
 
+# Length caps enforced by `agent_orchestration.schemas.SignalExtractorRequest`.
+# We clip on the way out so the four fetcher call-sites (digest, actor,
+# risk, capability) don't each have to remember — and so the wire payload
+# is always inside the schema. DR digest outputs in particular routinely
+# blow past `signal_summary`'s 4 KB cap (industry summaries → ~10 KB)
+# which manifests as a 422 from agent-orchestration before any LLM call
+# is made.
+_EXTRACTOR_LIMITS: dict[str, int] = {
+    "signal_title": 500,
+    "signal_summary": 4000,
+    "capability_description": 2000,
+    "capability_rationale": 2000,
+}
+
+
+def _clip_for_extractor(req: SignalExtractorRequest) -> SignalExtractorRequest:
+    """Truncate every length-bounded text field so it fits the
+    SignalExtractorRequest schema. Truncation is lossy on purpose:
+    the haiku-tier extractor only needs enough context to decide
+    per-dimension deltas, not the full body."""
+    overrides: dict[str, Any] = {}
+    for field, limit in _EXTRACTOR_LIMITS.items():
+        value = getattr(req, field, None)
+        if isinstance(value, str) and len(value) > limit:
+            overrides[field] = value[: limit - 1].rstrip() + "…"
+    if not overrides:
+        return req
+    return req.model_copy(update=overrides)
+
+
 @dataclass
 class HttpAgentClient:
     """Production client. Tests inject a fake `AgentClient`."""
@@ -87,8 +117,9 @@ class HttpAgentClient:
         self, req: SignalExtractorRequest
     ) -> SignalExtractorRunResult:
         url = f"{self.base_url.rstrip('/')}/signal-extractor/score"
+        clipped = _clip_for_extractor(req)
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            resp = await client.post(url, json=req.model_dump(mode="json"))
+            resp = await client.post(url, json=clipped.model_dump(mode="json"))
             resp.raise_for_status()
             payload: Any = resp.json()
         return SignalExtractorRunResult.model_validate(payload)

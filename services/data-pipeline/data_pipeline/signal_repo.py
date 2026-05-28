@@ -10,7 +10,7 @@ Used by data_pipeline.jobs.signal_ingest.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 # VisionTickers lives in data_pipeline.signals.tickers so the crawl4ai
@@ -384,6 +384,15 @@ class PostgresSignalRepository:
         return VisionTickers(us=tuple(us), kr=tuple(kr))
 
     async def upsert_signal(self, signal: SignalInsert) -> str:
+        # `signals.published_at` is `timestamp` (no tz) since Prisma's
+        # default DateTime maps that way. Adapters return aware datetimes
+        # (arxiv parses RFC 3339, crawl4ai uses datetime.now(UTC)), so
+        # asyncpg refuses to bind. Convert to naive UTC here — every
+        # write site is in UTC so this is correct, not lossy. Same fix
+        # pattern as M56-1 in orchestrator.
+        pub = signal.published_at
+        if pub is not None and pub.tzinfo is not None:
+            pub = pub.astimezone(UTC).replace(tzinfo=None)
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 _UPSERT_SIGNAL_SQL,
@@ -395,7 +404,7 @@ class PostgresSignalRepository:
                 signal.source_id_ext,
                 signal.title,
                 signal.summary,
-                signal.published_at,
+                pub,
                 signal.delta_technical,
                 signal.delta_economic,
                 signal.delta_regulatory,

@@ -240,7 +240,12 @@ async def pick_for_tick(
     """Build candidates → score → greedy top-K under per-vision $/day cap."""
     pinned = pinned_visions or set()
     now = now or datetime.now(UTC)
-    since = now - timedelta(hours=24)
+    # `daily_cost_usd_since` binds `since` against `crawl_runs.ended_at`,
+    # a Postgres `timestamp` (no tz) since Prisma's default DateTime
+    # maps that way. asyncpg refuses to bind an aware datetime to a
+    # naive column — strip the tz here so the parameter shape matches.
+    # All comparisons are in UTC either way (we always write `now(UTC)`).
+    since = (now - timedelta(hours=24)).replace(tzinfo=None)
 
     visions = await reader.list_vision_slugs()
     all_cands: list[Candidate] = []

@@ -170,18 +170,18 @@ async def run_signal_ingest(
     )
     if sources is None:
         # Default lineup for the manual /jobs/signal-ingest sweep:
-        # arXiv + USPTO + the three crawl4ai news adapters. NewsAPI was
-        # dropped from the default in the grounded-research overhaul —
-        # crawl4ai over Yahoo/Naver/Finviz covers the news surface
-        # without needing an API key. Each adapter self-skips when its
-        # prerequisites are missing (USPTO env, crawl4ai package, etc.).
+        # arXiv + the three crawl4ai news adapters. USPTO is gated by
+        # ENABLE_USPTO since the bulk endpoint isn't usable from every
+        # network (M56-4). NewsAPI was dropped earlier — crawl4ai over
+        # Yahoo/Naver/Finviz covers the news surface without an API key.
         sources = [
             ArxivSource(),
-            UsptoSource(),
             Crawl4aiYahooSource(),
             Crawl4aiFinvizSource(),
             Crawl4aiNaverSource(),
         ]
+        if os.environ.get("ENABLE_USPTO", "").lower() in {"1", "true", "yes", "on"}:
+            sources.insert(1, UsptoSource())
     if agent_url is None:
         agent_url = os.environ.get("AGENT_ORCHESTRATION_URL", _DEFAULT_AGENT_URL)
 

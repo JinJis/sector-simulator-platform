@@ -36,6 +36,7 @@ The adapters degrade gracefully:
 from __future__ import annotations
 
 import logging
+import re
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable, ClassVar
 
@@ -105,8 +106,17 @@ class _Crawl4aiBase:
     def _per_vision_urls(self, tickers: VisionTickers) -> list[str]:
         raise NotImplementedError
 
-    def _list_extraction_schema(self) -> dict[str, Any]:
-        """Schema for `JsonCssExtractionStrategy` — site-specific."""
+    def _extract_articles_from_markdown(
+        self, markdown: str
+    ) -> list[tuple[str, str]]:
+        """Return [(title, url)] from a list page's rendered markdown.
+
+        We switched from JsonCssExtractionStrategy to markdown regex in
+        M56-5: Yahoo Finance redesigned the news list DOM and the old
+        `li[data-test="news-list-item"]` selector matches zero rows.
+        Markdown-based extraction is less brittle — each subclass picks
+        a regex that targets its site's article URL pattern.
+        """
         raise NotImplementedError
 
     async def fetch(
@@ -145,9 +155,6 @@ class _Crawl4aiBase:
             return []
         try:
             from crawl4ai import AsyncWebCrawler  # noqa: PLC0415
-            from crawl4ai.extraction_strategy import (  # noqa: PLC0415
-                JsonCssExtractionStrategy,
-            )
         except ImportError:
             log.warning(
                 "%s crawl4ai not installed — skipped (pip install crawl4ai)",
@@ -165,9 +172,11 @@ class _Crawl4aiBase:
 
         # One AsyncWebCrawler instance reused across list + body scrapes
         # — shares the underlying playwright browser context, much faster.
+        # M56-5: list extraction is now markdown-regex per subclass; the
+        # CSS extraction strategy was brittle (Yahoo's news-list DOM
+        # changes silently broke it).
         results: list[RawSignal] = []
         seen_urls: set[str] = set()
-        list_strategy = JsonCssExtractionStrategy(self._list_extraction_schema())
         list_pages_ok = 0
         articles_seen = 0
         articles_matched = 0
@@ -176,25 +185,23 @@ class _Crawl4aiBase:
         async with AsyncWebCrawler(verbose=False) as crawler:
             for url in list_urls:
                 log.info("%s list-page → %s", tag, url)
-                page = await _crawl_url(
-                    crawler,
-                    url,
-                    bypass_cache=True,
-                    extraction_strategy=list_strategy,
-                )
-                if page is None or not getattr(page, "extracted_content", None):
+                page = await _crawl_url(crawler, url, bypass_cache=True)
+                markdown = getattr(page, "markdown", None) or "" if page else ""
+                if not markdown:
                     log.info("%s list-page empty: %s", tag, url)
                     continue
-                articles = _safe_json(page.extracted_content)
-                if not isinstance(articles, list):
+                articles = self._extract_articles_from_markdown(markdown)
+                if not articles:
+                    log.info(
+                        "%s list-page yielded 0 articles (md %d chars): %s",
+                        tag,
+                        len(markdown),
+                        url,
+                    )
                     continue
                 list_pages_ok += 1
-                for art in articles[: max_results * 3]:  # over-fetch; filter below
+                for title, href in articles[: max_results * 3]:
                     articles_seen += 1
-                    if not isinstance(art, dict):
-                        continue
-                    href = str(art.get("url") or "").strip()
-                    title = str(art.get("title") or "").strip()
                     if not href or not title:
                         continue
                     if href in seen_urls:
@@ -268,79 +275,88 @@ class Crawl4aiYahooSource(_Crawl4aiBase):
     """Yahoo Finance per-ticker news list. URL pattern:
     `https://finance.yahoo.com/quote/{TICKER}/news`.
 
-    Yahoo's news list is rendered server-side with stable CSS — the
-    li[data-test="news-list-item"] selector has been steady for years.
-    Article bodies are dynamic-loaded but crawl4ai's markdown
-    converter handles them fine.
+    Yahoo redesigned the news-list DOM in mid-2026; the previous
+    `li[data-test="news-list-item"]` selector matches zero rows now.
+    We extract from the rendered markdown instead — Yahoo article
+    URLs follow the stable `https://finance.yahoo.com/{news,m}/<slug>`
+    pattern, which we can pull with a one-line regex against the
+    full-page markdown.
     """
 
     source_kind: ClassVar[str] = "news"
     name: ClassVar[str] = "crawl4ai-yahoo"
 
+    # Two URL flavors Yahoo serves on the per-ticker news page:
+    #   /news/<slug>            — Yahoo-authored news article
+    #   /m/<uuid>/<slug>        — partner/syndicated article
+    # Both are linked from the list page; the chrome links (Skip to nav
+    # etc.) are filtered out by the title-min-length guard.
+    _YAHOO_LINK_RE = re.compile(
+        r"\[([^\]]{20,200})\]\((https?://finance\.yahoo\.com/(?:news|m)/[^\)#]+)\)"
+    )
+
     def _per_vision_urls(self, tickers: VisionTickers) -> list[str]:
         return [f"https://finance.yahoo.com/quote/{t}/news" for t in tickers.us]
 
-    def _list_extraction_schema(self) -> dict[str, Any]:
-        return {
-            "name": "yahoo_news_list",
-            "baseSelector": 'li[data-test="news-list-item"]',
-            "fields": [
-                {"name": "title", "selector": "h3", "type": "text"},
-                {
-                    "name": "url",
-                    "selector": "a",
-                    "type": "attribute",
-                    "attribute": "href",
-                },
-            ],
-        }
+    def _extract_articles_from_markdown(
+        self, markdown: str
+    ) -> list[tuple[str, str]]:
+        return _dedupe_links(self._YAHOO_LINK_RE.findall(markdown))
 
 
 class Crawl4aiFinvizSource(_Crawl4aiBase):
     """Finviz per-ticker news table. URL pattern:
     `https://finviz.com/quote.ashx?t={TICKER}`.
 
-    Finviz is great for quick URL harvest: every ticker page has a
-    plain HTML `<table class="news-table">` with one row per article.
-    No JS rendering needed.
+    Finviz aggregates external news for each ticker — the markdown
+    contains a mix of internal finviz links + external article links
+    from yahoo, barrons, digitimes, reuters, etc. Pull anything that's
+    NOT a finviz.com URL and has a descriptive title.
     """
 
     source_kind: ClassVar[str] = "news"
     name: ClassVar[str] = "crawl4ai-finviz"
 
+    _MD_LINK_RE = re.compile(r"\[([^\]]{15,200})\]\((https?://[^\)#]+)\)")
+
     def _per_vision_urls(self, tickers: VisionTickers) -> list[str]:
         return [f"https://finviz.com/quote.ashx?t={t}" for t in tickers.us]
 
-    def _list_extraction_schema(self) -> dict[str, Any]:
-        return {
-            "name": "finviz_news_table",
-            "baseSelector": "table.news-table tr",
-            "fields": [
-                {"name": "title", "selector": "a.tab-link-news", "type": "text"},
-                {
-                    "name": "url",
-                    "selector": "a.tab-link-news",
-                    "type": "attribute",
-                    "attribute": "href",
-                },
-            ],
-        }
+    def _extract_articles_from_markdown(
+        self, markdown: str
+    ) -> list[tuple[str, str]]:
+        candidates = self._MD_LINK_RE.findall(markdown)
+        # Drop finviz internal nav + asset URLs; keep real outbound news.
+        external = [
+            (t.strip(), u)
+            for (t, u) in candidates
+            if "finviz.com" not in u and not _looks_like_asset(u)
+        ]
+        return _dedupe_links(external)
 
 
 class Crawl4aiNaverSource(_Crawl4aiBase):
     """Naver Finance per-ticker news list. URL pattern:
     `https://finance.naver.com/item/news.naver?code={CODE}`.
 
-    Korean stock codes are 6-digit numerics (no .KS suffix). The page
-    has frame-embedded tables; the list lives in
-    `#news_list_area a.tit` (titles) with `href` carrying the article
-    URL. KR keywords (한글) match against the title — for visions whose
-    keyword set is English-only, this source yields zero matches and
-    no-ops cleanly.
+    Korean stock codes are 6-digit numerics (no .KS suffix). The
+    redesigned page wraps the list in an iframe whose markdown
+    extraction is brittle; we fall back to a markdown regex that
+    catches both naver-internal news (`news_read.naver`) and external
+    syndicated articles. KR keywords (한글) match titles for visions
+    whose keyword set is Korean; English-only keyword sets no-op.
     """
 
     source_kind: ClassVar[str] = "news"
     name: ClassVar[str] = "crawl4ai-naver"
+
+    # Match naver.com URLs with multi-level subdomains (n.news.naver.com,
+    # m.finance.naver.com, …). Don't try to filter on "news" in the URL
+    # — naver's article URLs are opaque hashes; we trust the keyword
+    # filter on the title to cull non-relevant rows.
+    _NAVER_LINK_RE = re.compile(
+        r"\[([^\]]{10,200})\]\((https?://(?:[a-z0-9-]+\.)*naver\.com/[^\)#]+)\)"
+    )
 
     def _per_vision_urls(self, tickers: VisionTickers) -> list[str]:
         return [
@@ -348,20 +364,39 @@ class Crawl4aiNaverSource(_Crawl4aiBase):
             for c in tickers.kr
         ]
 
-    def _list_extraction_schema(self) -> dict[str, Any]:
-        return {
-            "name": "naver_news_list",
-            "baseSelector": "table.type5 tr",
-            "fields": [
-                {"name": "title", "selector": "td.title a", "type": "text"},
-                {
-                    "name": "url",
-                    "selector": "td.title a",
-                    "type": "attribute",
-                    "attribute": "href",
-                },
-            ],
-        }
+    def _extract_articles_from_markdown(
+        self, markdown: str
+    ) -> list[tuple[str, str]]:
+        return _dedupe_links(self._NAVER_LINK_RE.findall(markdown))
+
+
+# Markdown-extraction helpers ----------------------------------------------
+
+
+def _dedupe_links(pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Order-preserving dedupe by URL."""
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+    for title, url in pairs:
+        url = url.strip()
+        title = title.strip()
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        out.append((title, url))
+    return out
+
+
+_ASSET_EXTS = (
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
+    ".css", ".js", ".ico", ".woff", ".woff2",
+)
+
+
+def _looks_like_asset(url: str) -> bool:
+    """Filter out image/font/style URLs that show up in markdown."""
+    u = url.lower().split("?", 1)[0]
+    return any(u.endswith(ext) for ext in _ASSET_EXTS)
 
 
 __all__ = [

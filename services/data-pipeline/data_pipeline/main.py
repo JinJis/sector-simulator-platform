@@ -778,14 +778,21 @@ async def _run_research_ingest_hourly(*, app: FastAPI):  # noqa: ANN201
         log.warning("[cron research_ingest_hourly] signal_repo unset — skipping")
         return None
     visions: list[str] = app.state.signal_ingest_visions
+    # USPTO disabled (M56-4) — operator can't authenticate against the
+    # API. Set ENABLE_USPTO=1 in .env to re-arm; otherwise arxiv-only.
+    # The adapter file stays on disk for the eventual re-enable.
+    sources = [ArxivSource()]
+    if os.environ.get("ENABLE_USPTO", "").lower() in {"1", "true", "yes", "on"}:
+        sources.append(UsptoSource())
     log.info(
-        "[cron research_ingest_hourly] START visions=%s sources=arxiv,uspto",
+        "[cron research_ingest_hourly] START visions=%s sources=%s",
         ",".join(visions) or "<none>",
+        ",".join(s.name for s in sources),
     )
     stats = await run_signal_ingest(
         sector_slugs=visions,
         repo=repo,
-        sources=[ArxivSource(), UsptoSource()],
+        sources=sources,
         lookback_days=3,
         per_capability_limit=10,
     )

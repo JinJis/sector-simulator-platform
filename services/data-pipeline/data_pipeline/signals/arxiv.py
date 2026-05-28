@@ -24,7 +24,10 @@ from .base import RawSignal
 
 log = logging.getLogger(__name__)
 
-ARXIV_ENDPOINT = "http://export.arxiv.org/api/query"
+# arxiv silently moved to https-only (issues 301 from the http URL).
+# httpx doesn't follow redirects by default, so the old http:// host
+# returned 0 signals on every fetch. Pin https.
+ARXIV_ENDPOINT = "https://export.arxiv.org/api/query"
 
 # Atom XML namespace.
 _NS = {
