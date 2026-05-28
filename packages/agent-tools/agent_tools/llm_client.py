@@ -110,6 +110,50 @@ def _is_anthropic_tier(tier: ModelTier) -> bool:
     return tier == "opus"
 
 
+def _is_constraint_too_tall(exc: Exception) -> bool:
+    """True when the exception is the Vertex/Gemini 'response_schema
+    too complex' FST-overflow error. We match on substring of the
+    serialized error rather than the typed `ClientError` because the
+    SDK occasionally raises through wrapping layers (httpx → genai)
+    and the typed class isn't always preserved."""
+    msg = str(exc).lower()
+    return "constraint is too tall" in msg or "constraint is too big" in msg
+
+
+def _parse_text_as_pydantic(
+    *, text: str, response_model: type[T],
+) -> BaseModel | None:
+    """Best-effort: parse `text` as JSON + validate via Pydantic.
+    Tolerates the model wrapping its output in a markdown code fence
+    (``` or ```json) which Gemini does when not under strict schema
+    enforcement. Returns None on either JSON parse or Pydantic
+    validation failure — caller branches on parsed-is-None."""
+    raw = text.strip()
+    if raw.startswith("```"):
+        raw = raw.lstrip("`")
+        if raw.startswith("json"):
+            raw = raw[4:]
+        if raw.endswith("```"):
+            raw = raw[:-3]
+        raw = raw.strip()
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError) as exc:
+        sys.stderr.write(
+            f"llm_client: post-retry JSON parse failed "
+            f"(model={response_model.__name__}, err={exc})\n"
+        )
+        return None
+    try:
+        return response_model.model_validate(data)
+    except ValidationError as exc:
+        sys.stderr.write(
+            f"llm_client: post-retry Pydantic validation failed "
+            f"(model={response_model.__name__}, errors={exc.error_count()})\n"
+        )
+        return None
+
+
 # Effort hints retained for API compatibility; Gemini-only. The
 # Anthropic path ignores the value today (Claude doesn't expose a
 # matching knob).
@@ -556,11 +600,46 @@ class LLMClient:
         if tools:
             config["tools"] = list(tools)
 
-        response = self._genai.models.generate_content(
-            model=model,
-            contents=contents,
-            config=config,
-        )
+        try:
+            response = self._genai.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config,
+            )
+        except Exception as exc:
+            # Gemini's structured-output enforcement compiles the
+            # response_schema into a Finite State Transducer constraint
+            # whose serialized size has a hard ceiling (~5888 states as
+            # of 2026-05). Complex Pydantic schemas (nested arrays of
+            # bounded strings, regex patterns, deep enums) routinely
+            # blow past that and Vertex returns:
+            #
+            #   400 INVALID_ARGUMENT … Constraint is too tall: NNNNN
+            #   (vs max of 5888); see go/constraint-is-too-big; Failed
+            #   while executing Op 'Prefill'
+            #
+            # Recover by retrying without `response_schema` — keep
+            # `response_mime_type="application/json"` so the model
+            # still emits JSON, and validate via Pydantic post-parse.
+            # Caller still gets a `parsed` Pydantic instance back; the
+            # difference is purely server-side enforcement vs client-
+            # side validation. If the second call ALSO fails, propagate.
+            if response_model is not None and _is_constraint_too_tall(exc):
+                sys.stderr.write(
+                    f"llm_client: Gemini rejected response_schema as too "
+                    f"complex (model={response_model.__name__}); retrying "
+                    f"without schema enforcement (post-parse with "
+                    f"Pydantic)\n"
+                )
+                retry_config = dict(config)
+                retry_config.pop("response_schema", None)
+                response = self._genai.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=retry_config,
+                )
+            else:
+                raise
 
         usage = self._extract_gemini_usage(response)
         priced = price_call(model=model, **usage)
@@ -568,6 +647,15 @@ class LLMClient:
 
         text = self._extract_gemini_text(response)
         parsed = self._extract_gemini_parsed(response, response_model)
+        if parsed is None and response_model is not None and text:
+            # Retry path (or any case where Gemini returned text-only
+            # JSON despite a response_model being requested) — parse
+            # the text as JSON and validate via Pydantic. Tolerate
+            # markdown code-fence wrapping that the model sometimes
+            # emits when it's not under strict schema enforcement.
+            parsed = _parse_text_as_pydantic(
+                text=text, response_model=response_model,
+            )
         stop_reason = self._extract_gemini_stop_reason(response)
 
         return LLMCallResult(

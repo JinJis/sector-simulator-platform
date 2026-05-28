@@ -14,11 +14,11 @@ Two layers here:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---- Domain: decomposition output ----------------------------------------
@@ -866,15 +866,37 @@ class CatalystDraft(BaseModel):
     sector-service / agent-orchestration HTTP boundary stays free of
     timezone gotchas (sector-service parses to Date)."""
 
+    # `expected_at` was previously declared with `pattern=r"^\d{4}-\d{2}
+    # -\d{2}$"`. Vertex/Gemini compiles every response_schema regex into
+    # the FST constraint for structured output, and that one pattern by
+    # itself adds several hundred FST states — combined with the rest
+    # of the ThesisCatalystsDraft schema it routinely blew past Gemini's
+    # 5888-state hard cap and the call failed with "Constraint is too
+    # tall" at prefill. Validate the format via a field_validator
+    # instead; runs client-side, costs zero FST states.
     expected_at: str = Field(
-        ..., pattern=r"^\d{4}-\d{2}-\d{2}$",
-        description="ISO date (YYYY-MM-DD) the event is projected for",
+        ..., description="ISO date (YYYY-MM-DD) the event is projected for",
     )
     label: str = Field(..., min_length=5, max_length=200)
     capability_key: str | None = Field(default=None, max_length=64)
     side: Literal["bull", "bear", "neutral"]
     note: str | None = Field(default=None, max_length=400)
     source_url: str | None = Field(default=None, max_length=500)
+
+    @field_validator("expected_at")
+    @classmethod
+    def _check_iso_date(cls, v: str) -> str:
+        # The model frequently emits ISO datetimes ("2027-06-01T00:00:00Z")
+        # or month-only strings. Be permissive: accept anything starting
+        # with YYYY-MM-DD and trim the rest.
+        head = v[:10]
+        try:
+            date.fromisoformat(head)
+        except ValueError as exc:
+            raise ValueError(
+                f"expected_at must start with ISO date YYYY-MM-DD; got {v!r}"
+            ) from exc
+        return head
 
 
 class ThesisDrafterRequest(BaseModel):

@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+import pytest
 from pydantic import BaseModel
 
 from agent_tools import LLMClient, available_models
@@ -63,9 +64,16 @@ class _FakeModels:
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
         self.next_response: _FakeResponse | None = None
+        # Optional queue of exceptions to raise on successive calls;
+        # popped left-to-right. Lets a test simulate "first call throws
+        # constraint-too-tall, second call succeeds" — the wrapper's
+        # retry path.
+        self.exception_queue: list[Exception] = []
 
     def generate_content(self, **kwargs: Any) -> _FakeResponse:
         self.requests.append(kwargs)
+        if self.exception_queue:
+            raise self.exception_queue.pop(0)
         if self.next_response is not None:
             return self.next_response
         return _FakeResponse(
@@ -402,6 +410,115 @@ def test_opus_response_model_uses_tool_choice_with_schema() -> None:
     assert isinstance(result.parsed, Decomposition)
     assert result.parsed.drivers == ["d1"]
     assert result.parsed.intermediates == ["i1"]
+
+
+def test_gemini_retries_without_response_schema_on_constraint_too_tall() -> None:
+    """Vertex/Gemini compiles `response_schema` into an FST constraint
+    with a hard size cap (~5888 states). Nested schemas (e.g., the
+    Vision Builder's DataSourceSelector or ThesisDrafter) routinely
+    blow past that limit and the call fails with `400 INVALID_ARGUMENT
+    … Constraint is too tall: NNNNN (vs max of 5888)`. The wrapper
+    must retry without `response_schema` and validate via Pydantic
+    post-parse so the caller still gets a typed result back."""
+
+    class Item(BaseModel):
+        name: str
+        category: str
+
+    fake = _FakeGenAI()
+    # First call raises constraint-too-tall; second call (without
+    # response_schema) succeeds with raw-text JSON.
+    fake.models.exception_queue = [
+        RuntimeError(
+            "400 INVALID_ARGUMENT. Constraint is too tall: 13376 "
+            "(vs max of 5888); see go/constraint-is-too-big; Failed "
+            "while executing Op 'Prefill'"
+        )
+    ]
+    fake.models.next_response = _FakeResponse(
+        text='{"name": "alpha", "category": "x"}',
+        candidates=[
+            _FakeCandidate(
+                content=_FakeContent(
+                    parts=[_FakePart(text='{"name": "alpha", "category": "x"}')]
+                ),
+                finish_reason="STOP",
+            )
+        ],
+        usage_metadata=_FakeUsage(
+            prompt_token_count=100,
+            candidates_token_count=50,
+            thoughts_token_count=0,
+            cached_content_token_count=0,
+        ),
+    )
+    client = LLMClient(genai_client=fake)
+    result = client.call(
+        tier="sonnet",
+        system="sys",
+        user="hi",
+        response_model=Item,
+    )
+    # Two calls total — first was the failed strict call, second was
+    # the retry without response_schema.
+    assert len(fake.models.requests) == 2
+    first, second = fake.models.requests
+    assert "response_schema" in first["config"]
+    assert "response_schema" not in second["config"]
+    # Mime type stays so the model still emits JSON.
+    assert second["config"]["response_mime_type"] == "application/json"
+    # Wrapper post-parsed the text into a typed Pydantic instance.
+    assert isinstance(result.parsed, Item)
+    assert result.parsed.name == "alpha"
+    assert result.parsed.category == "x"
+
+
+def test_gemini_retry_tolerates_markdown_fence_around_json() -> None:
+    """Gemini sometimes wraps its JSON output in a ```json fence when
+    not under strict schema enforcement (because the system prompt
+    typically says "return JSON" — the model falls back to its
+    markdown habit). The post-retry parser must strip the fence."""
+
+    class Item(BaseModel):
+        name: str
+
+    fake = _FakeGenAI()
+    fake.models.exception_queue = [RuntimeError("Constraint is too tall: 9999 vs 5888")]
+    fake.models.next_response = _FakeResponse(
+        text='```json\n{"name": "fenced"}\n```',
+        candidates=[
+            _FakeCandidate(
+                content=_FakeContent(
+                    parts=[_FakePart(text='```json\n{"name": "fenced"}\n```')]
+                ),
+                finish_reason="STOP",
+            )
+        ],
+    )
+    client = LLMClient(genai_client=fake)
+    result = client.call(
+        tier="sonnet", system="sys", user="hi", response_model=Item,
+    )
+    assert isinstance(result.parsed, Item)
+    assert result.parsed.name == "fenced"
+
+
+def test_gemini_propagates_non_constraint_errors_unchanged() -> None:
+    """Constraint-too-tall is the only retry trigger — every other
+    Gemini error (auth, quota, timeout) should bubble up so the
+    caller sees the real failure mode."""
+
+    class Item(BaseModel):
+        name: str
+
+    fake = _FakeGenAI()
+    fake.models.exception_queue = [RuntimeError("403 PERMISSION_DENIED")]
+    client = LLMClient(genai_client=fake)
+    with pytest.raises(RuntimeError, match="PERMISSION_DENIED"):
+        client.call(
+            tier="sonnet", system="sys", user="hi", response_model=Item,
+        )
+    assert len(fake.models.requests) == 1  # no retry
 
 
 def test_opus_high_max_tokens_routes_through_streaming_api() -> None:
