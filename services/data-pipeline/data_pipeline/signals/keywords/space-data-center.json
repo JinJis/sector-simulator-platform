@@ -1,63 +1,81 @@
 {
-  "_": "Per-capability keyword sets for arXiv / patent / news search. Adapters join with OR. Tune iteratively in M39 once real signals start flowing (and false-positives surface). M46 community proposals (ADD_DATA_SOURCE) edit this file via approve→apply pipeline.",
+  "_": "Per-capability keyword sets for arXiv / patent / news search. Adapters OR-join. Broadened in P4 (2026-05-28) to catch papers using variant phrasing; SignalExtractor culls non-relevant hits during scoring.",
   "capabilities": {
     "rad_hard_compute": [
-      "radiation hardened semiconductor",
+      "radiation hardened",
+      "rad-hard",
       "single event upset",
-      "rad-hard processor",
-      "space radiation electronics",
+      "single event effect",
+      "SEU mitigation",
       "total ionizing dose",
-      "space-qualified GPU"
+      "space-qualified processor",
+      "space FPGA",
+      "rad-tolerant",
+      "space radiation electronics"
     ],
     "in_orbit_assembly": [
       "in-orbit assembly",
       "on-orbit servicing",
-      "space robotic assembly",
+      "on-orbit assembly",
+      "OSAM",
       "orbital construction",
-      "OSAM"
+      "space robotic assembly",
+      "satellite servicing",
+      "dual-arm space manipulator"
     ],
     "insurance_availability": [
       "space insurance",
       "orbital underwriting",
-      "satellite insurance market"
+      "satellite insurance",
+      "space underwriter",
+      "Lloyd's space"
     ],
     "tier3_reliability": [
-      "space data center reliability",
-      "orbital uptime",
+      "spacecraft reliability",
+      "satellite uptime",
       "in-orbit redundancy",
-      "spacecraft fault tolerance"
+      "spacecraft fault tolerance",
+      "space data center reliability",
+      "orbital uptime"
     ],
     "thermal_rejection": [
       "spacecraft radiator",
       "in-orbit thermal control",
+      "satellite thermal management",
       "vacuum heat rejection",
-      "space data center cooling",
-      "two-phase loop space"
+      "two-phase thermal loop",
+      "space data center cooling"
     ],
     "in_orbit_power": [
       "spacecraft solar array",
       "perovskite space solar",
-      "high efficiency space photovoltaics",
-      "satellite power generation"
+      "space photovoltaics",
+      "satellite power generation",
+      "deployable solar array",
+      "kW spacecraft power"
     ],
     "downlink_bandwidth": [
       "optical satellite communication",
       "laser downlink",
       "space-ground optical link",
-      "Ka-band satellite communication",
-      "Q-band satellite"
+      "Ka-band satellite",
+      "Q-band satellite",
+      "satellite Tbps",
+      "free-space optical"
     ],
     "spectrum_allocation": [
-      "ITU spectrum coordination",
-      "satellite spectrum allocation",
-      "orbital spectrum"
+      "ITU satellite spectrum",
+      "Ka-band allocation",
+      "spectrum coordination satellite",
+      "FCC satellite spectrum"
     ],
     "launch_economics": [
-      "reusable launch vehicle",
-      "Starship economics",
-      "launch cost per kilogram",
-      "small launch vehicle",
-      "rocket reusability"
+      "launch cost per kg",
+      "reusable rocket cost",
+      "Starship launch",
+      "Falcon 9 launch cost",
+      "launch vehicle economics",
+      "LEO launch price"
     ]
   }
 }
