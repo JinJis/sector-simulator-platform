@@ -126,9 +126,12 @@ def _parse_text_as_pydantic(
     """Best-effort: parse `text` as JSON + validate via Pydantic.
     Tolerates the model wrapping its output in a markdown code fence
     (``` or ```json) which Gemini does when not under strict schema
-    enforcement. Returns None on either JSON parse or Pydantic
-    validation failure — caller branches on parsed-is-None."""
+    enforcement. Also tolerates prose-prefix ("Here is the JSON: …{}")
+    by extracting the first top-level {…} or […] block. Returns None
+    on either JSON parse or Pydantic validation failure — caller
+    branches on parsed-is-None."""
     raw = text.strip()
+    # 1. Strip markdown code fence if present.
     if raw.startswith("```"):
         raw = raw.lstrip("`")
         if raw.startswith("json"):
@@ -136,22 +139,59 @@ def _parse_text_as_pydantic(
         if raw.endswith("```"):
             raw = raw[:-3]
         raw = raw.strip()
+    # 2. If there's prose around the JSON, isolate the first {…} or […]
+    #    block. The model occasionally writes "Here's the requested
+    #    output:\n{…}" even when explicitly told to return JSON-only.
+    if raw and raw[0] not in "{[":
+        for opener, closer in (("{", "}"), ("[", "]")):
+            start = raw.find(opener)
+            end = raw.rfind(closer)
+            if start != -1 and end > start:
+                raw = raw[start : end + 1]
+                break
     try:
         data = json.loads(raw)
     except (json.JSONDecodeError, ValueError) as exc:
         sys.stderr.write(
             f"llm_client: post-retry JSON parse failed "
-            f"(model={response_model.__name__}, err={exc})\n"
+            f"(model={response_model.__name__}, err={exc}, "
+            f"text_prefix={text[:200]!r})\n"
         )
         return None
     try:
         return response_model.model_validate(data)
     except ValidationError as exc:
+        # Surface the FIRST error's path + message so the operator can
+        # see what field tripped the validator. The previous log just
+        # said "errors=1" which is unactionable.
+        first = exc.errors()[0] if exc.errors() else {}
         sys.stderr.write(
             f"llm_client: post-retry Pydantic validation failed "
-            f"(model={response_model.__name__}, errors={exc.error_count()})\n"
+            f"(model={response_model.__name__}, errors={exc.error_count()}, "
+            f"first_error_path={'.'.join(str(p) for p in first.get('loc', ()))}, "
+            f"first_error={first.get('msg', '?')!r}, "
+            f"data_keys={list(data) if isinstance(data, dict) else type(data).__name__})\n"
         )
         return None
+
+
+def _schema_reminder_turn(response_model: type[BaseModel]) -> dict[str, Any]:
+    """Build a final user-role content block that hands the Pydantic
+    JSON Schema to the model. Used by the Gemini constraint-too-tall
+    retry path: without server-side enforcement the model only follows
+    the shape it can see in the prompt, so we hand it the spec
+    explicitly. Direct phrasing ("Return ONLY a JSON object …")
+    minimises the chance of prose preamble around the JSON."""
+    schema = response_model.model_json_schema()
+    schema_text = json.dumps(schema, indent=2, ensure_ascii=False)
+    body = (
+        "Return ONLY a single JSON object that validates against this "
+        f"JSON Schema (no prose, no markdown fence, no explanation):\n\n"
+        f"```json\n{schema_text}\n```\n\n"
+        f"Schema name: {response_model.__name__}. Every required field "
+        "must be present. Optional fields may be omitted or null."
+    )
+    return {"role": "user", "parts": [{"text": body}]}
 
 
 # Effort hints retained for API compatibility; Gemini-only. The
@@ -628,14 +668,24 @@ class LLMClient:
                 sys.stderr.write(
                     f"llm_client: Gemini rejected response_schema as too "
                     f"complex (model={response_model.__name__}); retrying "
-                    f"without schema enforcement (post-parse with "
-                    f"Pydantic)\n"
+                    f"with schema injected into prompt + post-parse via "
+                    f"Pydantic\n"
                 )
                 retry_config = dict(config)
                 retry_config.pop("response_schema", None)
+                # Inject the Pydantic JSON Schema into the prompt as a
+                # final user turn. Without server-side enforcement the
+                # model only follows the shape it can see — so we hand
+                # it the spec explicitly. The instruction is direct
+                # ("Return ONLY a JSON object …") because Gemini will
+                # otherwise prose-prefix its output and the post-parse
+                # JSON loader will fail.
+                retry_contents = list(contents) + [
+                    _schema_reminder_turn(response_model)
+                ]
                 response = self._genai.models.generate_content(
                     model=model,
-                    contents=contents,
+                    contents=retry_contents,
                     config=retry_config,
                 )
             else:

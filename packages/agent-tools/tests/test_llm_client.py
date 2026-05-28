@@ -473,6 +473,47 @@ def test_gemini_retries_without_response_schema_on_constraint_too_tall() -> None
     assert result.parsed.category == "x"
 
 
+def test_gemini_retry_injects_json_schema_into_prompt() -> None:
+    """Without server-side schema enforcement the model only follows
+    the shape it can see in the prompt. The retry path must append the
+    Pydantic JSON Schema + a direct "return ONLY JSON" instruction so
+    the model knows exactly what to produce — otherwise the post-parse
+    Pydantic validation fails with a missing/mistyped-field error and
+    the caller sees `parsed=None`."""
+
+    class Item(BaseModel):
+        name: str
+        category: str
+
+    fake = _FakeGenAI()
+    fake.models.exception_queue = [RuntimeError("Constraint is too tall: 9999 vs 5888")]
+    fake.models.next_response = _FakeResponse(
+        text='{"name": "alpha", "category": "x"}',
+        candidates=[
+            _FakeCandidate(
+                content=_FakeContent(
+                    parts=[_FakePart(text='{"name": "alpha", "category": "x"}')]
+                ),
+                finish_reason="STOP",
+            )
+        ],
+    )
+    client = LLMClient(genai_client=fake)
+    result = client.call(
+        tier="sonnet", system="sys", user="orig", response_model=Item,
+    )
+    assert isinstance(result.parsed, Item)
+    # The retry call (second request) must contain BOTH the original
+    # user turn AND the schema-reminder turn.
+    retry_contents = fake.models.requests[1]["contents"]
+    assert len(retry_contents) == 2, "retry should append one schema turn"
+    schema_turn_text = retry_contents[-1]["parts"][0]["text"]
+    assert "Return ONLY" in schema_turn_text
+    assert "Item" in schema_turn_text  # schema name
+    assert '"category"' in schema_turn_text  # field name from JSON schema
+    assert '"name"' in schema_turn_text
+
+
 def test_gemini_retry_tolerates_markdown_fence_around_json() -> None:
     """Gemini sometimes wraps its JSON output in a ```json fence when
     not under strict schema enforcement (because the system prompt
