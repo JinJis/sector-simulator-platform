@@ -67,16 +67,32 @@ services:
     command:
       - sh
       - -c
-      # M38 (pivot): seed:visions adds capabilities + risks + feasibility
-      # snapshots for the 3 reference visions. seed:equities + seed:equity-
-      # quotes are load-bearing for PredictionV2 (price anchor + vol calc).
-      # seed:equity-financials seeds the EquityFinancial table; the cron
-      # that refreshed it was removed in the data-pipeline merger
-      # (commit 4/6) but the seed stays as test fixture.
-      - "pnpm --filter @platform/db migrate:deploy && pnpm --filter @platform/db seed && pnpm --filter @platform/db seed:visions && pnpm --filter @platform/db seed:actors && pnpm --filter @platform/db seed:equities && pnpm --filter @platform/db seed:equity-quotes && pnpm --filter @platform/db seed:equity-financials"
+      # `migrate:deploy` is mandatory — schema must exist or every
+      # service downstream 500s. Demo seed (sectors / visions / actors
+      # / equities / quotes / financials) is gated on SEED_DATA so an
+      # operator can boot an empty DB to test ingest from scratch.
+      # Default `on` preserves the current "out-of-the-box demo" UX.
+      - |
+        set -e
+        pnpm --filter @platform/db migrate:deploy
+        if [ "${SEED_DATA:-on}" = "off" ]; then
+          echo "[db-migrate] SEED_DATA=off — skipping demo seed (visions/actors/equities)"
+        else
+          pnpm --filter @platform/db seed
+          pnpm --filter @platform/db seed:visions
+          pnpm --filter @platform/db seed:actors
+          pnpm --filter @platform/db seed:equities
+          pnpm --filter @platform/db seed:equity-quotes
+          pnpm --filter @platform/db seed:equity-financials
+        fi
     working_dir: /repo
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
+      # Default `on` keeps the demo seed running on first `up`. Set
+      # SEED_DATA=off in .env to boot with an empty DB (only the
+      # bot user + admin row from `seed` are skipped too — Vision
+      # Builder is the way to populate from scratch).
+      SEED_DATA: ${SEED_DATA:-on}
     depends_on:
       postgres:
         condition: service_healthy
@@ -97,11 +113,23 @@ services:
     command:
       - sh
       - -c
-      - "echo '[graph-bootstrap] waiting 5s for simulation-service…' && sleep 5 && pnpm --filter @platform/db seed:graph && pnpm --filter @platform/db seed:graph-equities"
+      # graph_nodes / graph_edges are derived from the in-code SimGraph
+      # literals — only useful when the demo sectors exist. Skip when
+      # SEED_DATA=off; bootstrap relies on those FKs.
+      - |
+        if [ "${SEED_DATA:-on}" = "off" ]; then
+          echo "[graph-bootstrap] SEED_DATA=off — skipping graph seed"
+          exit 0
+        fi
+        echo '[graph-bootstrap] waiting 5s for simulation-service…'
+        sleep 5
+        pnpm --filter @platform/db seed:graph
+        pnpm --filter @platform/db seed:graph-equities
     working_dir: /repo
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform_dev}
       SIMULATION_SERVICE_URL: http://simulation-service:8000
+      SEED_DATA: ${SEED_DATA:-on}
     depends_on:
       db-migrate:
         condition: service_completed_successfully
