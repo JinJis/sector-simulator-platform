@@ -35,7 +35,7 @@ def _wait_succeeded(app, wid: str, timeout: float = 3.0) -> dict:
 
 
 def test_research_route_smoke(app, fake_anthropic: Any) -> None:
-    fake_anthropic.messages.parsed_factory = lambda **kw: SAMPLE_RESEARCH
+    fake_anthropic.models.parsed_factory = lambda **kw: SAMPLE_RESEARCH
     r = app.post(
         "/workflows/research",
         json={
@@ -55,7 +55,7 @@ def test_research_route_smoke(app, fake_anthropic: Any) -> None:
 def test_driver_inference_route_smoke(
     app, fake_anthropic: Any, sample_decomposition: Any
 ) -> None:
-    fake_anthropic.messages.parsed_factory = lambda **kw: SAMPLE_DRIVER_INFERENCE
+    fake_anthropic.models.parsed_factory = lambda **kw: SAMPLE_DRIVER_INFERENCE
     r = app.post(
         "/workflows/driver-inference",
         json={
@@ -74,7 +74,7 @@ def test_driver_inference_route_smoke(
 def test_code_gen_route_smoke(
     app, fake_anthropic: Any, sample_decomposition: Any
 ) -> None:
-    fake_anthropic.messages.parsed_factory = lambda **kw: SAMPLE_CODE_GEN
+    fake_anthropic.models.parsed_factory = lambda **kw: SAMPLE_CODE_GEN
     r = app.post(
         "/workflows/code-gen",
         json={
@@ -95,7 +95,7 @@ def test_code_gen_route_smoke(
 def test_code_review_route_smoke(
     app, fake_anthropic: Any, sample_decomposition: Any
 ) -> None:
-    fake_anthropic.messages.parsed_factory = lambda **kw: SAMPLE_CODE_REVIEW
+    fake_anthropic.models.parsed_factory = lambda **kw: SAMPLE_CODE_REVIEW
     r = app.post(
         "/workflows/code-review",
         json={
@@ -117,7 +117,7 @@ def test_code_review_route_smoke(
 def test_full_pipeline_route_smoke(
     app, fake_anthropic: Any, sample_decomposition: Any
 ) -> None:
-    fake_anthropic.messages.parsed_factory = _full_pipeline_factory(
+    fake_anthropic.models.parsed_factory = _full_pipeline_factory(
         sample_decomposition
     )
     r = app.post(

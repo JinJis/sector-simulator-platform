@@ -132,45 +132,47 @@ Phase 3 context lives in
 | Frontend (`apps/web`) | Next.js 15 (App Router, RSC), TS strict, shadcn/ui + Tailwind, Recharts, React Flow, TanStack Query, tRPC client. Admin surface is SQLAdmin (Tabler) at `data-pipeline:8003/admin` — see M55 in current.md. |
 | Backend Node (`services/sector-service`) | Fastify + tRPC, Prisma (Postgres), Zod, Node 20 |
 | Backend Python (`services/{simulation,data-pipeline,agent-orchestration}-service`) | FastAPI, NumPy/Pandas/SciPy, PyMC (Monte Carlo), Pydantic v2, Python 3.12+ |
-| Agent / LLM | Anthropic Claude (opus) + Google Gemini (sonnet/haiku), dual-provider via Vertex AI |
+| Agent / LLM | Google Gemini (all tiers) via Vertex AI — `google-genai` SDK only (F9, 2026-05-28). Per-tier model in the routing block below. |
 | Data | Postgres 16 + TimescaleDB ext + pgvector; Cloudflare R2 (artifacts); Redis (cache + pubsub) |
 | Infra | Turborepo + pnpm; Vercel (frontend) / Railway or Fly.io (services) → AWS EKS later; Cloudflare; Terraform; GitHub Actions; Doppler / AWS Secrets Manager |
 | Observability | LangSmith / Helicone (LLM cost + trace); Sentry; Grafana/Datadog (planned) |
 | i18n / theme (web) | Cookie-backed `tssp_locale` (ko default, en parity) + `tssp_theme` (dark default, light + system). Server reads via `getT()`; client via `useT()` / `useTheme()`. Inline boot script avoids FOUC. User table mirrors both columns for cross-device sync. |
 
-### LLM auth + tier routing (M35 + grounded-research overhaul)
+### LLM auth + tier routing (F9 — Gemini-only)
 
-- **Vertex AI** both providers, same service-account JSON at
-  `infra/secrets/vertex-ai-sa.json`. Compose auto-injects env:
+- **Vertex AI** is the production provider, single service-account JSON
+  at `infra/secrets/vertex-ai-sa.json`. Compose auto-injects env:
   `GOOGLE_GENAI_USE_VERTEXAI=true`,
   `GOOGLE_CLOUD_LOCATION=global` (default),
   `GOOGLE_APPLICATION_CREDENTIALS=/secrets/vertex-ai-sa.json`.
-- AI Studio fallback: `GEMINI_API_KEY`. Works for both the gemini-*
-  agents AND grounded research; opus-tier (Claude) calls still need
-  Vertex.
-- **Agent tier map** (`packages/agent-tools/llm_client.py`) — env-overridable
+- **AI Studio fallback**: `GEMINI_API_KEY` (or `GOOGLE_API_KEY`).
+  Works for every agent + grounded research call — no per-tier
+  exceptions after F9.
+- **Agent tier map** (`packages/agent-tools/llm_client.py`) — all
+  tiers route through the same `google-genai` SDK; env-overridable
   via `LLM_{OPUS,SONNET,HAIKU}_MODEL`:
-  - `opus` → `claude-opus-4-7` (critical reasoning — VisionDecomposition /
+  - `opus` → `gemini-3.1-pro-preview` (deepest reasoning — VisionDecomposition /
     CapabilityDependencies / CapabilityScoringCode / CodeReview)
   - `sonnet` → `gemini-3.5-flash` (balanced — VisionResearch /
-    DataSourceSelector / ScoreUpdater / prediction.analyzeRationale)
+    DataSourceSelector / ThesisDrafter / ScoreUpdater / prediction.analyzeRationale)
   - `haiku` → `gemini-3.5-flash-lite` (extraction / routing /
-    SignalExtractor / PromptValidator)
+    SignalExtractor / PromptValidator / ProposalPayloadDrafter)
 - **Grounded research tier map**
-  (`packages/agent-tools/grounded_research.py`) — replaces the deprecated
-  Vertex Deep Research preview models. `models.generate_content` +
-  `Tool(google_search=GoogleSearch())` for grounding + citations. Env
+  (`packages/agent-tools/grounded_research.py`) — `models.generate_content`
+  + `Tool(google_search=GoogleSearch())` for grounding + citations. Env
   override via `GROUNDED_MODEL_{FAST,DEEP}`:
   - `fast` → `gemini-2.5-flash` (capability / actor / risk / signal
     fetchers — low ThinkingConfig)
   - `deep` → `gemini-3.1-pro-preview` (daily digest — HIGH ThinkingConfig)
   - `max` is accepted as a back-compat alias for `deep`.
-- All agent output validated via Pydantic schema. Gemini uses native
-  `response_schema`; Claude uses tool-use trick (forced `tool_choice`).
-- `adaptive_thinking=True`:
-  - Gemini: dynamic thinking budget (`-1`)
-  - Claude: extended thinking; auto-dropped when `response_model` forces
-    tool_choice (API constraint)
+- **Structured output**: all calls use Gemini's native `response_schema`.
+  When a schema is too complex for Vertex's FST constraint compiler
+  (5888-state cap), the wrapper transparently retries with the JSON
+  Schema injected into the prompt + post-parses via Pydantic. Caller
+  always receives a typed `parsed` field.
+- `adaptive_thinking=True` → dynamic thinking budget (`-1`); otherwise
+  budget follows (tier, effort) — haiku=0, sonnet=1024, opus=4096
+  (high-effort default).
 - Always call via `packages/agent-tools/llm-client` (agent tiers) or
   `GroundedResearchClient` (research tiers). Both share `CostMeter`.
 
@@ -191,7 +193,7 @@ packages/
 ├── sdk-ts/                       Frontend SDK
 ├── ui/                           Shared shadcn + Hero components (FeasibilityGauge / CapabilityCard / ActorCard / SignalRow / ...)
 ├── shared-types/                 tRPC + Zod
-├── agent-tools/                  Dual-provider LLMClient + MCP tools
+├── agent-tools/                  Gemini-only LLMClient + MCP tools (F9)
 └── db/                           Prisma schema + seeds
 infra/{terraform,k8s,docker,secrets,seeds}/
 prompts/                          Agent system prompts (versioned, see prompts/README.md)

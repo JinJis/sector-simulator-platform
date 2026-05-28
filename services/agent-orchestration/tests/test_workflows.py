@@ -127,7 +127,7 @@ async def test_decomposition_workflow_uses_decomposition_prompt(
     )
     assert isinstance(out, Decomposition)
     assert out.slug == sample_decomposition.slug  # fake echoes the sample
-    sent = fake_anthropic.messages.requests[-1]
+    sent = fake_anthropic.models.requests[-1]
     sys_blocks = sent["system"]
     assert any("Decomposition Agent" in b["text"] for b in sys_blocks), (
         "decomposition.md content was not loaded into the system prompt"
@@ -136,12 +136,11 @@ async def test_decomposition_workflow_uses_decomposition_prompt(
     assert sys_blocks[-1]["cache_control"] == {"type": "ephemeral"}
     # Structured output requested with the Decomposition model.
     assert sent["output_format"] is Decomposition
-    # Adaptive thinking is requested by the workflow, but the wrapper
-    # MUST drop it on the Anthropic path because forced tool_choice
-    # (the structured-output mechanism) is incompatible with extended
-    # thinking. See llm_client._call_anthropic — structured output is
-    # the harder constraint and wins.
-    assert sent.get("thinking") is None
+    # F9: adaptive_thinking=True on Gemini sets thinking_budget=-1
+    # ("let the model decide"). The fixture's compat shim translates
+    # that into `{type: "adaptive"}` so tests stay readable across the
+    # provider swap.
+    assert sent.get("thinking") == {"type": "adaptive"}
 
 
 @pytest.mark.asyncio
@@ -158,7 +157,7 @@ async def test_decomposition_workflow_includes_reference_data_when_supplied(
         ),
         cost_meter=CostMeter(),
     )
-    sent = fake_anthropic.messages.requests[-1]
+    sent = fake_anthropic.models.requests[-1]
     user_content = sent["messages"][-1]["content"]
     assert "Reference data" in user_content
     assert "Prior memory-semi" in user_content

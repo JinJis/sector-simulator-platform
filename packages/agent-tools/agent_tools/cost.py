@@ -6,10 +6,12 @@ History:
 - pre-M34: Anthropic Claude only.
 - M34 (2026-05-22): swapped entirely to Google Gemini.
 - M35 (2026-05-22): brought Claude back for the opus tier alongside
-  Gemini for sonnet/haiku. The `cache_read_multiplier` /
-  `cache_write_multiplier` fields drive the Anthropic prompt-caching
-  math (and remain neutral-ish for Gemini, where we don't use explicit
-  context caching today).
+  Gemini for sonnet/haiku.
+- F9 (2026-05-28): dropped Claude entirely. All three tiers now route
+  through Gemini; the per-model entries here are Gemini-only and the
+  cache_read multiplier reflects Gemini's `cachedContent` 0.25× discount
+  (cache_write stays neutral — we don't proactively write a cached
+  context today).
 """
 
 from __future__ import annotations
@@ -22,43 +24,35 @@ from threading import Lock
 class ModelPrice:
     input_per_million_usd: float
     output_per_million_usd: float
-    # Multipliers applied to the input price.
-    # - Gemini: defaults to (0.25, 1.0). We don't use explicit
-    #   `cachedContent` today, so the cache_read field is populated only
-    #   when the response surfaces `cached_content_token_count`.
-    # - Claude: standard Anthropic prompt-caching economics
-    #   (cache read = 0.1×, cache write = 1.25×).
+    # Cache multipliers applied to the input price. Defaults match
+    # Gemini's `cachedContent` economics: 0.25× discount on cache reads,
+    # no write premium (we don't pre-warm a cache today). Per-model
+    # entries can override if a future Gemini SKU prices caching
+    # differently.
     cache_read_multiplier: float = 0.25
     cache_write_multiplier: float = 1.0
 
 
 # Per-1M-token published rates as of 2026-05.
-# Sources: https://ai.google.dev/gemini-api/docs/pricing (Gemini),
-#          https://www.anthropic.com/pricing (Claude).
+# Sources: https://ai.google.dev/gemini-api/docs/pricing,
+#          https://cloud.google.com/vertex-ai/generative-ai/pricing.
 _PRICES: dict[str, ModelPrice] = {
-    # claude-opus-4-7 — opus tier. Bills via AnthropicVertex (same
-    # public list price as the Anthropic API). Cache multipliers are
-    # Anthropic-specific: 90% discount on cache reads, 25% premium on
-    # cache writes.
-    "claude-opus-4-7": ModelPrice(
-        input_per_million_usd=15.00,
-        output_per_million_usd=75.00,
-        cache_read_multiplier=0.1,
-        cache_write_multiplier=1.25,
-    ),
+    # gemini-3.1-pro-preview — opus tier (post-F9). Most capable; used by
+    # VisionDecomposition, CodeReview, ThesisDrafter, and the grounded-
+    # research DEEP path (daily digest). Carries the heaviest thinking
+    # config so output tokens trend high.
+    "gemini-3.1-pro-preview": ModelPrice(1.25, 10.00),
     # gemini-3.5-flash — sonnet tier. Cheap, fast, used for the bulk
-    # of research / driver inference / prediction rationale analysis.
+    # of research / driver inference / prediction rationale analysis /
+    # DataSourceSelector keyword generation.
     "gemini-3.5-flash": ModelPrice(0.50, 3.00),
     # gemini-3.5-flash-lite — haiku tier. Cheapest tier; used for
-    # extraction + routing + classification.
+    # extraction + routing + classification (SignalExtractor,
+    # PromptValidator, ProposalPayloadDrafter).
     "gemini-3.5-flash-lite": ModelPrice(0.25, 1.50),
-    # gemini-2.5-flash — grounded-research FAST tier (post-DR-deprecation).
-    # Placeholder rates from the 2.5 line; bump when invoices confirm.
+    # gemini-2.5-flash — grounded-research FAST tier (capability / actor
+    # / risk / signal fetchers — low ThinkingConfig).
     "gemini-2.5-flash": ModelPrice(0.30, 2.50),
-    # gemini-3.1-pro-preview — grounded-research DEEP tier. Used by the
-    # daily digest; carries ThinkingConfig HIGH so output tokens trend
-    # high. Placeholder rates aligned with the 2.5-pro preview tier.
-    "gemini-3.1-pro-preview": ModelPrice(1.25, 10.00),
 }
 
 
@@ -91,9 +85,9 @@ def deep_research_price_usd(model_id: str) -> float:  # noqa: ARG001
 class PricedUsage:
     """Token counts + computed USD cost for a single call.
 
-    `cache_creation_input_tokens` / `cache_read_input_tokens` are 0 on
-    the Gemini path today (we don't use explicit context caching), but
-    populated on the Anthropic path when prompt caching is in play.
+    `cache_creation_input_tokens` is always 0 on Gemini today (we don't
+    pre-write a `cachedContent` resource). `cache_read_input_tokens` is
+    populated when the response surfaces `cached_content_token_count`.
     """
 
     model: str

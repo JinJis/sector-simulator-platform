@@ -1222,34 +1222,30 @@ class VisionDecompositionWorkflow:
         llm = self._llm.clone(cost_meter=cost_meter)
         system = load_prompt("vision_decomposition")
         user = self._format_user_turn(request)
-        # 32K instead of 16K: opus-4-7 trivially hits 16K on broad-scope
-        # visions (15 capabilities × ~6 actors × prose rationales =
-        # ~14-18K tokens of JSON). When the cap is hit, the schema
-        # truncates AFTER initial_feasibility and BEFORE the closing
-        # `rationale` + `confidence` fields → Pydantic 422 with "Field
-        # required" on those two. 32K gives 2x headroom; opus-4-7
-        # supports up to 32K output natively (no beta header needed).
+        # 16K is enough for a typical decomposition (15 capabilities,
+        # 12 risks, 30 actors with bounded prose); the opus tier
+        # (gemini-3.1-pro-preview) can extend further if needed.
+        # adaptive_thinking=True lets Gemini spend extra tokens
+        # reasoning before emitting the JSON — important for the
+        # capability/dependency synthesis quality.
         result = await asyncio.to_thread(
             llm.call,
             tier="opus",
             system=system,
             user=user,
-            max_tokens=32_000,
+            max_tokens=16_000,
             adaptive_thinking=True,
             response_model=VisionDecompositionResult,
         )
         if result.parsed is None:
-            # Truncation case: stop_reason=="max_tokens" means the model
-            # ran out of budget mid-JSON. Surface the cause loudly so
-            # the operator knows to either narrow scope or wait for the
-            # max_tokens beta-header bump.
-            stop_hint = (
-                " (hit max_tokens — output truncated before schema close)"
-                if result.stop_reason == "max_tokens"
-                else f" (stop_reason={result.stop_reason})"
-            )
+            # Possible causes: hit max_output_tokens mid-JSON (Gemini
+            # finish_reason="MAX_TOKENS"), schema validation failure
+            # after the constraint-too-tall retry path, or the SDK
+            # returned an empty candidate. The stop_reason is the
+            # cheapest signal to surface.
             raise RuntimeError(
-                f"vision-decomposition returned unparseable output{stop_hint}"
+                "vision-decomposition returned unparseable output "
+                f"(stop_reason={result.stop_reason})"
             )
         assert isinstance(result.parsed, VisionDecompositionResult)
         draft = result.parsed

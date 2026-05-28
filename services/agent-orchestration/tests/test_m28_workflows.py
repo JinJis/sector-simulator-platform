@@ -216,7 +216,7 @@ async def _wait_done(runner: WorkflowRunner, wid: str, timeout: float = 2.0) -> 
 async def test_research_workflow_succeeds(
     fake_anthropic: Any, fake_llm: LLMClient
 ) -> None:
-    fake_anthropic.messages.parsed_factory = lambda **kw: SAMPLE_RESEARCH
+    fake_anthropic.models.parsed_factory = lambda **kw: SAMPLE_RESEARCH
     workflow = ResearchWorkflow(llm=fake_llm)
     runner = WorkflowRunner()
     req = ResearchRequest(
@@ -236,7 +236,7 @@ async def test_research_workflow_succeeds(
     parsed = ResearchBrief.model_validate(final.output)
     assert len(parsed.anchors) == 1
     # The user turn must surface the focus areas to the agent.
-    last = fake_anthropic.messages.requests[-1]
+    last = fake_anthropic.models.requests[-1]
     user_text = last["messages"][-1]["content"]
     assert "launch cost trends" in user_text
     assert "radiation tolerance" in user_text
@@ -250,7 +250,7 @@ async def test_research_workflow_succeeds(
 async def test_research_workflow_fails_on_unparseable_output(
     fake_anthropic: Any, fake_llm: LLMClient
 ) -> None:
-    fake_anthropic.messages.parsed_factory = None
+    fake_anthropic.models.parsed_factory = None
     workflow = ResearchWorkflow(llm=fake_llm)
     runner = WorkflowRunner()
     req = ResearchRequest(description="A sector the agent will fail to research.")
@@ -275,7 +275,7 @@ async def test_driver_inference_workflow_succeeds(
     fake_llm: LLMClient,
     sample_decomposition: Decomposition,
 ) -> None:
-    fake_anthropic.messages.parsed_factory = lambda **kw: SAMPLE_DRIVER_INFERENCE
+    fake_anthropic.models.parsed_factory = lambda **kw: SAMPLE_DRIVER_INFERENCE
     workflow = DriverInferenceWorkflow(llm=fake_llm)
     runner = WorkflowRunner()
     req = DriverInferenceRequest(
@@ -295,7 +295,7 @@ async def test_driver_inference_workflow_succeeds(
 
     # User turn must mention the driver names AND the research anchors
     # so the agent can match them up.
-    last = fake_anthropic.messages.requests[-1]
+    last = fake_anthropic.models.requests[-1]
     user_text = last["messages"][-1]["content"]
     assert "ai_dram_demand_pb_y0" in user_text
     assert "LEO launch cost" in user_text
@@ -307,7 +307,7 @@ async def test_driver_inference_workflow_handles_missing_research_brief(
     fake_llm: LLMClient,
     sample_decomposition: Decomposition,
 ) -> None:
-    fake_anthropic.messages.parsed_factory = lambda **kw: SAMPLE_DRIVER_INFERENCE
+    fake_anthropic.models.parsed_factory = lambda **kw: SAMPLE_DRIVER_INFERENCE
     workflow = DriverInferenceWorkflow(llm=fake_llm)
     runner = WorkflowRunner()
     req = DriverInferenceRequest(decomposition=sample_decomposition, research_brief=None)
@@ -322,7 +322,7 @@ async def test_driver_inference_workflow_handles_missing_research_brief(
     assert final.status == WorkflowStatus.succeeded
     # The user turn must say "no research brief was supplied" so the
     # agent knows to fall back to general knowledge.
-    last = fake_anthropic.messages.requests[-1]
+    last = fake_anthropic.models.requests[-1]
     assert "No research brief" in last["messages"][-1]["content"]
 
 
@@ -335,7 +335,7 @@ async def test_code_gen_workflow_succeeds(
     fake_llm: LLMClient,
     sample_decomposition: Decomposition,
 ) -> None:
-    fake_anthropic.messages.parsed_factory = lambda **kw: SAMPLE_CODE_GEN
+    fake_anthropic.models.parsed_factory = lambda **kw: SAMPLE_CODE_GEN
     workflow = CodeGenWorkflow(llm=fake_llm)
     runner = WorkflowRunner()
     req = CodeGenRequest(
@@ -358,7 +358,7 @@ async def test_code_gen_workflow_succeeds(
 
     # User turn carries the calibrated default + the edge formulas —
     # otherwise the agent can't transcribe them.
-    last = fake_anthropic.messages.requests[-1]
+    last = fake_anthropic.models.requests[-1]
     user_text = last["messages"][-1]["content"]
     assert "default 800.0" in user_text
     assert "formula: ai_dram_demand_pb_y0 * hbm_premium_x * 1e6" in user_text
@@ -373,7 +373,7 @@ async def test_code_review_workflow_succeeds(
     fake_llm: LLMClient,
     sample_decomposition: Decomposition,
 ) -> None:
-    fake_anthropic.messages.parsed_factory = lambda **kw: SAMPLE_CODE_REVIEW
+    fake_anthropic.models.parsed_factory = lambda **kw: SAMPLE_CODE_REVIEW
     workflow = CodeReviewWorkflow(llm=fake_llm)
     runner = WorkflowRunner()
     req = CodeReviewRequest(
@@ -395,7 +395,7 @@ async def test_code_review_workflow_succeeds(
     parsed = CodeReviewResult.model_validate(final.output)
     assert parsed.status == "revise"
     # User turn includes the generated source AND the Code Gen concerns.
-    last = fake_anthropic.messages.requests[-1]
+    last = fake_anthropic.models.requests[-1]
     user_text = last["messages"][-1]["content"]
     assert "AIMemoryDemandSim" in user_text
     assert "Simplified scaffolding" in user_text
@@ -438,7 +438,7 @@ async def test_full_pipeline_chains_all_six_stages(
     fake_llm: LLMClient,
     sample_decomposition: Decomposition,
 ) -> None:
-    fake_anthropic.messages.parsed_factory = _full_pipeline_factory(
+    fake_anthropic.models.parsed_factory = _full_pipeline_factory(
         sample_decomposition
     )
 
@@ -468,7 +468,7 @@ async def test_full_pipeline_chains_all_six_stages(
     assert composed.code_review.status == "revise"
 
     # Exactly six structured-output calls should have been made.
-    parse_calls = [r for r in fake_anthropic.messages.requests if "output_format" in r]
+    parse_calls = [r for r in fake_anthropic.models.requests if "output_format" in r]
     assert len(parse_calls) == 6, f"expected 6 parse() calls, got {len(parse_calls)}"
 
 
@@ -477,7 +477,7 @@ async def test_full_pipeline_short_circuits_on_research_failure(
     fake_anthropic: Any,
     fake_llm: LLMClient,
 ) -> None:
-    fake_anthropic.messages.parsed_factory = None
+    fake_anthropic.models.parsed_factory = None
     workflow = FullPipelineWorkflow(llm=fake_llm)
     runner = WorkflowRunner()
     req = FullPipelineRequest(
@@ -493,7 +493,7 @@ async def test_full_pipeline_short_circuits_on_research_failure(
     assert final is not None
     assert final.status == WorkflowStatus.failed
     # Failure on stage 1 — exactly one parse() call before short-circuit.
-    parse_calls = [r for r in fake_anthropic.messages.requests if "output_format" in r]
+    parse_calls = [r for r in fake_anthropic.models.requests if "output_format" in r]
     assert len(parse_calls) == 1
 
 
@@ -503,7 +503,7 @@ async def test_full_pipeline_shares_cost_meter_across_all_stages(
     fake_llm: LLMClient,
     sample_decomposition: Decomposition,
 ) -> None:
-    fake_anthropic.messages.parsed_factory = _full_pipeline_factory(
+    fake_anthropic.models.parsed_factory = _full_pipeline_factory(
         sample_decomposition
     )
     workflow = FullPipelineWorkflow(llm=fake_llm)

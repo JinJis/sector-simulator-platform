@@ -197,7 +197,7 @@ class TestVisionDecompositionWorkflow:
         wf = VisionDecompositionWorkflow(llm=fake_llm)
         await wf.run(_decomposition_request(), cost_meter=CostMeter())
         sent = fake_anthropic.models.requests[-1]
-        assert sent["model"] == "claude-opus-4-7"
+        assert sent["model"] == "gemini-3.1-pro-preview"
 
     @pytest.mark.asyncio
     async def test_slug_pinning_overrides_agent_drift(

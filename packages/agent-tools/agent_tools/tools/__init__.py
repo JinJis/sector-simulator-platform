@@ -33,12 +33,15 @@ class ToolDef:
     # Tags for orchestrator routing — e.g. "read_only", "research".
     tags: tuple[str, ...] = field(default_factory=tuple)
 
-    def to_anthropic(self) -> dict[str, Any]:
-        """Shape Anthropic's Messages API expects in `tools=[...]`."""
+    def to_gemini(self) -> dict[str, Any]:
+        """Shape Gemini's `tools=[{function_declarations: [...]}]`
+        argument expects per declaration. F9 renamed from `to_anthropic`
+        — the JSON Schema shape is the same; only the parameter key
+        differs (Gemini: `parameters`; Anthropic: `input_schema`)."""
         return {
             "name": self.name,
             "description": self.description,
-            "input_schema": self.input_schema,
+            "parameters": self.input_schema,
         }
 
 

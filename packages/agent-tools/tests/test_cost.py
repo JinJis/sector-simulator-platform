@@ -4,13 +4,10 @@ from agent_tools.cost import CostMeter, model_price, price_call
 
 
 def test_known_model_pricing_matches_published_rates() -> None:
-    # opus tier — Claude (post-M35).
-    opus = model_price("claude-opus-4-7")
-    assert opus.input_per_million_usd == 15.00
-    assert opus.output_per_million_usd == 75.00
-    # Cache multipliers are Anthropic-specific.
-    assert opus.cache_read_multiplier == 0.1
-    assert opus.cache_write_multiplier == 1.25
+    # opus tier — gemini-3.1-pro-preview (post-F9).
+    opus = model_price("gemini-3.1-pro-preview")
+    assert opus.input_per_million_usd == 1.25
+    assert opus.output_per_million_usd == 10.00
     # sonnet / haiku — Gemini flash family.
     sonnet = model_price("gemini-3.5-flash")
     assert sonnet.input_per_million_usd == 0.50
@@ -18,6 +15,10 @@ def test_known_model_pricing_matches_published_rates() -> None:
     haiku = model_price("gemini-3.5-flash-lite")
     assert haiku.input_per_million_usd == 0.25
     assert haiku.output_per_million_usd == 1.50
+    # Cache multipliers default to Gemini's `cachedContent` economics
+    # (0.25× discount on cache reads; no write premium).
+    assert opus.cache_read_multiplier == 0.25
+    assert opus.cache_write_multiplier == 1.0
 
 
 def test_unknown_model_falls_back_to_cheapest_price() -> None:
@@ -27,23 +28,25 @@ def test_unknown_model_falls_back_to_cheapest_price() -> None:
     assert p.input_per_million_usd == 0.25  # flash-lite
 
 
-def test_price_call_includes_cache_discounts_and_premium_for_claude_opus() -> None:
-    """1M raw input + 1M output on claude-opus-4-7 with 1M cache read +
-    1M cache write — verifies the Anthropic multipliers (0.1× read,
-    1.25× write)."""
+def test_price_call_applies_gemini_cache_discount() -> None:
+    """1M raw input + 1M output + 1M cache-read on
+    gemini-3.1-pro-preview — verifies the 0.25× cache_read multiplier
+    (the Gemini `cachedContent` discount) and that
+    cache_creation_input_tokens (always 0 for Gemini today) bills at
+    the base input rate when non-zero."""
     p = price_call(
-        model="claude-opus-4-7",
+        model="gemini-3.1-pro-preview",
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_creation_input_tokens=1_000_000,
         cache_read_input_tokens=1_000_000,
     )
-    # Input:       1M * $15 = 15
-    # Cache write: 1M * $15 * 1.25 = 18.75
-    # Cache read:  1M * $15 * 0.1  = 1.50
-    # Output:      1M * $75 = 75
-    # Total = 110.25
-    assert abs(p.cost_usd - 110.25) < 1e-6
+    # Input:       1M * $1.25 = 1.25
+    # Cache write: 1M * $1.25 * 1.00 = 1.25 (no Gemini premium today)
+    # Cache read:  1M * $1.25 * 0.25 = 0.3125
+    # Output:      1M * $10.00 = 10.00
+    # Total = 12.8125
+    assert abs(p.cost_usd - 12.8125) < 1e-6
     assert p.total_input_tokens == 3_000_000
 
 
@@ -69,7 +72,9 @@ def test_cost_meter_summary_is_json_serializable() -> None:
     import json
 
     meter = CostMeter()
-    meter.record(price_call(model="claude-opus-4-7", input_tokens=1000, output_tokens=500))
+    meter.record(
+        price_call(model="gemini-3.1-pro-preview", input_tokens=1000, output_tokens=500)
+    )
     summary = meter.summary()
     # round-trips through JSON cleanly — important for audit logs.
     encoded = json.dumps(summary)

@@ -98,7 +98,7 @@ async def _wait_done(runner: WorkflowRunner, wid: str, timeout: float = 2.0) -> 
 async def test_edge_inference_workflow_succeeds(
     fake_anthropic: Any, fake_llm: LLMClient, sample_decomposition: Decomposition
 ) -> None:
-    fake_anthropic.messages.parsed_factory = lambda **kw: SAMPLE_EDGE_INFERENCE
+    fake_anthropic.models.parsed_factory = lambda **kw: SAMPLE_EDGE_INFERENCE
 
     workflow = EdgeInferenceWorkflow(llm=fake_llm)
     runner = WorkflowRunner()
@@ -123,7 +123,7 @@ async def test_edge_inference_workflow_succeeds(
 async def test_edge_inference_serializes_decomposition_into_user_turn(
     fake_anthropic: Any, fake_llm: LLMClient, sample_decomposition: Decomposition
 ) -> None:
-    fake_anthropic.messages.parsed_factory = lambda **kw: SAMPLE_EDGE_INFERENCE
+    fake_anthropic.models.parsed_factory = lambda **kw: SAMPLE_EDGE_INFERENCE
 
     workflow = EdgeInferenceWorkflow(llm=fake_llm)
     runner = WorkflowRunner()
@@ -136,8 +136,8 @@ async def test_edge_inference_serializes_decomposition_into_user_turn(
     await _wait_done(runner, rec.id)
 
     # The fake recorded a parse() call. Inspect the user turn passed in.
-    assert fake_anthropic.messages.requests, "agent did not invoke parse()"
-    last = fake_anthropic.messages.requests[-1]
+    assert fake_anthropic.models.requests, "agent did not invoke parse()"
+    last = fake_anthropic.models.requests[-1]
     messages = last.get("messages", [])
     user_text = messages[0]["content"] if messages else ""
     # Each driver / intermediate / output name from the decomposition
@@ -154,7 +154,7 @@ async def test_edge_inference_fails_when_agent_returns_no_parse(
     fake_anthropic: Any, fake_llm: LLMClient, sample_decomposition: Decomposition
 ) -> None:
     # parsed_factory = None → the FakeMessages.parse() returns no parsed.
-    fake_anthropic.messages.parsed_factory = None
+    fake_anthropic.models.parsed_factory = None
 
     workflow = EdgeInferenceWorkflow(llm=fake_llm)
     runner = WorkflowRunner()
@@ -192,7 +192,7 @@ async def test_propose_sector_chains_both_stages(
             return SAMPLE_EDGE_INFERENCE
         raise AssertionError(f"unexpected response_model: {rm_name}")
 
-    fake_anthropic.messages.parsed_factory = factory
+    fake_anthropic.models.parsed_factory = factory
 
     workflow = ProposeSectorWorkflow(llm=fake_llm)
     runner = WorkflowRunner()
@@ -222,7 +222,7 @@ async def test_propose_sector_chains_both_stages(
     # Cost rolls up across BOTH stages on the same meter — exactly two
     # parse() calls should have been recorded.
     parse_calls = [
-        r for r in fake_anthropic.messages.requests
+        r for r in fake_anthropic.models.requests
         if "output_format" in r
     ]
     assert len(parse_calls) == 2
@@ -232,7 +232,7 @@ async def test_propose_sector_chains_both_stages(
 async def test_propose_sector_fails_if_decomposition_stage_fails(
     fake_anthropic: Any, fake_llm: LLMClient
 ) -> None:
-    fake_anthropic.messages.parsed_factory = None
+    fake_anthropic.models.parsed_factory = None
 
     workflow = ProposeSectorWorkflow(llm=fake_llm)
     runner = WorkflowRunner()
@@ -252,7 +252,7 @@ async def test_propose_sector_fails_if_decomposition_stage_fails(
     # Decomposition was the first stage that broke — only one parse
     # call should have happened (chain short-circuits on failure).
     parse_calls = [
-        r for r in fake_anthropic.messages.requests
+        r for r in fake_anthropic.models.requests
         if "output_format" in r
     ]
     assert len(parse_calls) == 1
