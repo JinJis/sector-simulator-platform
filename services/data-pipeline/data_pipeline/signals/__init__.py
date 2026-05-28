@@ -17,6 +17,7 @@ from .crawl4ai_news import (
     Crawl4aiNaverSource,
     Crawl4aiYahooSource,
 )
+from .google_news import GoogleNewsSource
 from .uspto import UsptoSource
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "Crawl4aiFinvizSource",
     "Crawl4aiNaverSource",
     "Crawl4aiYahooSource",
+    "GoogleNewsSource",
     "RawSignal",
     "SignalSource",
     "UsptoSource",

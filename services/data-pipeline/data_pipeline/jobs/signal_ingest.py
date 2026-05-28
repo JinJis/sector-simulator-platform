@@ -214,13 +214,26 @@ async def run_signal_ingest(
 
                 for source in sources:
                     tag = f"[signal_ingest|{slug}|{cap_key}|{source.name}]"
-                    raw_signals = await source.fetch(
-                        sector_slug=slug,
-                        capability_key=cap_key,
-                        keywords=keywords,
-                        since=since,
-                        max_results=per_capability_limit,
-                    )
+                    # Per-source try/except — one source's failure
+                    # (e.g., crawl4ai's playwright cleanup raising
+                    # during `async with __aexit__` after the body
+                    # was already collected) must not abort the
+                    # remaining (vision × capability × source) iters.
+                    # Raw signals already accumulated inside the
+                    # source's fetch are lost on raise — accept that;
+                    # the cron retries next tick.
+                    try:
+                        raw_signals = await source.fetch(
+                            sector_slug=slug,
+                            capability_key=cap_key,
+                            keywords=keywords,
+                            since=since,
+                            max_results=per_capability_limit,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("%s fetch raised — skipping: %s", tag, exc)
+                        stats.errors.append(f"{slug}/{cap_key}/{source.name}: {exc}")
+                        continue
                     stats.raw_signals_fetched += len(raw_signals)
                     if raw_signals:
                         log.info(

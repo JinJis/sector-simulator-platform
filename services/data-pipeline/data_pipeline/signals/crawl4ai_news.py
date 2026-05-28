@@ -77,6 +77,18 @@ async def _crawl_url(crawler: Any, url: str, **kwargs: Any) -> Any | None:
         return None
 
 
+async def _safe_close(crawler: Any, tag: str) -> None:
+    """Best-effort `AsyncWebCrawler.__aexit__`. The playwright browser
+    teardown can timeout / raise under fast cadences (news_ingest at
+    1-min interval × ~80 fetcher iterations); log the error but never
+    propagate — the cron's collected RawSignals are already returned
+    to the caller. Leaked browser resources will GC."""
+    try:
+        await crawler.__aexit__(None, None, None)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("%s crawler close raised (ignored): %s", tag, exc)
+
+
 # --------------------------------------------------------------------------
 # Per-site adapters
 # --------------------------------------------------------------------------
@@ -182,7 +194,15 @@ class _Crawl4aiBase:
         articles_matched = 0
         articles_fetched = 0
 
-        async with AsyncWebCrawler(verbose=False) as crawler:
+        # Manual __aenter__/__aexit__ instead of `async with`. Reason:
+        # crawl4ai's playwright cleanup occasionally times out / raises
+        # during __aexit__, which used to propagate out and discard the
+        # `results` we already collected. Swallowing the cleanup
+        # exception keeps the cron's per-vision result list intact —
+        # whatever leaked playwright resource will GC eventually.
+        crawler = AsyncWebCrawler(verbose=False)
+        await crawler.__aenter__()
+        try:
             for url in list_urls:
                 log.info("%s list-page → %s", tag, url)
                 page = await _crawl_url(crawler, url, bypass_cache=True)
@@ -237,7 +257,10 @@ class _Crawl4aiBase:
                             articles_seen,
                             articles_matched,
                         )
+                        await _safe_close(crawler, tag)
                         return results
+        finally:
+            await _safe_close(crawler, tag)
         log.info(
             "%s done — raw_signals=%d (list_ok=%d/%d seen=%d matched=%d fetched=%d)",
             tag,

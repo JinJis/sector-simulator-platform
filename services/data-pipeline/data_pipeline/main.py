@@ -153,6 +153,7 @@ from data_pipeline.signals import (
     Crawl4aiFinvizSource,
     Crawl4aiNaverSource,
     Crawl4aiYahooSource,
+    GoogleNewsSource,
     UsptoSource,
 )
 
@@ -768,41 +769,50 @@ async def _run_signal_ingest_job(*, app: FastAPI):  # noqa: ANN201
 
 
 async def _run_news_ingest_5min(*, app: FastAPI):  # noqa: ANN201
-    """Tier 1 — fast-rotation news sweep. crawl4ai over Yahoo Finance
-    + Naver Finance + Finviz, every 5 minutes per vision. Per-vision
-    tickers come from the `actors` table via signal_repo (joined on
-    VisionActor.sector_slug) — the static map in tickers.py is the
-    fallback when the DB query returns empty (cold-start vision with
-    no actors seeded yet)."""
+    """Tier 1 — fast-rotation news sweep. Default: Google News RSS
+    (keyword-driven, capability-relevant). Set NEWS_INGEST_USE_CRAWL4AI=1
+    to use the original ticker-page crawlers (Yahoo + Naver + Finviz)
+    instead — those return investor-noise mostly, but cover Korean
+    sources Google News thin-coverage's."""
     repo = app.state.signal_repo
     if repo is None:
         log.warning("[cron news_ingest_5min] signal_repo unset — skipping")
         return None
     visions: list[str] = app.state.signal_ingest_visions
+
+    use_crawl4ai = os.environ.get("NEWS_INGEST_USE_CRAWL4AI", "").lower() in {
+        "1", "true", "yes", "on",
+    }
+    if use_crawl4ai:
+        async def db_ticker_provider(sector_slug: str):  # noqa: ANN202
+            from data_pipeline.signals.tickers import (  # noqa: PLC0415
+                tickers_for,
+            )
+
+            db_tickers = await repo.list_vision_tickers(sector_slug)
+            if db_tickers.us or db_tickers.kr:
+                return db_tickers
+            return tickers_for(sector_slug)
+
+        sources = [
+            Crawl4aiYahooSource(ticker_provider=db_ticker_provider),
+            Crawl4aiFinvizSource(ticker_provider=db_ticker_provider),
+            Crawl4aiNaverSource(ticker_provider=db_ticker_provider),
+        ]
+    else:
+        # Keyword-driven Google News RSS — matches the operator's
+        # capability keyword set directly (no ticker indirection).
+        sources = [GoogleNewsSource()]
     log.info(
-        "[cron news_ingest_5min] START visions=%s",
+        "[cron news_ingest_5min] START visions=%s sources=%s",
         ",".join(visions) or "<none>",
+        ",".join(s.name for s in sources),
     )
-
-    async def db_ticker_provider(sector_slug: str):  # noqa: ANN202
-        from data_pipeline.signals.tickers import (  # noqa: PLC0415
-            tickers_for,
-        )
-
-        db_tickers = await repo.list_vision_tickers(sector_slug)
-        if db_tickers.us or db_tickers.kr:
-            return db_tickers
-        # Cold-start fallback: static seed in tickers.py.
-        return tickers_for(sector_slug)
 
     stats = await run_signal_ingest(
         sector_slugs=visions,
         repo=repo,
-        sources=[
-            Crawl4aiYahooSource(ticker_provider=db_ticker_provider),
-            Crawl4aiFinvizSource(ticker_provider=db_ticker_provider),
-            Crawl4aiNaverSource(ticker_provider=db_ticker_provider),
-        ],
+        sources=sources,
         # Tight lookback — we're rotating every 5 min, no need to look
         # back days.
         lookback_days=1,
@@ -832,16 +842,21 @@ async def _run_research_ingest_hourly(*, app: FastAPI):  # noqa: ANN201
     sources = [ArxivSource()]
     if os.environ.get("ENABLE_USPTO", "").lower() in {"1", "true", "yes", "on"}:
         sources.append(UsptoSource())
+    # Widened default lookback to 7d (was 3d) — fusion/memory/sofc are
+    # low-publication-rate fields where 3d returns 0 hits most ticks.
+    # Override via env for local testing (e.g., 30 to backfill).
+    lookback_days = int(os.environ.get("RESEARCH_INGEST_LOOKBACK_DAYS", "7"))
     log.info(
-        "[cron research_ingest_hourly] START visions=%s sources=%s",
+        "[cron research_ingest_hourly] START visions=%s sources=%s lookback=%dd",
         ",".join(visions) or "<none>",
         ",".join(s.name for s in sources),
+        lookback_days,
     )
     stats = await run_signal_ingest(
         sector_slugs=visions,
         repo=repo,
         sources=sources,
-        lookback_days=3,
+        lookback_days=lookback_days,
         per_capability_limit=10,
     )
     app.state.last_signal_ingest_result = stats
