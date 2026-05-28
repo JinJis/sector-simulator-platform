@@ -318,8 +318,14 @@ class QueueView(BaseView):
 
 def _redirect_with_msg(request: Request, msg: str) -> RedirectResponse:
     """Redirect back to /admin/queue with a flash-style message. SQLAdmin's
-    layout doesn't render `?msg=` by default; our custom queue.html does."""
-    base = request.url_for("admin:queue")
+    layout doesn't render `?msg=` by default; our custom queue.html does.
+
+    Route name is `admin:queue_page` — SQLAdmin's expose decorator
+    derives the name from the handler's function name (`queue_page`),
+    not the @expose path or the BaseView's `identity` field. The mount
+    wraps it with the outer "admin" prefix.
+    """
+    base = request.url_for("admin:queue_page")
     return RedirectResponse(base.include_query_params(msg=msg), status_code=303)
 
 
