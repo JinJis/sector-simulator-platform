@@ -173,6 +173,16 @@ class Signal(Base):
     ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     sector: Mapped[Sector] = relationship(back_populates="signals")
+    # Surfaces the joined Capability / Actor `__str__` in admin lists
+    # so an operator sees "Radiation-hard compute [space-data-center/
+    # rad_hard_compute]" instead of an opaque id. Lazy-loaded by
+    # SQLAdmin's async session.
+    capability: Mapped["Capability | None"] = relationship(
+        "Capability", foreign_keys=[capability_id]
+    )
+    actor: Mapped["Actor | None"] = relationship(
+        "Actor", foreign_keys=[actor_id]
+    )
 
     def __str__(self) -> str:
         return self.title[:80]
@@ -250,6 +260,11 @@ class VisionActor(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
+    # Operator-facing list shows actor name + sector name alongside the
+    # opaque IDs (same rationale as Signal above).
+    actor: Mapped[Actor] = relationship("Actor", foreign_keys=[actor_id])
+    sector: Mapped[Sector] = relationship("Sector", foreign_keys=[sector_slug])
+
 
 class CapabilityActor(Base):
     __tablename__ = "capability_actors"
@@ -262,6 +277,11 @@ class CapabilityActor(Base):
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    capability: Mapped[Capability] = relationship(
+        "Capability", foreign_keys=[capability_id]
+    )
+    actor: Mapped[Actor] = relationship("Actor", foreign_keys=[actor_id])
 
 
 # ─── Economics + Feasibility ──────────────────────────────────────────

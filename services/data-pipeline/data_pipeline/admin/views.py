@@ -155,8 +155,13 @@ class CapabilityScoreView(_BaseModelView, model=m.CapabilityScore):
     icon = "fa-solid fa-chart-line"
     category = "Vision"
 
+    # `capability` is a SQLAlchemy relationship column — SQLAdmin renders
+    # the related Capability's __str__ ("name [sector/key]") so the
+    # operator sees a human-readable identifier alongside the opaque
+    # capability_id. (Lazy-loaded by the async session.)
     column_list = [
         m.CapabilityScore.capability_id,
+        m.CapabilityScore.capability,
         m.CapabilityScore.composite,
         m.CapabilityScore.technical,
         m.CapabilityScore.economic,
@@ -182,6 +187,13 @@ class SignalView(_BaseModelView, model=m.Signal):
         m.Signal.sector_slug,
         m.Signal.source_kind,
         m.Signal.title,
+        # capability + actor relationships render the joined __str__ so
+        # the list answers "which capability scored this signal? which
+        # actor was matched?" without cross-referencing the IDs by hand.
+        m.Signal.capability_id,
+        m.Signal.capability,
+        m.Signal.actor_id,
+        m.Signal.actor,
         m.Signal.is_highlight,
         m.Signal.published_at,
         m.Signal.ingested_at,
@@ -272,7 +284,13 @@ class VisionActorView(_BaseModelView, model=m.VisionActor):
 
     column_list = [
         m.VisionActor.sector_slug,
+        # `sector` and `actor` are SQLAlchemy relationships that render
+        # the joined `__str__` in admin lists — sector name + actor
+        # name appear next to the opaque slug/id so the operator can
+        # eyeball "which vision, which actor" without two extra tabs.
+        m.VisionActor.sector,
         m.VisionActor.actor_id,
+        m.VisionActor.actor,
         m.VisionActor.relevance,
         m.VisionActor.display_order,
         m.VisionActor.updated_at,
@@ -315,7 +333,9 @@ class CapabilityActorView(_BaseModelView, model=m.CapabilityActor):
 
     column_list = [
         m.CapabilityActor.capability_id,
+        m.CapabilityActor.capability,
         m.CapabilityActor.actor_id,
+        m.CapabilityActor.actor,
         m.CapabilityActor.role,
         m.CapabilityActor.stage,
         m.CapabilityActor.updated_at,
