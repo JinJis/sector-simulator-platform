@@ -30,6 +30,8 @@ from agent_orchestration.schemas import (
     DataSourceConfigDraft,
     DataSourceSelectorRequest,
     PromptValidationResult,
+    ThesisCatalystsDraft,
+    ThesisDrafterRequest,
     VisionBuilderPromptRequest,
     VisionDecompositionRequest,
     VisionDecompositionResult,
@@ -41,6 +43,7 @@ from agent_orchestration.validation_gate import (
 from agent_orchestration.workflows import (
     DataSourceSelectorWorkflow,
     PromptValidatorWorkflow,
+    ThesisDrafterWorkflow,
     VisionDecompositionWorkflow,
 )
 
@@ -75,6 +78,10 @@ class VisionBuilderResult:
     draft: VisionDecompositionResult | None
     signal_config: DataSourceConfigDraft | None
     gate: ValidationGateResult | None
+    # F8a-2: editorial overlay produced by ThesisDrafter (stage 5). Null
+    # when the gate failed (we don't waste a sonnet call on a rejected
+    # draft) or when the drafter itself threw — neither blocks commit.
+    thesis_catalysts: ThesisCatalystsDraft | None
     stages: list[StageMetric]
     total_cost_usd: float
     total_duration_ms: int
@@ -125,6 +132,7 @@ class VisionBuilderConductor:
                 draft=None,
                 signal_config=None,
                 gate=None,
+                thesis_catalysts=None,
                 stages=stages,
                 total_cost_usd=m1.cost_usd,
                 total_duration_ms=int((perf_counter() - total_start) * 1000),
@@ -163,7 +171,37 @@ class VisionBuilderConductor:
         # passed cleanly OR gate failed and rejected the draft).
         final_draft = gate.normalized_draft or draft
 
+        # ---- Stage 5 (optional): ThesisDrafter (sonnet) ---------------
+        # Only runs when the gate passed — no point spending a sonnet
+        # call on a rejected draft. Failures here don't propagate;
+        # commit just lands without thesis/catalysts and the panels
+        # render empty.
+        thesis_catalysts: ThesisCatalystsDraft | None = None
+        m5: StageMetric | None = None
+        if gate.ok:
+            try:
+                thesis_catalysts, m5 = await self._run_thesis_drafter(
+                    draft=final_draft
+                )
+                stages.append(m5)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "conductor: thesis-drafter raised — committing without thesis: %s",
+                    exc,
+                )
+                # Record a zero-cost stage so the admin UI still shows
+                # the stage column (with cost=0, duration measured).
+                stages.append(
+                    StageMetric(
+                        name="thesis_drafter",
+                        cost_usd=0.0,
+                        duration_ms=0,
+                    )
+                )
+
         total_cost = m1.cost_usd + m2.cost_usd + m3.cost_usd
+        if m5 is not None:
+            total_cost += m5.cost_usd
         total_duration_ms = int((perf_counter() - total_start) * 1000)
 
         return VisionBuilderResult(
@@ -172,6 +210,7 @@ class VisionBuilderConductor:
             draft=final_draft if gate.ok else draft,
             signal_config=signal_config,
             gate=gate,
+            thesis_catalysts=thesis_catalysts,
             stages=stages,
             total_cost_usd=round(total_cost, 6),
             total_duration_ms=total_duration_ms,
@@ -243,6 +282,32 @@ class VisionBuilderConductor:
         )
         return result, StageMetric(
             name="data_source_selector",
+            cost_usd=round(meter.total_usd, 6),
+            duration_ms=int((perf_counter() - t0) * 1000),
+        )
+
+    async def _run_thesis_drafter(
+        self, *, draft: VisionDecompositionResult
+    ) -> tuple[ThesisCatalystsDraft, StageMetric]:
+        wf = ThesisDrafterWorkflow(llm=self._llm)
+        meter = CostMeter()
+        t0 = perf_counter()
+        result = await wf.run(
+            ThesisDrafterRequest(
+                slug=draft.slug,
+                name=draft.name,
+                refined_question=draft.vision_question,
+                domain_label=draft.domain_label,
+                description=draft.description,
+                capabilities=draft.capabilities,
+                risks=draft.risks,
+                binding_capability_key=draft.initial_feasibility.binding_capability_key,
+                initial_composite=draft.initial_feasibility.initial_composite,
+            ),
+            cost_meter=meter,
+        )
+        return result, StageMetric(
+            name="thesis_drafter",
             cost_usd=round(meter.total_usd, 6),
             duration_ms=int((perf_counter() - t0) * 1000),
         )

@@ -161,6 +161,35 @@ const SignalConfig = z.object({
   rationale: z.string().max(2000).default(""),
 });
 
+// F8a-2: editorial overlay produced by the ThesisDrafter agent stage.
+// Mirrors agent_orchestration/schemas.py ThesisCatalystsDraft.
+const ThesisBulletDraft = z.object({
+  text: z.string().min(10).max(400),
+  source_urls: z.array(z.string()).max(5).default([]),
+});
+
+const InvestmentThesisDraft = z.object({
+  the_bet: z.string().min(20).max(400),
+  bull_case: z.array(ThesisBulletDraft).min(2).max(6),
+  bear_case: z.array(ThesisBulletDraft).min(2).max(6),
+  conviction: z.enum(["high", "medium", "low", "exploratory"]),
+});
+
+const CatalystDraft = z.object({
+  expected_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  label: z.string().min(5).max(200),
+  capability_key: z.string().max(64).nullable().optional(),
+  side: z.enum(["bull", "bear", "neutral"]),
+  note: z.string().max(400).nullable().optional(),
+  source_url: z.string().max(500).nullable().optional(),
+});
+
+const ThesisCatalystsDraftSchema = z.object({
+  thesis: InvestmentThesisDraft,
+  catalysts: z.array(CatalystDraft).min(2).max(10),
+  rationale: z.string().max(2000).default(""),
+});
+
 const PromptValidationResult = z.object({
   is_valid: z.boolean(),
   rejection_kind: z
@@ -196,6 +225,10 @@ const ProposeOutput = z.object({
   draft: VisionDraft.nullable(),
   signal_config: SignalConfig.nullable(),
   gate: ValidationGateDto.nullable(),
+  // F8a-2: editorial overlay. Null when the gate failed (drafter
+  // skipped) or the drafter raised — commit still works in both cases,
+  // just without thesis/catalysts rows.
+  thesis_catalysts: ThesisCatalystsDraftSchema.nullable().optional(),
   stages: z.array(StageMetricDto),
   total_cost_usd: z.number(),
   total_duration_ms: z.number().int(),
@@ -287,12 +320,16 @@ export const visionBuilderRouter = router({
       z.object({
         draft: VisionDraft,
         signal_config: SignalConfig.nullable().optional(),
+        // F8a-2: optional editorial overlay produced by Stage 5
+        // (ThesisDrafter). When present, the commit transaction also
+        // writes one InvestmentThesis row + N Catalyst rows.
+        thesis_catalysts: ThesisCatalystsDraftSchema.nullable().optional(),
         author_label: z.string().max(120).optional(),
       }),
     )
     .output(ApplyOutput)
     .mutation(async ({ ctx, input }) => {
-      const { draft, signal_config } = input;
+      const { draft, signal_config, thesis_catalysts } = input;
 
       const existing = await ctx.prisma.sector.findUnique({
         where: { slug: draft.slug },
@@ -495,6 +532,38 @@ export const visionBuilderRouter = router({
             rationale: draft.initial_feasibility.rationale,
           },
         });
+
+        // 10. (F8a-2) Editorial overlay — investment thesis + catalysts.
+        //     Optional; the panels render empty if these are absent.
+        if (thesis_catalysts) {
+          await tx.investmentThesis.create({
+            data: {
+              sector_slug: sector.slug,
+              the_bet: thesis_catalysts.thesis.the_bet,
+              bull_case: thesis_catalysts.thesis.bull_case,
+              bear_case: thesis_catalysts.thesis.bear_case,
+              conviction: thesis_catalysts.thesis.conviction,
+              last_reviewed: now,
+            },
+          });
+          for (let i = 0; i < thesis_catalysts.catalysts.length; i++) {
+            const cat = thesis_catalysts.catalysts[i]!;
+            await tx.catalyst.create({
+              data: {
+                sector_slug: sector.slug,
+                // Parse ISO date string to a UTC midnight so timezone
+                // shifts don't surface ±1 day on the timeline.
+                expected_at: new Date(`${cat.expected_at}T00:00:00Z`),
+                label: cat.label,
+                capability_key: cat.capability_key ?? null,
+                side: cat.side,
+                note: cat.note ?? null,
+                source_url: cat.source_url ?? null,
+                display_order: (i + 1) * 10,
+              },
+            });
+          }
+        }
 
         return {
           slug: sector.slug,

@@ -465,6 +465,7 @@ def create_app() -> FastAPI:
                 errors=result.gate.errors,
                 warnings=result.gate.warnings,
             ) if result.gate is not None else None,
+            thesis_catalysts=result.thesis_catalysts,
             stages=[
                 StageMetricDto(
                     name=s.name, cost_usd=s.cost_usd, duration_ms=s.duration_ms

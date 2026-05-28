@@ -24,9 +24,13 @@ from agent_orchestration.schemas import (
     CapabilityDependencyDraft,
     CapabilityDraft,
     CapabilityKeywordSet,
+    CatalystDraft,
     DataSourceConfigDraft,
+    InvestmentThesisDraft,
     PromptValidationResult,
     RiskDraft,
+    ThesisBulletDraft,
+    ThesisCatalystsDraft,
     VisionDecompositionResult,
     VisionFeasibilityDraft,
 )
@@ -142,6 +146,37 @@ def _valid_signal_config() -> DataSourceConfigDraft:
     )
 
 
+def _valid_thesis_catalysts() -> ThesisCatalystsDraft:
+    return ThesisCatalystsDraft(
+        thesis=InvestmentThesisDraft(
+            the_bet="If fusion crosses LCOE parity with combined-cycle gas by 2035 the megaproject pipeline lights up.",
+            bull_case=[
+                ThesisBulletDraft(text="CFS / Helion are tape-out adjacent on tritium-breeder loops in 2027."),
+                ThesisBulletDraft(text="Microsoft + Google have already signed 500MW PPAs anchoring the demand side."),
+            ],
+            bear_case=[
+                ThesisBulletDraft(text="Tritium supply remains the binding upstream constraint."),
+                ThesisBulletDraft(text="No reactor has demonstrated Q>2 sustained over hours."),
+            ],
+            conviction="medium",
+        ),
+        catalysts=[
+            CatalystDraft(
+                expected_at="2027-06-01",
+                label="CFS Sparc first plasma demonstration",
+                capability_key="cap_a",
+                side="bull",
+            ),
+            CatalystDraft(
+                expected_at="2028-12-01",
+                label="EU regulatory framework for fusion siting",
+                capability_key=None,
+                side="neutral",
+            ),
+        ],
+    )
+
+
 # ---- fake-LLM factory builders ------------------------------------------
 
 
@@ -150,9 +185,12 @@ def _make_stage_factory(
     validation: PromptValidationResult,
     draft: VisionDecompositionResult,
     signal_config: DataSourceConfigDraft,
+    thesis_catalysts: ThesisCatalystsDraft | None = None,
 ) -> Any:
     """Dispatch the parsed_factory based on which response_model the
     LLMClient is asking for. The fake stores the request in kwargs."""
+    if thesis_catalysts is None:
+        thesis_catalysts = _valid_thesis_catalysts()
 
     def factory(**kwargs: Any) -> Any:
         # The fake passes response_format / response_model info via the
@@ -174,6 +212,8 @@ def _make_stage_factory(
                             text += " " + str(p)
         if "User prompt" in text or "user prompt" in text.lower():
             return validation
+        if "Anchor at least one catalyst" in text or "ThesisCatalystsDraft" in text:
+            return thesis_catalysts
         if "CapabilityKeywordSet" in text or "keyword sets" in text.lower():
             return signal_config
         # Default: decomposition stage.
@@ -201,17 +241,24 @@ class TestVisionBuilderConductor:
         assert out.draft.slug == "fusion-power-grid-parity"
         assert out.signal_config is not None
         assert out.gate is not None and out.gate.ok is True
-        assert len(out.stages) == 4
+        assert len(out.stages) == 5
         assert [s.name for s in out.stages] == [
             "prompt_validator",
             "vision_decomposition",
             "data_source_selector",
             "validation_gate",
+            "thesis_drafter",
         ]
         # Pure-Python gate stage has zero LLM cost.
         gate_stage = next(s for s in out.stages if s.name == "validation_gate")
         assert gate_stage.cost_usd == 0.0
         assert out.total_cost_usd >= 0.0
+        # F8a-2: gate-passed run produces thesis + catalysts.
+        assert out.thesis_catalysts is not None
+        assert len(out.thesis_catalysts.catalysts) >= 2
+        assert out.thesis_catalysts.thesis.conviction in {
+            "high", "medium", "low", "exploratory",
+        }
 
     @pytest.mark.asyncio
     async def test_prompt_rejected_short_circuits(
@@ -325,7 +372,12 @@ class TestVisionBuilderEndpoint:
         assert body["draft"]["slug"] == "fusion-power-grid-parity"
         assert body["signal_config"] is not None
         assert body["gate"]["ok"] is True
-        assert len(body["stages"]) == 4
+        assert len(body["stages"]) == 5
+        # F8a-2: stage 5 is the thesis drafter; envelope carries the
+        # drafted bundle so sector-service.visionBuilder.commit can
+        # persist it without a second HTTP hop.
+        assert body["thesis_catalysts"] is not None
+        assert "the_bet" in body["thesis_catalysts"]["thesis"]
         assert "total_cost_usd" in body
         assert "total_duration_ms" in body
 

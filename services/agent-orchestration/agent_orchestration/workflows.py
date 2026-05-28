@@ -62,6 +62,8 @@ from agent_orchestration.schemas import (
     ResearchRequest,
     SignalExtractorRequest,
     SignalScoring,
+    ThesisCatalystsDraft,
+    ThesisDrafterRequest,
     VisionBuilderPromptRequest,
     VisionDecompositionRequest,
     VisionDecompositionResult,
@@ -1375,6 +1377,108 @@ class DataSourceSelectorWorkflow:
             "For each capability above, produce one CapabilityKeywordSet "
             "with arxiv_keywords, uspto_keywords, news_keywords. "
             "Total keyword sets MUST equal the capability count."
+        )
+        return "\n".join(parts)
+
+
+# =====================================================================
+# F8a-2 — ThesisDrafterWorkflow (sonnet tier)
+# =====================================================================
+#
+# Stage 5 (final, optional) of the Vision Builder pipeline. Takes the
+# gate-approved decomposition and emits an InvestmentThesis + Catalyst[]
+# bundle — the editorial-overlay rows that populate /visions/<slug>'s
+# hero thesis card + catalyst timeline.
+#
+# Why sonnet: narrative quality matters, but the input space is already
+# narrowed by stages 2-4. Opus would 2-3x the cost without proportional
+# quality gain. Caller treats this stage as best-effort — if it fails
+# the vision still commits with thesis=null.
+#
+# Prompt: prompts/thesis_drafter.md
+# Cost target: <$0.05 per call.
+# =====================================================================
+
+
+class ThesisDrafterWorkflow:
+    """Draft the investor thesis + upcoming catalyst timeline."""
+
+    kind = "thesis_drafter"
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+
+    async def run(
+        self,
+        request: ThesisDrafterRequest,
+        *,
+        cost_meter: CostMeter,
+    ) -> ThesisCatalystsDraft:
+        llm = self._llm.clone(cost_meter=cost_meter)
+        system = load_prompt("thesis_drafter")
+        user = self._format_user_turn(request)
+        result = await asyncio.to_thread(
+            llm.call,
+            tier="sonnet",
+            system=system,
+            user=user,
+            max_tokens=4096,
+            adaptive_thinking=False,
+            response_model=ThesisCatalystsDraft,
+        )
+        if result.parsed is None:
+            raise RuntimeError(
+                "thesis-drafter returned unparseable output "
+                f"(stop_reason={result.stop_reason})"
+            )
+        assert isinstance(result.parsed, ThesisCatalystsDraft)
+        draft = result.parsed
+
+        # Defensive: drop catalysts that reference an unknown
+        # capability_key. The agent occasionally invents keys.
+        valid_keys = {c.key for c in request.capabilities}
+        cleaned_catalysts = []
+        for cat in draft.catalysts:
+            if cat.capability_key is not None and cat.capability_key not in valid_keys:
+                log.info(
+                    "thesis-drafter: nulling unknown capability_key %r on catalyst %r",
+                    cat.capability_key,
+                    cat.label,
+                )
+                cleaned_catalysts.append(cat.model_copy(update={"capability_key": None}))
+            else:
+                cleaned_catalysts.append(cat)
+        return draft.model_copy(update={"catalysts": cleaned_catalysts})
+
+    @staticmethod
+    def _format_user_turn(request: ThesisDrafterRequest) -> str:
+        parts = [
+            f"## Vision: {request.name} ({request.slug})",
+            f"- Refined question: {request.refined_question}",
+            f"- Domain: {request.domain_label}",
+            f"- Day-0 composite: {request.initial_composite:.0f}/100",
+            f"- Binding capability (cap on composite): {request.binding_capability_key}",
+            "",
+            "## Description",
+            request.description,
+            "",
+            "## Capabilities (key — name — rationale)",
+        ]
+        for c in request.capabilities:
+            parts.append(f"- `{c.key}` — {c.name}: {c.rationale}")
+        parts.append("")
+        parts.append("## Risks (category — name — severity/likelihood — description)")
+        for r in request.risks:
+            parts.append(
+                f"- [{r.category}] {r.name} ({r.severity}/{r.likelihood}): {r.description}"
+            )
+        parts.append("")
+        parts.append(
+            "Produce the ThesisCatalystsDraft. Anchor at least one catalyst"
+            f" to the binding capability `{request.binding_capability_key}`."
+            " Tie bull / bear bullets to specific capabilities or risks above"
+            " — don't write generic statements. ISO date `YYYY-MM-DD` for"
+            " every catalyst.expected_at."
         )
         return "\n".join(parts)
 

@@ -833,6 +833,75 @@ class VisionDecompositionRunResult(BaseModel):
     duration_ms: int
 
 
+# ---- Stage 5 (F8a-2): Investment thesis + catalysts drafter (sonnet) ---
+#
+# Produces the editorial-overlay rows persisted into InvestmentThesis +
+# Catalyst tables. Optional stage — if the LLM call fails or the gate
+# rejected the decomposition, commit still succeeds with thesis=null.
+# ------------------------------------------------------------------------
+
+
+class ThesisBulletDraft(BaseModel):
+    """One bullet in bull_case or bear_case. `source_urls` is optional;
+    the apps/web SourceRef shape is richer (`url + kind + published_at`)
+    but the LLM only knows URLs reliably — the UI degrades cleanly."""
+
+    text: str = Field(..., min_length=10, max_length=400)
+    source_urls: list[str] = Field(default_factory=list, max_length=5)
+
+
+class InvestmentThesisDraft(BaseModel):
+    """1:1 with the InvestmentThesis row. `conviction` is a string enum
+    kept loose so the admin can broaden later without a migration."""
+
+    the_bet: str = Field(..., min_length=20, max_length=400)
+    bull_case: list[ThesisBulletDraft] = Field(..., min_length=2, max_length=6)
+    bear_case: list[ThesisBulletDraft] = Field(..., min_length=2, max_length=6)
+    conviction: Literal["high", "medium", "low", "exploratory"]
+
+
+class CatalystDraft(BaseModel):
+    """One row in `catalysts`. `expected_at` is an ISO date string; the
+    Pydantic side keeps it as `str` so the JSON round-trip across the
+    sector-service / agent-orchestration HTTP boundary stays free of
+    timezone gotchas (sector-service parses to Date)."""
+
+    expected_at: str = Field(
+        ..., pattern=r"^\d{4}-\d{2}-\d{2}$",
+        description="ISO date (YYYY-MM-DD) the event is projected for",
+    )
+    label: str = Field(..., min_length=5, max_length=200)
+    capability_key: str | None = Field(default=None, max_length=64)
+    side: Literal["bull", "bear", "neutral"]
+    note: str | None = Field(default=None, max_length=400)
+    source_url: str | None = Field(default=None, max_length=500)
+
+
+class ThesisDrafterRequest(BaseModel):
+    """Inputs the drafter sees — the validated draft summary minus the
+    actor + dependency wiring (the drafter doesn't need them to write a
+    thesis)."""
+
+    slug: str = Field(..., max_length=64)
+    name: str = Field(..., max_length=80)
+    refined_question: str = Field(..., max_length=240)
+    domain_label: str = Field(..., max_length=40)
+    description: str = Field(..., min_length=50, max_length=2000)
+    capabilities: list[CapabilityDraft] = Field(..., min_length=1, max_length=15)
+    risks: list[RiskDraft] = Field(..., min_length=1, max_length=12)
+    binding_capability_key: str = Field(..., max_length=64)
+    initial_composite: float = Field(..., ge=0, le=100)
+
+
+class ThesisCatalystsDraft(BaseModel):
+    """Workflow output. Persisted into InvestmentThesis + Catalyst[] by
+    sector-service.visionBuilder.commit."""
+
+    thesis: InvestmentThesisDraft
+    catalysts: list[CatalystDraft] = Field(..., min_length=2, max_length=10)
+    rationale: str = Field(default="", max_length=2000)
+
+
 # ---- Stage 4: Data source selector (sonnet) ----------------------------
 
 
@@ -920,6 +989,11 @@ class VisionBuilderRunResult(BaseModel):
     draft: VisionDecompositionResult | None
     signal_config: DataSourceConfigDraft | None
     gate: ValidationGateDto | None
+    # F8a-2: editorial overlay produced by ThesisDrafter. Null when the
+    # gate failed (skipped) or the drafter raised (commit continues
+    # without it; sector-service inserts no InvestmentThesis/Catalyst
+    # rows in that case).
+    thesis_catalysts: ThesisCatalystsDraft | None = None
     stages: list[StageMetricDto]
     total_cost_usd: float
     total_duration_ms: int
