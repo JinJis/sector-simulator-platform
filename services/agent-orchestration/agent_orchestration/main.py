@@ -112,10 +112,28 @@ async def lifespan(app: FastAPI):
         app.state.repo = repo
         app.state.runner = WorkflowRunner(repo=repo)
     if not hasattr(app.state, "llm"):
-        app.state.llm = LLMClient()
+        # Try to build LLMClient eagerly. If LLM auth isn't configured
+        # (no Vertex SA, no GEMINI_API_KEY) the constructor raises
+        # RuntimeError — we used to let that kill boot, but that makes
+        # dev/test/CI without creds impossible. Catch it, store None,
+        # and let `_require_llm` return 503 from each endpoint that
+        # actually needs an LLM. Non-LLM endpoints (health, repo reads,
+        # workflow listing) keep working.
+        try:
+            app.state.llm = LLMClient()
+        except RuntimeError as exc:
+            app.state.llm = None
+            log.warning(
+                "agent-orchestration: LLM auth not configured (%s) — "
+                "LLM-dependent endpoints will return 503 until "
+                "GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY is set",
+                exc,
+            )
     log.info(
-        "agent-orchestration ready (workflows: decomposition, propose_sector, "
-        "research, driver_inference, code_gen, code_review, full_pipeline)"
+        "agent-orchestration ready (llm=%s, workflows: decomposition, "
+        "propose_sector, research, driver_inference, code_gen, "
+        "code_review, full_pipeline)",
+        "configured" if app.state.llm is not None else "disabled",
     )
     try:
         yield
@@ -123,6 +141,23 @@ async def lifespan(app: FastAPI):
         repo = getattr(app.state, "repo", None)
         if repo is not None:
             await repo.close()
+
+
+def _require_llm(app: FastAPI) -> LLMClient:
+    """Return the lifespan-built LLMClient, or raise 503 if the
+    service booted without LLM auth (no Vertex SA + no GEMINI_API_KEY).
+    Endpoints that don't actually need an LLM bypass this helper."""
+    llm = getattr(app.state, "llm", None)
+    if llm is None:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "agent-orchestration is running without LLM auth. Set "
+                "GOOGLE_APPLICATION_CREDENTIALS (Vertex SA) or "
+                "GEMINI_API_KEY (AI Studio) and restart the container."
+            ),
+        )
+    return llm
 
 
 def create_app() -> FastAPI:
@@ -146,7 +181,7 @@ def create_app() -> FastAPI:
     @app.post("/workflows/decompose", response_model=WorkflowRecord, status_code=202)
     async def start_decomposition(req: DecompositionRequest) -> WorkflowRecord:
         runner: WorkflowRunner = app.state.runner
-        llm: LLMClient = app.state.llm
+        llm: LLMClient = _require_llm(app)
         workflow = DecompositionWorkflow(llm=llm)
 
         async def run(cost_meter):  # type: ignore[no-untyped-def]
@@ -162,7 +197,7 @@ def create_app() -> FastAPI:
         (Opus). Returns immediately with the workflow record; the
         composed result lands on `output` when both stages succeed."""
         runner: WorkflowRunner = app.state.runner
-        llm: LLMClient = app.state.llm
+        llm: LLMClient = _require_llm(app)
         workflow = ProposeSectorWorkflow(llm=llm)
 
         async def run(cost_meter):  # type: ignore[no-untyped-def]
@@ -181,7 +216,7 @@ def create_app() -> FastAPI:
         full_pipeline but exposed independently for stage-level
         testing."""
         runner: WorkflowRunner = app.state.runner
-        llm: LLMClient = app.state.llm
+        llm: LLMClient = _require_llm(app)
         workflow = ResearchWorkflow(llm=llm)
 
         async def run(cost_meter):  # type: ignore[no-untyped-def]
@@ -201,7 +236,7 @@ def create_app() -> FastAPI:
         optional `ResearchBrief`, returns calibrated drivers with
         provenance."""
         runner: WorkflowRunner = app.state.runner
-        llm: LLMClient = app.state.llm
+        llm: LLMClient = _require_llm(app)
         workflow = DriverInferenceWorkflow(llm=llm)
 
         async def run(cost_meter):  # type: ignore[no-untyped-def]
@@ -218,7 +253,7 @@ def create_app() -> FastAPI:
         string. The orchestrator does NOT execute the source — Modal
         sandbox is a future slice."""
         runner: WorkflowRunner = app.state.runner
-        llm: LLMClient = app.state.llm
+        llm: LLMClient = _require_llm(app)
         workflow = CodeGenWorkflow(llm=llm)
 
         async def run(cost_meter):  # type: ignore[no-untyped-def]
@@ -234,7 +269,7 @@ def create_app() -> FastAPI:
         with status `approve` / `revise` / `reject` and severity-tagged
         findings."""
         runner: WorkflowRunner = app.state.runner
-        llm: LLMClient = app.state.llm
+        llm: LLMClient = _require_llm(app)
         workflow = CodeReviewWorkflow(llm=llm)
 
         async def run(cost_meter):  # type: ignore[no-untyped-def]
@@ -252,7 +287,7 @@ def create_app() -> FastAPI:
         → edge_inference → code_gen → code_review. Headline workflow
         for admin sector authoring. Typical cost $0.50–$1.00."""
         runner: WorkflowRunner = app.state.runner
-        llm: LLMClient = app.state.llm
+        llm: LLMClient = _require_llm(app)
         workflow = FullPipelineWorkflow(llm=llm)
 
         async def run(cost_meter):  # type: ignore[no-untyped-def]
@@ -272,7 +307,7 @@ def create_app() -> FastAPI:
         current pricing), so we run inline rather than through the
         WorkflowRunner queue. Returns the scoring + cost roll-up.
         """
-        llm: LLMClient = app.state.llm
+        llm: LLMClient = _require_llm(app)
         workflow = SignalExtractorWorkflow(llm=llm)
         cost_meter = CostMeter()
         t0 = time.perf_counter()
@@ -309,7 +344,7 @@ def create_app() -> FastAPI:
         regenerate is cheap; user just confirms instead of hand-typing
         the per-kind form. Caller (sector-service tRPC) re-validates
         with the existing Zod schemas before persisting."""
-        llm: LLMClient = app.state.llm
+        llm: LLMClient = _require_llm(app)
         workflow = ProposalPayloadDrafterWorkflow(llm=llm)
         cost_meter = CostMeter()
         t0 = time.perf_counter()
@@ -344,7 +379,7 @@ def create_app() -> FastAPI:
         """
         from agent_orchestration.schemas import PromptValidatorRunResult
 
-        llm: LLMClient = app.state.llm
+        llm: LLMClient = _require_llm(app)
         workflow = PromptValidatorWorkflow(llm=llm)
         cost_meter = CostMeter()
         t0 = time.perf_counter()
@@ -374,7 +409,7 @@ def create_app() -> FastAPI:
         initial feasibility). Opus tier; cost target <$0.50 per call.
         Admin must approve the resulting draft before it's persisted.
         """
-        llm: LLMClient = app.state.llm
+        llm: LLMClient = _require_llm(app)
         workflow = VisionDecompositionWorkflow(llm=llm)
         cost_meter = CostMeter()
         t0 = time.perf_counter()
@@ -406,7 +441,7 @@ def create_app() -> FastAPI:
         prompt rejection; gate failures still return the (un-normalized)
         draft so admin can see what went wrong.
         """
-        llm: LLMClient = app.state.llm
+        llm: LLMClient = _require_llm(app)
         conductor = VisionBuilderConductor(llm=llm)
         try:
             result = await conductor.run(
@@ -453,7 +488,7 @@ def create_app() -> FastAPI:
         Capability.signal_keywords column so the M39 ingest cron
         picks them up on the next run.
         """
-        llm: LLMClient = app.state.llm
+        llm: LLMClient = _require_llm(app)
         workflow = DataSourceSelectorWorkflow(llm=llm)
         cost_meter = CostMeter()
         t0 = time.perf_counter()
@@ -483,7 +518,7 @@ def create_app() -> FastAPI:
         day. Single sonnet call with extended thinking; ~$0.01-0.03
         each at current pricing. Returns the update + cost roll-up.
         """
-        llm: LLMClient = app.state.llm
+        llm: LLMClient = _require_llm(app)
         workflow = CapabilityScoreUpdaterWorkflow(llm=llm)
         cost_meter = CostMeter()
         t0 = time.perf_counter()
