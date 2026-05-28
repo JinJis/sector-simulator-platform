@@ -63,8 +63,8 @@ model Sector {
   // promoting user's id for agent-proposed sectors. Powers /my-sectors.
   created_by_user_id String?  @map("created_by_user_id")
   created_by         User?    @relation("UserCreatedSectors", fields: [created_by_user_id], references: [id], onDelete: SetNull)
-  created_at         DateTime @default(now()) @map("created_at")
-  updated_at         DateTime @updatedAt @map("updated_at")
+  created_at         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   scenarios   Scenario[]
   equities    SectorEquity[]
@@ -125,7 +125,7 @@ model SectorEquity {
   currency         String? // "USD" or "KRW"
   last_close_local Float?    @map("last_close_local")
   last_close_usd   Float?    @map("last_close_usd")
-  last_close_date  DateTime? @map("last_close_date")
+  last_close_date  DateTime? @map("last_close_date") @db.Timestamptz(3)
   market_cap_usd   Float?    @map("market_cap_usd")
 
   // --- Driver linkage (structured rationale) ---
@@ -139,8 +139,8 @@ model SectorEquity {
   // by market_cap_usd desc.
   display_order Int @default(0) @map("display_order")
 
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   quotes          EquityQuote[]
   financials      EquityFinancial[]
@@ -185,7 +185,7 @@ model EquityFinancial {
   total_equity_usd      Float? @map("total_equity_usd")
 
   source      String   @default("mock")
-  inserted_at DateTime @default(now()) @map("inserted_at")
+  inserted_at DateTime @default(now()) @map("inserted_at") @db.Timestamptz(3)
 
   equity SectorEquity @relation(fields: [equity_id], references: [id], onDelete: Cascade)
 
@@ -216,7 +216,7 @@ model EquityQuote {
   close_usd   Float?   @map("close_usd")
   volume      Float?
   source      String   @default("yfinance")
-  inserted_at DateTime @default(now()) @map("inserted_at")
+  inserted_at DateTime @default(now()) @map("inserted_at") @db.Timestamptz(3)
 
   equity SectorEquity @relation(fields: [equity_id], references: [id], onDelete: Cascade)
 
@@ -248,8 +248,8 @@ model AgentWorkflow {
   // rows; populated by sector-service after the orchestration call
   // returns. Powers the per-user monthly budget meter.
   user_id    String?  @map("user_id")
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@index([kind, created_at])
   @@index([status, updated_at])
@@ -288,8 +288,8 @@ model GraphNode {
   equity_id String?       @map("equity_id")
   equity    SectorEquity? @relation(fields: [equity_id], references: [id], onDelete: SetNull)
 
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@unique([sector_slug, node_key])
   @@index([sector_slug])
@@ -322,8 +322,8 @@ model GraphEdge {
   origin       String  @default("seed") // seed | edit | agent
   author_label String? @map("author_label")
 
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@unique([sector_slug, source_key, target_key])
   @@index([sector_slug])
@@ -345,7 +345,7 @@ model AuditLog {
   // here so trustless callers can't blow up the log.
   payload      Json
   author_label String?  @map("author_label")
-  created_at   DateTime @default(now()) @map("created_at")
+  created_at   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([action, created_at])
   @@index([sector_slug, created_at])
@@ -377,8 +377,8 @@ model User {
   // filter; bot_kind disambiguates future bot personalities.
   is_bot        Boolean  @default(false) @map("is_bot")
   bot_kind      String?  @map("bot_kind") // "research_agent" | "extractor" | "watcher"
-  created_at    DateTime @default(now()) @map("created_at")
-  updated_at    DateTime @updatedAt @map("updated_at")
+  created_at    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   sessions         Session[]
   watchlist_items  WatchlistItem[]
@@ -419,7 +419,7 @@ model WatchlistItem {
   equity_id  String       @map("equity_id")
   equity     SectorEquity @relation(fields: [equity_id], references: [id], onDelete: Cascade)
   note       String?
-  created_at DateTime     @default(now()) @map("created_at")
+  created_at DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@unique([user_id, equity_id])
   @@index([user_id, created_at(sort: Desc)])
@@ -435,12 +435,12 @@ model Session {
   user_id    String   @map("user_id")
   user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
   token      String   @unique
-  expires_at DateTime @map("expires_at")
+  expires_at DateTime @map("expires_at") @db.Timestamptz(3)
   // Per-request niceties — populated on creation, useful for the
   // settings "active sessions" surface when that ships.
   user_agent String?  @map("user_agent")
   ip         String?  @map("ip")
-  created_at DateTime @default(now()) @map("created_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([token])
   @@index([user_id])
@@ -458,8 +458,8 @@ model Scenario {
   driver_overrides Json     @map("driver_overrides")
   // Free-form author label. Becomes a real users(id) FK when auth lands.
   author_label     String?  @map("author_label")
-  created_at       DateTime @default(now()) @map("created_at")
-  updated_at       DateTime @updatedAt @map("updated_at")
+  created_at       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@index([sector_slug])
   @@map("scenarios")
@@ -478,8 +478,8 @@ model BillingCustomer {
   user               User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
   stripe_customer_id String   @unique @map("stripe_customer_id")
   email              String?
-  created_at         DateTime @default(now()) @map("created_at")
-  updated_at         DateTime @updatedAt @map("updated_at")
+  created_at         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   subscriptions BillingSubscription[]
 
@@ -499,12 +499,12 @@ model BillingSubscription {
   status                 String
   // Snapshot from the latest webhook so we don't need to call Stripe
   // for routine reads.
-  current_period_start   DateTime        @map("current_period_start")
-  current_period_end     DateTime        @map("current_period_end")
+  current_period_start   DateTime        @map("current_period_start") @db.Timestamptz(3)
+  current_period_end     DateTime        @map("current_period_end") @db.Timestamptz(3)
   cancel_at_period_end   Boolean         @default(false) @map("cancel_at_period_end")
-  canceled_at            DateTime?       @map("canceled_at")
-  created_at             DateTime        @default(now()) @map("created_at")
-  updated_at             DateTime        @updatedAt @map("updated_at")
+  canceled_at            DateTime?       @map("canceled_at") @db.Timestamptz(3)
+  created_at             DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at             DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@index([customer_id, status])
   @@index([status, current_period_end])
@@ -519,7 +519,7 @@ model BillingEvent {
   stripe_event_id String   @unique @map("stripe_event_id")
   type            String
   payload         Json
-  received_at     DateTime @default(now()) @map("received_at")
+  received_at     DateTime @default(now()) @map("received_at") @db.Timestamptz(3)
 
   @@index([type, received_at])
   @@map("billing_events")
@@ -616,8 +616,8 @@ model Capability {
   // file first (override), then falls back to this column.
   signal_keywords String[] @default([]) @map("signal_keywords")
 
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   scores            CapabilityScore[]
   signals           Signal[]
@@ -667,14 +667,14 @@ model CapabilityScore {
   composite_p10 Float? @map("composite_p10")
   composite_p90 Float? @map("composite_p90")
 
-  as_of      DateTime
+  as_of      DateTime @db.Timestamptz(3)
   is_current Boolean  @default(false) @map("is_current")
 
   // Agent- or admin-written explanation of what moved since the prior
   // snapshot — surfaces in the capability detail page time-series.
   rationale String?
 
-  created_at DateTime @default(now()) @map("created_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([capability_id, as_of(sort: Desc)])
   @@index([capability_id, is_current])
@@ -698,7 +698,7 @@ model CapabilityDependency {
   target    Capability @relation("CapabilityTarget", fields: [target_id], references: [id], onDelete: Cascade)
   rationale String?
 
-  created_at DateTime @default(now()) @map("created_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@unique([source_id, target_id])
   @@index([target_id])
@@ -743,7 +743,7 @@ model Signal {
 
   title        String
   summary      String?
-  published_at DateTime @map("published_at")
+  published_at DateTime @map("published_at") @db.Timestamptz(3)
 
   // Per-dimension deltas, signed (-10 .. +10). Set by the extractor
   // agent; null = not yet scored. The score updater (M40) reads these
@@ -766,7 +766,7 @@ model Signal {
   // the primary reference).
   citations Json? @map("citations")
 
-  ingested_at DateTime @default(now()) @map("ingested_at")
+  ingested_at DateTime @default(now()) @map("ingested_at") @db.Timestamptz(3)
 
   @@unique([source_url, capability_id])
   @@index([sector_slug, published_at(sort: Desc)])
@@ -822,8 +822,8 @@ model Risk {
 
   display_order Int @default(100) @map("display_order")
 
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@unique([sector_slug, key])
   @@index([sector_slug])
@@ -856,7 +856,7 @@ model EconomicsDatapoint {
   metric_key String   @map("metric_key")
   value      Decimal  @db.Decimal(20, 6)
   unit       String // "USD/kWh" | "USD/kg" | "USD/MWh" | "USD/GB" | ...
-  as_of      DateTime
+  as_of      DateTime @db.Timestamptz(3)
 
   source_url  String  @map("source_url")
   source_kind String  @map("source_kind") // analyst_report | paper | filing | press | gov_report
@@ -865,7 +865,7 @@ model EconomicsDatapoint {
   confidence  Decimal @db.Decimal(3, 2)
   notes       String?
 
-  created_at DateTime @default(now()) @map("created_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@unique([sector_slug, metric_key, as_of])
   @@index([sector_slug, metric_key, as_of(sort: Desc)])
@@ -886,7 +886,7 @@ model VisionFeasibility {
   sector_slug String @map("sector_slug")
   sector      Sector @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
 
-  as_of      DateTime
+  as_of      DateTime @db.Timestamptz(3)
   is_current Boolean  @default(false) @map("is_current")
 
   composite     Float
@@ -910,7 +910,7 @@ model VisionFeasibility {
 
   rationale String?
 
-  created_at DateTime @default(now()) @map("created_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([sector_slug, as_of(sort: Desc)])
   @@index([sector_slug, is_current])
@@ -979,8 +979,8 @@ model Actor {
   // summaries against these per-vision before setting Signal.actor_id.
   signal_keywords String[] @default([]) @map("signal_keywords")
 
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   vision_actors     VisionActor[]
   capability_actors CapabilityActor[]
@@ -1013,8 +1013,8 @@ model VisionActor {
 
   display_order Int @default(100) @map("display_order")
 
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@unique([actor_id, sector_slug])
   @@index([sector_slug])
@@ -1045,8 +1045,8 @@ model CapabilityActor {
   stage     String?
   rationale String?
 
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@unique([capability_id, actor_id])
   @@index([capability_id])
@@ -1121,13 +1121,13 @@ model CommunityProposal {
   vote_score Int @default(0) @map("vote_score")
 
   // Decision metadata. Set when status transitions to applied/rejected.
-  decided_at      DateTime? @map("decided_at")
+  decided_at      DateTime? @map("decided_at") @db.Timestamptz(3)
   decided_by_id   String?   @map("decided_by_id")
   decided_by      User?     @relation("ProposalDecidedBy", fields: [decided_by_id], references: [id], onDelete: SetNull)
   decision_reason String?   @map("decision_reason")
 
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   evidence ProposalEvidence[]
   votes    ProposalVote[]
@@ -1166,7 +1166,7 @@ model ProposalEvidence {
   // Display order chosen by the author.
   order_index  Int    @default(0) @map("order_index")
 
-  created_at DateTime @default(now()) @map("created_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([proposal_id, order_index])
   @@map("proposal_evidence")
@@ -1185,7 +1185,7 @@ model ProposalVote {
   user        User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   weight     Int      @default(1)
-  created_at DateTime @default(now()) @map("created_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@id([proposal_id, user_id])
   @@index([user_id, created_at(sort: Desc)])
@@ -1208,8 +1208,8 @@ model ProposalReply {
   children ProposalReply[]   @relation("ReplyParent")
 
   body       String
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@index([proposal_id, created_at])
   @@index([parent_reply_id])
@@ -1266,7 +1266,7 @@ model PredictionV2 {
   // detail page to render "from X to your band". Also lets us
   // audit-trail what the placer was looking at.
   anchor_price Float    @map("anchor_price")
-  anchor_date  DateTime @map("anchor_date")
+  anchor_date  DateTime @map("anchor_date") @db.Timestamptz(3)
 
   // Auto-assigned by `lib/prediction-tier.ts`. NOT a free field —
   // server recomputes on placement to prevent client-side spoofing.
@@ -1275,9 +1275,9 @@ model PredictionV2 {
   tier             String
   tier_explanation String? @map("tier_explanation")
 
-  placed_at   DateTime  @default(now()) @map("placed_at")
-  resolves_at DateTime  @map("resolves_at")
-  resolved_at DateTime? @map("resolved_at")
+  placed_at   DateTime  @default(now()) @map("placed_at") @db.Timestamptz(3)
+  resolves_at DateTime  @map("resolves_at") @db.Timestamptz(3)
+  resolved_at DateTime? @map("resolved_at") @db.Timestamptz(3)
 
   actual_price  Float? @map("actual_price")
   // 0..1; see comment block above.
@@ -1292,8 +1292,8 @@ model PredictionV2 {
   // Optional plain-text rationale. Markdown rendering is a v2 polish.
   rationale String?
 
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@index([user_id, placed_at(sort: Desc)])
   // Resolution cron: WHERE status='open' AND resolves_at <= now()
@@ -1334,7 +1334,7 @@ model UserReputation {
   // newcomer | member | analyst | senior | maintainer
   tier         String @default("newcomer")
 
-  updated_at DateTime @updatedAt @map("updated_at")
+  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   // Leaderboard primary index
   @@index([total_points(sort: Desc)])
@@ -1371,7 +1371,7 @@ model PointEvent {
   refers_to_kind String? @map("refers_to_kind")
   refers_to_id   String? @map("refers_to_id")
 
-  created_at DateTime @default(now()) @map("created_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([user_id, created_at(sort: Desc)])
   @@index([kind, created_at(sort: Desc)])
@@ -1387,7 +1387,7 @@ model UserFollow {
   follower    User   @relation("FollowsOut", fields: [follower_id], references: [id], onDelete: Cascade)
   followed    User   @relation("FollowsIn", fields: [followed_id], references: [id], onDelete: Cascade)
 
-  created_at DateTime @default(now()) @map("created_at")
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@id([follower_id, followed_id])
   // Profile shows "followers of X" + "X follows N people"
@@ -1436,8 +1436,8 @@ model CrawlRun {
   // Short, single-line. Full stack traces go to logs, not the table.
   error String?
 
-  started_at DateTime  @default(now()) @map("started_at")
-  ended_at   DateTime? @map("ended_at")
+  started_at DateTime  @default(now()) @map("started_at") @db.Timestamptz(3)
+  ended_at   DateTime? @map("ended_at") @db.Timestamptz(3)
 
   // Cockpit "recent runs for this vision" (default sort).
   @@index([vision_slug, started_at(sort: Desc)])
