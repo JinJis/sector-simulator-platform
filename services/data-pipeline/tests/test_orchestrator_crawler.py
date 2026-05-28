@@ -628,3 +628,33 @@ def test_post_orchestrator_tick_503_when_reader_unset() -> None:
     client = TestClient(app)
     r = client.post("/jobs/orchestrator/tick?dry_run=true", json={})
     assert r.status_code == 503
+
+
+# --------------------------------------------------------------------------
+# Regression: _hours_between must tolerate naive datetimes from asyncpg
+# --------------------------------------------------------------------------
+
+
+def test_hours_between_handles_naive_earlier() -> None:
+    """Prisma's default DateTime maps to Postgres `timestamp` (no tz),
+    so asyncpg returns naive datetimes for crawl_runs.ended_at. The
+    orchestrator tick passes `now=datetime.now(UTC)` (aware), and the
+    raw subtract used to raise TypeError. Make sure we tolerate the mix
+    and treat naive values as UTC."""
+    from data_pipeline.deep_research.orchestrator import _hours_between
+
+    naive_earlier = datetime(2026, 5, 28, 0, 0, 0)  # no tzinfo
+    aware_later = datetime(2026, 5, 28, 2, 30, 0, tzinfo=UTC)
+    assert _hours_between(aware_later, naive_earlier) == pytest.approx(2.5)
+
+    # Mirror: aware earlier, naive later (defensive — shouldn't happen
+    # in prod but the helper shouldn't crash either way).
+    aware_earlier = datetime(2026, 5, 28, 0, 0, 0, tzinfo=UTC)
+    naive_later = datetime(2026, 5, 28, 1, 0, 0)
+    assert _hours_between(naive_later, aware_earlier) == pytest.approx(1.0)
+
+    # Both naive — still works.
+    assert (
+        _hours_between(datetime(2026, 5, 28, 5), datetime(2026, 5, 28, 3))
+        == pytest.approx(2.0)
+    )

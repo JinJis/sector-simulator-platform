@@ -55,6 +55,22 @@ class PickResult:
 
 
 def _hours_between(later: datetime, earlier: datetime) -> float:
+    """Hours between two datetimes, tolerant of naive vs aware.
+
+    Prisma's default `DateTime` maps to Postgres `timestamp` (no
+    timezone), so asyncpg returns naive values for crawl_runs.ended_at
+    etc. — but `now` here is `datetime.now(UTC)` (aware). Subtracting
+    them raises `TypeError: can't subtract offset-naive and offset-
+    aware datetimes`. Normalise to UTC-aware before subtracting.
+
+    All timestamps the pipeline writes ARE in UTC (we write `now(UTC)`
+    everywhere), so treating a naive value as UTC is correct here —
+    not a guess.
+    """
+    if later.tzinfo is None:
+        later = later.replace(tzinfo=UTC)
+    if earlier.tzinfo is None:
+        earlier = earlier.replace(tzinfo=UTC)
     delta = later - earlier
     return max(0.0, delta.total_seconds() / 3600.0)
 
