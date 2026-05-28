@@ -81,6 +81,9 @@ model Sector {
   vision_actors        VisionActor[]
   // MP5: per-vision economics time-series (cost curves, $/kWh, LCOE).
   economics_datapoints EconomicsDatapoint[]
+  // M57: editorial overlays — investor narrative + upcoming catalysts.
+  investment_thesis    InvestmentThesis?
+  catalysts            Catalyst[]
 
   @@index([status])
   @@index([created_by_user_id])
@@ -915,6 +918,78 @@ model VisionFeasibility {
   @@index([sector_slug, as_of(sort: Desc)])
   @@index([sector_slug, is_current])
   @@map("vision_feasibility")
+}
+
+// =====================================================================
+// M57 — Editorial overlays: InvestmentThesis + Catalyst
+//
+// The investor-facing narrative panels at /visions/<slug> (the bet,
+// bull / bear bullets, upcoming catalyst timeline) used to be served
+// from hardcoded fixtures in apps/web/src/app/visions/_fixtures/.
+// F8a moves them to the DB: the Vision Builder's ThesisDrafter step
+// (opus-tier, post-decomposition) emits one InvestmentThesis + N
+// Catalyst rows alongside the capabilities + risks + actors. Admin
+// can edit via SQLAdmin; the user-facing panel renders DB rows.
+// =====================================================================
+
+model InvestmentThesis {
+  // 1:1 with Sector. A vision either has a thesis (admin or LLM
+  // authored) or it doesn't — the panel hides cleanly when absent.
+  id            String   @id @default(cuid())
+  sector_slug   String   @unique @map("sector_slug")
+  sector        Sector   @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+
+  // The one-sentence "what's the bet" framing rendered at the top of
+  // the panel.
+  the_bet       String   @map("the_bet")
+  // Why-it-works + why-it-might-not bullet lists. Each bullet is
+  // { text: string, sources?: SourceRef[] } — SourceRef shape lives
+  // in packages/ui; stored as JSON so the LLM / curator can attach
+  // citations without a separate join table.
+  bull_case     Json     @map("bull_case")
+  bear_case     Json     @map("bear_case")
+  // "high" | "medium" | "low" | "exploratory" — string enum kept loose
+  // so the admin can amend without a migration.
+  conviction    String   @map("conviction")
+  // When the thesis was last reviewed / edited. Defaults to creation.
+  last_reviewed DateTime @default(now()) @map("last_reviewed") @db.Timestamptz(3)
+
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at DateTime @updatedAt        @map("updated_at") @db.Timestamptz(3)
+
+  @@map("investment_theses")
+}
+
+model Catalyst {
+  // Many catalysts per vision — upcoming events likely to move the
+  // composite within ~6-18 months (capability launches, regulatory
+  // decisions, milestone tape-outs, funding windows).
+  id          String   @id @default(cuid())
+  sector_slug String   @map("sector_slug")
+  sector      Sector   @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+
+  // Expected date the event is scheduled / projected for. Timeline
+  // sorts ASC; past dates dim in the UI.
+  expected_at    DateTime @map("expected_at") @db.Timestamptz(3)
+  label          String   @map("label")
+  // Optional capability the catalyst is anchored to — drives the per-
+  // capability filter in the timeline. Null = vision-wide.
+  capability_key String?  @map("capability_key")
+  // "bull" | "bear" | "neutral" — drives the chip color in the UI.
+  side           String   @map("side")
+  source_url     String?  @map("source_url")
+  note           String?  @map("note")
+  // Optional richer source list when the catalyst comes from a research
+  // brief with multiple citations. Same SourceRef[] shape as the thesis
+  // bullets.
+  sources        Json?    @map("sources")
+  display_order  Int      @default(100) @map("display_order")
+
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updated_at DateTime @updatedAt        @map("updated_at") @db.Timestamptz(3)
+
+  @@index([sector_slug, expected_at])
+  @@map("catalysts")
 }
 
 // =====================================================================
