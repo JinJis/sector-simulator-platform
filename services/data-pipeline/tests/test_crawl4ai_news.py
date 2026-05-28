@@ -24,6 +24,27 @@ from data_pipeline.signals import (
     Crawl4aiNaverSource,
     Crawl4aiYahooSource,
 )
+from data_pipeline.signals.tickers import VisionTickers
+
+# Curated per-vision tickers the existing tests assume. In production
+# the same data lives in the `actors` table (read via
+# SignalRepository.list_vision_tickers); this dict is the test-only
+# stand-in so tests don't need a live Postgres pool.
+_TEST_TICKER_MAP: dict[str, VisionTickers] = {
+    "space-data-center": VisionTickers(
+        us=("AMZN", "GOOGL", "MSFT", "PLTR", "RKLB", "TXN", "NVDA"),
+        kr=("005930",),
+    ),
+    "memory-semi": VisionTickers(
+        us=("NVDA", "AMD", "AVGO", "MU", "TSM"),
+        kr=("005930", "000660"),
+    ),
+    "sofc": VisionTickers(us=("BLDP", "PLUG", "FCEL", "BE", "CMI"), kr=()),
+}
+
+
+async def _test_ticker_provider(sector_slug: str) -> VisionTickers:
+    return _TEST_TICKER_MAP.get(sector_slug, VisionTickers(us=(), kr=()))
 
 
 # --------------------------------------------------------------------------
@@ -119,7 +140,7 @@ async def test_yahoo_pulls_articles_matching_keyword(
         "https://finance.yahoo.com/news/rad-hard-chip-1"
     ] = "Long article body about rad-hard silicon for orbital DCs ..."
 
-    src = Crawl4aiYahooSource()
+    src = Crawl4aiYahooSource(ticker_provider=_test_ticker_provider)
     sigs = await src.fetch(
         sector_slug="space-data-center",
         capability_key="rad_hard_compute",
@@ -145,7 +166,7 @@ async def test_yahoo_keyword_mismatch_filters_everything(
     fake_crawl4ai.list_pages["https://finance.yahoo.com/quote/NVDA/news"] = [
         {"url": "https://finance.yahoo.com/news/gaming-1", "title": "Gaming GPU"},
     ]
-    src = Crawl4aiYahooSource()
+    src = Crawl4aiYahooSource(ticker_provider=_test_ticker_provider)
     sigs = await src.fetch(
         sector_slug="space-data-center",
         capability_key="rad_hard_compute",
@@ -175,7 +196,7 @@ async def test_finviz_pulls_from_quote_page(
         "https://example.com/plug-sofc-order"
     ] = "Body about SOFC capex ..."
 
-    src = Crawl4aiFinvizSource()
+    src = Crawl4aiFinvizSource(ticker_provider=_test_ticker_provider)
     sigs = await src.fetch(
         sector_slug="sofc",
         capability_key="stack_lifetime",
@@ -206,7 +227,7 @@ async def test_naver_uses_kr_ticker_codes(
     ]
     fake_crawl4ai.bodies["https://n.news.naver.com/HBM-supply"] = "본문"
 
-    src = Crawl4aiNaverSource()
+    src = Crawl4aiNaverSource(ticker_provider=_test_ticker_provider)
     sigs = await src.fetch(
         sector_slug="memory-semi",
         capability_key="hbm_yield",
@@ -227,7 +248,7 @@ async def test_naver_uses_kr_ticker_codes(
 async def test_unmapped_vision_returns_empty_with_no_crawl(
     fake_crawl4ai: _FakeCrawler,
 ) -> None:
-    src = Crawl4aiYahooSource()
+    src = Crawl4aiYahooSource(ticker_provider=_test_ticker_provider)
     sigs = await src.fetch(
         sector_slug="vision-that-doesnt-exist",
         capability_key="anything",
@@ -245,18 +266,15 @@ async def test_unmapped_vision_returns_empty_with_no_crawl(
 
 
 @pytest.mark.asyncio
-async def test_injected_ticker_provider_overrides_static_map(
+async def test_ticker_provider_drives_per_vision_urls(
     fake_crawl4ai: _FakeCrawler,
 ) -> None:
-    """When the source is constructed with a custom `ticker_provider`
-    (the production path — a closure over signal_repo.list_vision_tickers),
-    the per-vision URLs come from that provider, not from
-    tickers.py. Proves the DB-backed wiring."""
+    """`ticker_provider` is the single source of tickers (production
+    wires it to SignalRepository.list_vision_tickers). The adapter
+    builds list-page URLs from whatever the provider returns."""
     from data_pipeline.signals.tickers import VisionTickers
 
     async def db_provider(sector_slug: str) -> VisionTickers:
-        # Returns a ticker the static map doesn't have, so a hit
-        # against the static URL list would fail.
         return VisionTickers(us=("ZZZX",), kr=())
 
     fake_crawl4ai.list_pages["https://finance.yahoo.com/quote/ZZZX/news"] = [
@@ -271,7 +289,7 @@ async def test_injected_ticker_provider_overrides_static_map(
 
     src = Crawl4aiYahooSource(ticker_provider=db_provider)
     sigs = await src.fetch(
-        sector_slug="any-vision",  # static map doesn't matter
+        sector_slug="any-vision",
         capability_key="anything",
         keywords=["orbital"],
         since=datetime.now(UTC),
@@ -282,24 +300,14 @@ async def test_injected_ticker_provider_overrides_static_map(
 
 
 @pytest.mark.asyncio
-async def test_ticker_provider_failure_falls_back_to_static_map(
+async def test_ticker_provider_failure_yields_zero_signals(
     fake_crawl4ai: _FakeCrawler,
 ) -> None:
     """A DB-backed provider that raises (column missing, pool dead)
-    must not crash news_ingest — the source falls back to the static
-    map so the cron stays productive."""
+    must not crash news_ingest. The adapter logs + returns []; the
+    cron records 0 signals for this vision and moves on."""
     async def broken_provider(sector_slug: str):  # noqa: ANN202
         raise RuntimeError("DB pool dead")
-
-    # space-data-center has NVDA in the STATIC map (tickers.py); stub
-    # that URL so the fallback path returns something visible.
-    fake_crawl4ai.list_pages["https://finance.yahoo.com/quote/NVDA/news"] = [
-        {
-            "url": "https://finance.yahoo.com/news/fallback",
-            "title": "Fallback signal about radiation",
-        },
-    ]
-    fake_crawl4ai.bodies["https://finance.yahoo.com/news/fallback"] = "body"
 
     src = Crawl4aiYahooSource(ticker_provider=broken_provider)
     sigs = await src.fetch(
@@ -309,7 +317,30 @@ async def test_ticker_provider_failure_falls_back_to_static_map(
         since=datetime.now(UTC),
         max_results=20,
     )
-    assert len(sigs) == 1, "fallback to static map should have produced 1 signal"
+    assert sigs == []
+
+
+@pytest.mark.asyncio
+async def test_empty_ticker_provider_no_ops_cleanly(
+    fake_crawl4ai: _FakeCrawler,
+) -> None:
+    """Vision with no actor-ticker rows (fresh Vision Builder run
+    before actors are seeded) → provider returns empty tuples →
+    adapter no-ops without hitting crawl4ai."""
+    from data_pipeline.signals.tickers import VisionTickers
+
+    async def empty_provider(sector_slug: str) -> VisionTickers:
+        return VisionTickers(us=(), kr=())
+
+    src = Crawl4aiYahooSource(ticker_provider=empty_provider)
+    sigs = await src.fetch(
+        sector_slug="fresh-vision",
+        capability_key="something",
+        keywords=["anything"],
+        since=datetime.now(UTC),
+        max_results=20,
+    )
+    assert sigs == []
 
 
 @pytest.mark.asyncio
@@ -321,7 +352,7 @@ async def test_missing_crawl4ai_degrades_gracefully(
     # Ensure crawl4ai isn't importable.
     monkeypatch.setitem(sys.modules, "crawl4ai", None)
 
-    src = Crawl4aiYahooSource()
+    src = Crawl4aiYahooSource(ticker_provider=_test_ticker_provider)
     sigs = await src.fetch(
         sector_slug="space-data-center",
         capability_key="rad_hard_compute",

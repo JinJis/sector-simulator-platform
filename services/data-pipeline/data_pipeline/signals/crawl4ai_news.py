@@ -41,20 +41,15 @@ from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable, ClassVar
 
 from data_pipeline.signals.base import RawSignal
-from data_pipeline.signals.tickers import VisionTickers, tickers_for
+from data_pipeline.signals.tickers import VisionTickers
 
 log = logging.getLogger(__name__)
 
 
-# Injected per-vision ticker lookup. Default uses the static map in
-# `tickers.py` (keeps tests + zero-config dev working); production
-# wires a closure over `SignalRepository.list_vision_tickers` so the
-# DB is the source of truth.
+# Injected per-vision ticker lookup. Production wires a closure over
+# `SignalRepository.list_vision_tickers` so the DB (actors table) is
+# the single source of truth; tests inject a canned lambda.
 TickerProvider = Callable[[str], Awaitable[VisionTickers]]
-
-
-async def _static_ticker_provider(sector_slug: str) -> VisionTickers:
-    return tickers_for(sector_slug)
 
 
 def _matches_any(text: str, keywords: list[str]) -> bool:
@@ -101,19 +96,17 @@ class _Crawl4aiBase:
     (build the list-page URLs for a vision). The base orchestrates
     list-scrape → keyword filter → body-scrape → RawSignal emission.
 
-    `ticker_provider` decides where the per-vision ticker lineup
-    comes from. Default = the static map in tickers.py (zero-config
-    fallback); production passes a closure over
-    `SignalRepository.list_vision_tickers` to read from the actors
-    table. The closure layer also lets tests inject canned tickers
-    without touching the static module.
+    `ticker_provider` is required — it's the closure over
+    `SignalRepository.list_vision_tickers` in production, or a canned
+    async lambda in tests. There is no static-map fallback: a vision
+    with zero actor-ticker rows in the DB no-ops cleanly.
     """
 
     source_kind: ClassVar[str] = "news"
     name: ClassVar[str] = "crawl4ai"
 
-    def __init__(self, *, ticker_provider: TickerProvider | None = None) -> None:
-        self._ticker_provider = ticker_provider or _static_ticker_provider
+    def __init__(self, *, ticker_provider: TickerProvider) -> None:
+        self._ticker_provider = ticker_provider
 
     def _per_vision_urls(self, tickers: VisionTickers) -> list[str]:
         raise NotImplementedError
@@ -151,11 +144,11 @@ class _Crawl4aiBase:
             tickers = await self._ticker_provider(sector_slug)
         except Exception as exc:  # noqa: BLE001
             log.warning(
-                "%s ticker_provider raised %s — falling back to static map",
+                "%s ticker_provider raised %s — skipping (no static fallback)",
                 tag,
                 exc,
             )
-            tickers = tickers_for(sector_slug)
+            return []
         list_urls = self._per_vision_urls(tickers)
         if not list_urls:
             log.info(

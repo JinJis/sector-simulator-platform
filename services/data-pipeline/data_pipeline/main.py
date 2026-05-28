@@ -463,11 +463,11 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         # jobs so news rotates quickly while research papers / patents
         # run on a slower cadence that matches their publication rate.
         if app.state.signal_repo is not None:
-            # ── news_ingest_5min: crawl4ai Yahoo + Naver + Finviz news
-            # sweep every 5 min. Per-vision ticker map in
-            # data_pipeline/signals/tickers.py controls which symbols
-            # each vision pulls; crawl4ai handles JS-rendered lists.
-            # NEWS_INGEST_SCHEDULE=off disables.
+            # ── news_ingest_5min: keyword-driven Google News RSS (default)
+            # or per-ticker crawl4ai (Yahoo/Naver/Finviz) when
+            # NEWS_INGEST_USE_CRAWL4AI=1. Ticker lookup reads
+            # actors.ticker via SignalRepository.list_vision_tickers —
+            # no static map fallback. NEWS_INGEST_SCHEDULE=off disables.
             news_armed = (
                 os.environ.get("NEWS_INGEST_SCHEDULE", "on").lower() != "off"
             )
@@ -785,14 +785,7 @@ async def _run_news_ingest_5min(*, app: FastAPI):  # noqa: ANN201
     }
     if use_crawl4ai:
         async def db_ticker_provider(sector_slug: str):  # noqa: ANN202
-            from data_pipeline.signals.tickers import (  # noqa: PLC0415
-                tickers_for,
-            )
-
-            db_tickers = await repo.list_vision_tickers(sector_slug)
-            if db_tickers.us or db_tickers.kr:
-                return db_tickers
-            return tickers_for(sector_slug)
+            return await repo.list_vision_tickers(sector_slug)
 
         sources = [
             Crawl4aiYahooSource(ticker_provider=db_ticker_provider),
