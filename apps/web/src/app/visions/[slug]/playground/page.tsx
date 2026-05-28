@@ -26,10 +26,9 @@ import {
 } from "@/lib/sim-client";
 import {
   fetchVisionOverview,
+  fetchVisionSummary,
   type VisionOverview,
 } from "@/lib/vision-client";
-
-import { getVisionFixture } from "../../_fixtures";
 
 import { PlaygroundClient } from "./playground-client";
 
@@ -39,8 +38,14 @@ interface Props {
 
 export default async function PlaygroundPage({ params }: Props) {
   const { slug } = await params;
-  const fixture = getVisionFixture(slug);
-  if (!fixture) notFound();
+  // DB-driven (F6): vision must exist in DB or 404. Old code
+  // 404'd against the fixture, which made unknown slugs disappear
+  // but also accepted demo slugs that weren't seeded.
+  try {
+    await fetchVisionSummary(slug);
+  } catch {
+    notFound();
+  }
 
   // Fetch the same sim payloads the sector layout uses. If sim-service
   // is unreachable, render an inline error rather than 500-ing the page.

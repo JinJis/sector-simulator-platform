@@ -46,8 +46,7 @@ import {
 import { CatalystsTimeline } from "../_components/catalysts-timeline";
 import { InvestmentThesisPanel } from "../_components/investment-thesis-panel";
 import { ECONOMICS_PAIRS } from "../_economics-pairs";
-import type { Catalyst, InvestmentThesis } from "../_fixtures";
-import { getVisionFixture } from "../_fixtures";
+import type { Catalyst, InvestmentThesis } from "../_types";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -103,49 +102,32 @@ async function loadEconomicsPreview(slug: string): Promise<EconomicsPreview | nu
 }
 
 /**
- * Load Vision data. Server-side: try real DB via tRPC first; fall back
- * to fixture if sector-service is unreachable so dev / preview
- * environments still render. M37 fixtures stay in repo as backstop
- * through M44.
+ * Load Vision data — strictly DB-driven via sector-service tRPC. The
+ * old fixture fallback was removed (F6) because it masked an empty
+ * DB and made `SEED_DATA=off` look populated. Vision Builder is the
+ * only way to add new visions; uncommitted slugs render notFound().
+ *
+ * thesis + catalysts are still optional editorial overlays — when
+ * present they enrich the page; absent ones get gracefully hidden
+ * by the section guards below. A future slice will add a DB-backed
+ * source for them (Prisma model + Vision Builder LLM step or admin
+ * curation), at which point we'd swap the `null` here for that
+ * fetch.
  */
 async function loadVisionData(slug: string): Promise<{
   overview: VisionOverview;
   history: FeasibilityHistoryPoint[];
-  source: "db" | "fixture";
   thesis: InvestmentThesis | null;
   catalysts: Catalyst[] | null;
 } | null> {
-  // Thesis + catalysts are editorial overlays from the fixture and
-  // attach regardless of whether the live DB serves the rest. Live
-  // sourcing lands in a later slice.
-  const fixture = getVisionFixture(slug);
-  const thesis = fixture?.thesis ?? null;
-  const catalysts = fixture?.catalysts ?? null;
-
   try {
     const [overview, history] = await Promise.all([
       fetchVisionOverview(slug),
       fetchFeasibilityHistory(slug).catch(() => [] as FeasibilityHistoryPoint[]),
     ]);
-    return { overview, history, source: "db", thesis, catalysts };
+    return { overview, history, thesis: null, catalysts: null };
   } catch {
-    if (!fixture) return null;
-    // Adapt fixture trajectory to FeasibilityHistoryPoint shape.
-    const history: FeasibilityHistoryPoint[] = fixture.trajectory.map((p) => ({
-      as_of: p.as_of,
-      composite: p.composite,
-      composite_p10: p.p10,
-      composite_p90: p.p90,
-      binding_capability_key: null,
-      eta_median_years: null,
-    }));
-    return {
-      overview: fixture.overview,
-      history,
-      source: "fixture",
-      thesis,
-      catalysts,
-    };
+    return null;
   }
 }
 
@@ -155,7 +137,7 @@ export default async function VisionOverviewPage({ params }: Props) {
   if (!data) notFound();
   const t = await getT();
   const locale = await getLocale();
-  const { overview, history, source, thesis, catalysts } = data;
+  const { overview, history, thesis, catalysts } = data;
   const { vision, capabilities, risks, recent_signals, actors } = overview;
   const feas = vision.feasibility;
   const economics = await loadEconomicsPreview(slug);
@@ -598,8 +580,7 @@ export default async function VisionOverviewPage({ params }: Props) {
       )}
 
       <p className="text-right text-[10px] text-neutral-600">
-        {t("hero.dataSource")}:{" "}
-        {source === "db" ? t("hero.dataSource.db") : t("hero.dataSource.fixture")}
+        {t("hero.dataSource")}: {t("hero.dataSource.db")}
       </p>
     </div>
   );

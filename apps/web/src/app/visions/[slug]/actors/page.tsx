@@ -21,8 +21,6 @@ import { notFound } from "next/navigation";
 import { getT } from "@/lib/i18n/server";
 import { trpc } from "@/lib/sim-client";
 
-import { getVisionFixture } from "../../_fixtures";
-
 interface Props {
   params: Promise<{ slug: string }>;
 }
@@ -85,9 +83,9 @@ export default async function ActorsIndexPage({ params }: Props) {
       display_order: va.display_order,
     }));
   } catch {
-    const fixture = getVisionFixture(slug);
-    if (!fixture) notFound();
-    actors = fixture.overview.actors;
+    // sector-service down or vision missing → 404. Fixture fallback
+    // removed (F6) so an empty DB no longer renders demo actors.
+    notFound();
   }
 
   // M53 — pull 90d signal counts per actor for the bubble plot.

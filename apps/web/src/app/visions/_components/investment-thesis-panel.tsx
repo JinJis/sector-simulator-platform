@@ -4,7 +4,7 @@ import type {
   InvestmentThesis,
   ThesisBullet,
   ThesisBulletInput,
-} from "../_fixtures";
+} from "../_types";
 
 const CONVICTION_TONE: Record<InvestmentThesis["conviction"], string> = {
   high: "border-emerald-700/60 bg-emerald-950/40 text-emerald-200",

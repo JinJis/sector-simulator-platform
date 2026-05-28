@@ -21,7 +21,6 @@ import { notFound } from "next/navigation";
 import { getT } from "@/lib/i18n/server";
 import { trpc } from "@/lib/sim-client";
 
-import { getVisionFixture } from "../../_fixtures";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -87,20 +86,9 @@ export default async function RisksIndexPage({ params }: Props) {
       source_title: r.source_title,
     }));
   } catch {
-    const fixture = getVisionFixture(slug);
-    if (!fixture) notFound();
-    risks = fixture.overview.risks.map((r) => ({
-      key: r.key,
-      category: r.category,
-      name: r.name,
-      description: r.description,
-      severity: r.severity,
-      likelihood: r.likelihood,
-      time_horizon: r.time_horizon,
-      source_url: r.source_url ?? null,
-      source_kind: r.source_kind ?? null,
-      source_title: r.source_title ?? null,
-    }));
+    // sector-service down or vision missing → 404. Fixture fallback
+    // removed (F6) so an empty DB no longer renders demo risks.
+    notFound();
   }
 
   if (risks.length === 0) {

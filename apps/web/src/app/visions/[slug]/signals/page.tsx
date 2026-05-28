@@ -14,7 +14,6 @@ import { getT } from "@/lib/i18n/server";
 import { fetchSignals, type SignalListResult } from "@/lib/vision-client";
 import { trpc } from "@/lib/sim-client";
 
-import { getVisionFixture } from "../../_fixtures";
 
 type SearchParams = {
   cap?: string;
@@ -60,10 +59,12 @@ export default async function SignalsIndexPage({ params, searchParams }: Props) 
   const cursor = q.cursor || undefined;
   const t = await getT();
 
-  // Load capabilities for the filter dropdown + DB signal list.
+  // DB-driven (F6) — sector-service `capability.list` + `signal.list`.
+  // If the vision doesn't exist or sector-service is unreachable, 404
+  // instead of falling back to a fixture; an empty DB should look
+  // empty.
   let capabilityKeys: string[] = [];
   let listResult: SignalListResult;
-  let source: "db" | "fixture" = "db";
   try {
     const [caps, list] = await Promise.all([
       trpc.capability.list.query({ sector_slug: slug }),
@@ -79,34 +80,7 @@ export default async function SignalsIndexPage({ params, searchParams }: Props) 
     capabilityKeys = caps.map((c) => c.key);
     listResult = list;
   } catch {
-    const fixture = getVisionFixture(slug);
-    if (!fixture) notFound();
-    source = "fixture";
-    capabilityKeys = fixture.overview.capabilities.map((c) => c.key);
-    // Adapt fixture recent_signals to SignalListResult shape so the
-    // rest of the page renders identically.
-    listResult = {
-      items: fixture.overview.recent_signals.map((s) => ({
-        id: s.id,
-        sector_slug: slug,
-        capability_id: s.capability_id,
-        capability_key: s.capability_key,
-        source_kind: s.source_kind,
-        source_url: s.source_url,
-        source_id_ext: null,
-        title: s.title,
-        summary: s.summary,
-        published_at: s.published_at,
-        delta_technical: s.delta_technical,
-        delta_economic: s.delta_economic,
-        delta_regulatory: s.delta_regulatory,
-        delta_supply: s.delta_supply,
-        is_highlight: s.is_highlight,
-        ingested_at: s.published_at,
-        citations: [],
-      })),
-      next_cursor: null,
-    };
+    notFound();
   }
 
   const baseHref = `/visions/${slug}/signals`;
@@ -133,7 +107,6 @@ export default async function SignalsIndexPage({ params, searchParams }: Props) 
         </h2>
         <p className="mt-1 text-xs text-neutral-500">
           {t("signals.feed.subtitle")}
-          {source === "fixture" && t("signals.fixtureNote")}
         </p>
       </div>
 
@@ -258,7 +231,7 @@ export default async function SignalsIndexPage({ params, searchParams }: Props) 
       <p className="text-right text-[10px] text-neutral-600">
         {t("signals.showingPrefix")} {listResult.items.length}
         {t("signals.showingSuffix")}
-        {source === "db" && t("signals.liveDb")}
+        {t("signals.liveDb")}
       </p>
     </div>
   );

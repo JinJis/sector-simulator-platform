@@ -1,8 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { getT } from "@/lib/i18n/server";
-
-import { getVisionFixture } from "../../_fixtures";
+import { fetchVisionOverview } from "@/lib/vision-client";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -10,10 +9,15 @@ interface Props {
 
 export default async function SourcesIndexPage({ params }: Props) {
   const { slug } = await params;
-  const fixture = getVisionFixture(slug);
-  if (!fixture) notFound();
+  // DB-driven (F6) — `recent_signals` is part of the overview payload.
+  let recent_signals: Awaited<ReturnType<typeof fetchVisionOverview>>["recent_signals"];
+  try {
+    const overview = await fetchVisionOverview(slug);
+    recent_signals = overview.recent_signals;
+  } catch {
+    notFound();
+  }
   const t = await getT();
-  const { recent_signals } = fixture.overview;
 
   return (
     <div className="space-y-4">

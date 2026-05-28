@@ -17,9 +17,9 @@ import { notFound } from "next/navigation";
 
 import { getT } from "@/lib/i18n/server";
 import { trpc } from "@/lib/sim-client";
+import { fetchVisionSummary } from "@/lib/vision-client";
 
 import { ECONOMICS_PAIRS } from "../../_economics-pairs";
-import { getVisionFixture } from "../../_fixtures";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -52,9 +52,12 @@ export default async function EconomicsIndexPage({ params }: Props) {
   const pair = ECONOMICS_PAIRS[slug] ?? null;
 
   // Make sure the vision itself exists (so /economics on an unknown
-  // slug 404s instead of rendering the empty state).
-  const fixture = getVisionFixture(slug);
-  if (!fixture) notFound();
+  // slug 404s instead of rendering the empty state). DB-driven (F6).
+  try {
+    await fetchVisionSummary(slug);
+  } catch {
+    notFound();
+  }
 
   let rows: Datapoint[] = [];
   try {

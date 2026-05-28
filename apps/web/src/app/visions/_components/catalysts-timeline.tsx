@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { SourceList } from "@platform/ui";
 
-import type { Catalyst } from "../_fixtures";
+import type { Catalyst } from "../_types";
 
 const SIDE_TONE: Record<Catalyst["side"], string> = {
   bull: "border-emerald-700/50 bg-emerald-950/30 text-emerald-200",

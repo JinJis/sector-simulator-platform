@@ -28,7 +28,6 @@ import { notFound } from "next/navigation";
 
 import { trpc } from "@/lib/sim-client";
 
-import { getVisionFixture } from "../../../_fixtures";
 
 interface Props {
   params: Promise<{ slug: string; key: string }>;
@@ -160,41 +159,9 @@ export default async function ActorDetailPage({ params }: Props) {
       signals = [];
     }
   } catch {
-    const fixture = getVisionFixture(slug);
-    if (!fixture) notFound();
-    const a = fixture.overview.actors.find((x) => x.actor_key === key);
-    if (!a) notFound();
-    actor = {
-      actor_key: a.actor_key,
-      name: a.name,
-      name_local: null,
-      iso_country: a.iso_country,
-      category: a.category,
-      stage: a.stage,
-      blurb: a.blurb,
-      description: null,
-      ticker: a.ticker,
-      exchange: a.exchange,
-      logo_url: null,
-      website: null,
-      relevance: a.relevance,
-      rationale: a.rationale,
-    };
-    activeOn = fixture.overview.capabilities
-      .map((c) => {
-        const match = c.active_actors.find((aa) => aa.actor_key === key);
-        return match
-          ? {
-              capability: {
-                key: c.key,
-                short_name: c.short_name,
-                name: c.name,
-              },
-              role: match.role,
-            }
-          : null;
-      })
-      .filter((x): x is ActiveOnRow => x !== null);
+    // DB unreachable or vision/actor missing → 404. Fixture fallback
+    // removed (F6) so an empty DB no longer renders demo actors.
+    notFound();
   }
 
   if (!actor) notFound();

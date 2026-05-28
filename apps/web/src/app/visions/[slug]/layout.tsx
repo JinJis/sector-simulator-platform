@@ -3,8 +3,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { getT } from "@/lib/i18n/server";
-
-import { getVisionFixture } from "../_fixtures";
+import { fetchVisionSummary } from "@/lib/vision-client";
 
 interface Props {
   children: ReactNode;
@@ -13,11 +12,15 @@ interface Props {
 
 export default async function VisionLayout({ children, params }: Props) {
   const { slug } = await params;
-  const fixture = getVisionFixture(slug);
-  if (!fixture) notFound();
+  // DB-driven (F6). fetchVisionSummary throws if the slug isn't in
+  // sectors → 404. No more silent fixture fallback for unknown slugs.
+  let vision: Awaited<ReturnType<typeof fetchVisionSummary>>;
+  try {
+    vision = await fetchVisionSummary(slug);
+  } catch {
+    notFound();
+  }
   const t = await getT();
-
-  const { vision } = fixture.overview;
 
   // M-IA: 4-tab structure (was 8). Risks + economics fold into
   // Overview inline; capabilities + actors merge into

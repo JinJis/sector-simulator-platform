@@ -8,7 +8,7 @@
 import { CapabilityCard } from "@platform/ui";
 import { notFound } from "next/navigation";
 
-import { getVisionFixture } from "../../_fixtures";
+import { fetchVisionOverview } from "@/lib/vision-client";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -16,9 +16,15 @@ interface Props {
 
 export default async function CapabilitiesIndexPage({ params }: Props) {
   const { slug } = await params;
-  const fixture = getVisionFixture(slug);
-  if (!fixture) notFound();
-  const { capabilities } = fixture.overview;
+  // DB-driven (F6) — sector-service `vision.getOverview` returns the
+  // capability list with current_score + latest_signal already joined.
+  let capabilities: Awaited<ReturnType<typeof fetchVisionOverview>>["capabilities"];
+  try {
+    const overview = await fetchVisionOverview(slug);
+    capabilities = overview.capabilities;
+  } catch {
+    notFound();
+  }
 
   if (capabilities.length === 0) {
     return (
