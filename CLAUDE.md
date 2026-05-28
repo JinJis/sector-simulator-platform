@@ -88,10 +88,11 @@ from overcomplication, clarifying questions arrive *before* implementation.
 ## Current Phase
 
 **Phase 4 (real-time intelligence) — steady state. M55 admin reset
-in progress.** Phase 4 originally shipped M48–M54: crawler service,
-6 per-surface fetchers, bot proposals, Live Pulse UX, an
-`apps/admin/` Next.js cockpit, vision visualizations, and 4 seeded
-visions. Those landed and the data path works.
+shipped; M56 ingest-pipeline verification + tz/source cleanup
+shipped (see current.md).** Phase 4 originally shipped M48–M54:
+crawler service, 6 per-surface fetchers, bot proposals, Live Pulse
+UX, an `apps/admin/` Next.js cockpit, vision visualizations, and 4
+seeded visions. Those landed and the data path works.
 
 What changed in M55: the `apps/admin/` console got tangled
 (login + tRPC + 14 hand-rolled pages, drift between trigger UIs and
@@ -183,7 +184,7 @@ apps/
 services/
 ├── sector-service/               Fastify + tRPC entry point
 ├── simulation-service/           Python sim runner + feasibility engine
-├── data-pipeline/                Signal ingest (arXiv / USPTO / crawl4ai Yahoo+Naver+Finviz) + crons + grounded research + SQLAdmin at /admin (M55)
+├── data-pipeline/                Signal ingest (arXiv / Google News RSS by default; crawl4ai Yahoo+Naver+Finviz behind NEWS_INGEST_USE_CRAWL4AI=1; USPTO behind ENABLE_USPTO=1) + crons + grounded research + SQLAdmin at /admin (M55)
 └── agent-orchestration/          Vision Builder Conductor + extractor / updater agents
 packages/
 ├── sdk-python/                   SimulationBase, Driver, Output

@@ -32,8 +32,8 @@ APScheduler crons (one process, single AsyncIOScheduler):
 
   refresh_quotes_daily             08:30 UTC  →  yfinance quotes
   resolve_predictions_v2_hourly    :05 * * *  →  PredictionV2 resolver
-  news_ingest_5min                 every 5m   →  crawl4ai Yahoo+Naver+Finviz
-  research_ingest_hourly           :07 * * *  →  arXiv + USPTO
+  news_ingest_5min                 every 5m   →  Google News RSS (default; NEWS_INGEST_USE_CRAWL4AI=1 → Yahoo+Naver+Finviz)
+  research_ingest_hourly           :07 * * *  →  arXiv (USPTO behind ENABLE_USPTO=1)
   recompute_feasibility_hourly     :25 * * *  →  ScoreUpdater per cap
   orchestrator_tick_15min          every 15m  →  M49f picker (gated off)
   digest_daily                     06:00 UTC  →  grounded gemini per vision (gated off)
@@ -143,6 +143,31 @@ DR digest writes its own signals + crawl_runs. Without the SA every
 LLM-dependent path 503s gracefully and raw signals still land
 (verified — extractor unreachable in sandbox, signal still written
 with null deltas).
+
+---
+
+## Post-M56 follow-ups (2026-05-28)
+
+### Admin / DX
+| Tag | What |
+|---|---|
+| **Q1** | ModelView lists show FK row's `__str__` next to the opaque id (CapabilityScore + Signal + VisionActor + CapabilityActor all gained joined-name columns) |
+| **Q2** | Vision Dashboard removed — overlapped with the per-model views; one less surface to maintain |
+| **Q3** | `SEED_DATA` env toggle on db-migrate + graph-bootstrap so the operator can boot an empty DB and test ingest from scratch |
+
+### Schema / infra
+| Tag | What |
+|---|---|
+| **P2** | Every Prisma `DateTime` migrated to `@db.Timestamptz(3)`. One ALTER migration (133 lines, 30 tables) drops the M56-1 / M56-6 family of asyncpg tz bugs at the root. Surface-level `replace(tzinfo=None)` workarounds removed from orchestrator + signal_repo. asyncpg now returns aware datetimes everywhere. |
+| **P3** | agent-orchestration boots without LLM auth — lifespan catches `LLMClient()` RuntimeError, stores `app.state.llm=None`, and a new `_require_llm(app)` helper returns 503 from the 15 LLM-using endpoints. Non-LLM paths (health, workflow list) stay live. Dev sandbox + CI without Vertex SA now usable. |
+
+### Ingest quality
+| Tag | What |
+|---|---|
+| **P4** | Keyword files for fusion-power / memory-semi / sofc (were missing — those visions ingested zero signals). Existing space-data-center keywords broadened (drop "semiconductor" suffix, add "rad-tolerant" / "free-space optical" / etc.). |
+| **F1** | arxiv lookback default 3d → 7d, env-overridable. Low-publication-rate fields (fusion, sofc) now have a fighting chance at non-zero hits. |
+| **F2** | crawl4ai playwright cleanup error no longer aborts news_ingest_5min. Two-layer fix: per-source try/except in signal_ingest + manual `_safe_close` in crawl4ai_news. |
+| **F3** | **Google News RSS source** (keyword-driven, no API key, no Playwright) replaces Yahoo/Finviz/Naver as the default for news_ingest_5min. One verified tick wrote 13 capability-relevant signals across 3 visions vs 0 from the ticker crawlers. `NEWS_INGEST_USE_CRAWL4AI=1` falls back to the old path. |
 
 ---
 
