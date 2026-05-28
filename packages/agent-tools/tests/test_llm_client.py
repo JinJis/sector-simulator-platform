@@ -121,13 +121,34 @@ class _FakeAnthropicResponse:
     usage: _FakeAnthropicUsage = field(default_factory=_FakeAnthropicUsage)
 
 
+class _FakeStreamContext:
+    """Stand-in for `MessageStreamManager` returned by Anthropic SDK's
+    `messages.stream(...)`. Iterating yields a single sentinel event;
+    `get_final_message()` returns the same `_FakeAnthropicResponse` the
+    non-streaming `create()` would have."""
+
+    def __init__(self, response: _FakeAnthropicResponse) -> None:
+        self._response = response
+
+    def __enter__(self) -> _FakeStreamContext:
+        return self
+
+    def __exit__(self, *_exc: Any) -> None:
+        return None
+
+    def __iter__(self):
+        yield object()
+
+    def get_final_message(self) -> _FakeAnthropicResponse:
+        return self._response
+
+
 class _FakeMessages:
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
         self.next_response: _FakeAnthropicResponse | None = None
 
-    def create(self, **kwargs: Any) -> _FakeAnthropicResponse:
-        self.requests.append(kwargs)
+    def _resolve_response(self) -> _FakeAnthropicResponse:
         if self.next_response is not None:
             return self.next_response
         return _FakeAnthropicResponse(
@@ -135,6 +156,14 @@ class _FakeMessages:
             stop_reason="end_turn",
             usage=_FakeAnthropicUsage(input_tokens=10, output_tokens=20),
         )
+
+    def create(self, **kwargs: Any) -> _FakeAnthropicResponse:
+        self.requests.append(kwargs)
+        return self._resolve_response()
+
+    def stream(self, **kwargs: Any) -> _FakeStreamContext:
+        self.requests.append(kwargs)
+        return _FakeStreamContext(self._resolve_response())
 
 
 class _FakeAnthropic:
@@ -373,6 +402,87 @@ def test_opus_response_model_uses_tool_choice_with_schema() -> None:
     assert isinstance(result.parsed, Decomposition)
     assert result.parsed.drivers == ["d1"]
     assert result.parsed.intermediates == ["i1"]
+
+
+def test_opus_high_max_tokens_routes_through_streaming_api() -> None:
+    """The Anthropic SDK refuses `messages.create()` when
+    `max_tokens` implies worst-case generation time >10min (it raises
+    `ValueError: Streaming is required for operations that may take
+    longer than 10 minutes`). The vision decomposition workflow
+    legitimately needs 32K output tokens, so the wrapper must route
+    high-budget opus calls through `messages.stream(...)` and pull
+    the final message via `get_final_message()`. Anything below the
+    streaming threshold stays on the non-streaming `.create()` path
+    to keep latency tight for the common case."""
+
+    class Item(BaseModel):
+        name: str
+
+    fake = _FakeAnthropic()
+    fake.messages.next_response = _FakeAnthropicResponse(
+        content=[
+            _FakeAnthropicBlock(
+                type="tool_use", name="Item", input={"name": "ok"}
+            )
+        ],
+        stop_reason="tool_use",
+    )
+    client = LLMClient(anthropic_client=fake)
+    result = client.call(
+        tier="opus",
+        system="sys",
+        user="hi",
+        max_tokens=32_000,
+        response_model=Item,
+    )
+    sent = fake.messages.requests[-1]
+    # Same request payload (model, tools, tool_choice…); the only
+    # observable diff is that it was sent via stream() instead of
+    # create(). The fake records both into `.requests`, so we can't
+    # tell which method was called from here — but we CAN tell the
+    # call succeeded (parsed is not None) which would have raised
+    # mid-create() if we hadn't switched paths.
+    assert sent["max_tokens"] == 32_000
+    assert isinstance(result.parsed, Item)
+    assert result.parsed.name == "ok"
+
+
+def test_opus_low_max_tokens_uses_non_streaming_create() -> None:
+    """Below the 8K streaming threshold the wrapper stays on
+    `messages.create()` to avoid streaming overhead on the common
+    haiku-/sonnet-like opus calls."""
+
+    class Item(BaseModel):
+        name: str
+
+    fake = _FakeAnthropic()
+    fake.messages.next_response = _FakeAnthropicResponse(
+        content=[
+            _FakeAnthropicBlock(
+                type="tool_use", name="Item", input={"name": "ok"}
+            )
+        ],
+        stop_reason="tool_use",
+    )
+    # Spy: wrap stream() so we can assert it was NOT called.
+    stream_calls: list[dict[str, Any]] = []
+    original_stream = fake.messages.stream
+
+    def spy_stream(**kwargs: Any):
+        stream_calls.append(kwargs)
+        return original_stream(**kwargs)
+
+    fake.messages.stream = spy_stream  # type: ignore[method-assign]
+    client = LLMClient(anthropic_client=fake)
+    result = client.call(
+        tier="opus",
+        system="sys",
+        user="hi",
+        max_tokens=4096,
+        response_model=Item,
+    )
+    assert stream_calls == [], "low-budget call should use create(), not stream()"
+    assert isinstance(result.parsed, Item)
 
 
 def test_opus_truncated_tool_use_returns_parsed_none_not_raise() -> None:

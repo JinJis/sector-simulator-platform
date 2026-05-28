@@ -225,6 +225,32 @@ class FakeModels:
         return out
 
 
+class _FakeStreamCtx:
+    """Stand-in for the Anthropic SDK's `MessageStreamManager`.
+    `messages.stream(...)` returns one of these; entering the context
+    and calling `get_final_message()` yields the same `Message`-like
+    object `messages.create(...)` would return. The wrapper at
+    `llm_client._call_anthropic` switches to this path when
+    `max_tokens >= 8192` (above the SDK's nonstreaming-timeout cap)."""
+
+    def __init__(self, response: FakeAnthropicResponse) -> None:
+        self._response = response
+
+    def __enter__(self) -> _FakeStreamCtx:
+        return self
+
+    def __exit__(self, *_exc: Any) -> None:
+        return None
+
+    def __iter__(self):
+        # The wrapper drains stream events to let the helper assemble
+        # the final message; one sentinel event is enough for tests.
+        yield object()
+
+    def get_final_message(self) -> FakeAnthropicResponse:
+        return self._response
+
+
 class FakeMessages:
     """Anthropic provider fake. Records `messages.create(...)` calls on
     the shared `requests` list (same list as `FakeModels`) so tests can
@@ -264,6 +290,18 @@ class FakeMessages:
         self._parent.models.next_response = value
 
     def create(self, **kwargs: Any) -> FakeAnthropicResponse:
+        return self._build_response(kwargs)
+
+    def stream(self, **kwargs: Any) -> _FakeStreamCtx:
+        """Mirrors `Anthropic.messages.stream(...)` — returns a context
+        manager whose `get_final_message()` yields the same response
+        `create()` would have. llm_client switches to this when
+        `max_tokens >= 8192` to dodge the SDK's nonstreaming-timeout
+        guard. The recorded request goes onto the same `requests` list
+        so existing assertions don't care which path was taken."""
+        return _FakeStreamCtx(self._build_response(kwargs))
+
+    def _build_response(self, kwargs: dict[str, Any]) -> FakeAnthropicResponse:
         # ---- adapt Anthropic-shape kwargs into the shared shape ----
         # Tests assert `requests[-1]["system"]` is a block list, even
         # though Anthropic's API takes a plain string. Synthesize.

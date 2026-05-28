@@ -373,7 +373,29 @@ class LLMClient:
                 "budget_tokens": max(min(max_tokens // 2, 8192), 1024),
             }
 
-        response = self._anthropic.messages.create(**request)
+        # The Anthropic SDK refuses non-streaming requests whose worst-
+        # case generation time would exceed 10 minutes (see
+        # `_calculate_nonstreaming_timeout` in `anthropic/_base_client.py`).
+        # For opus-tier calls we routinely set max_tokens to 16-32K (the
+        # vision decomposition needs the headroom), which trips that
+        # guard with a `ValueError: Streaming is required for operations
+        # that may take longer than 10 minutes`.
+        #
+        # Switch to the streaming helper above a conservative threshold:
+        # `messages.stream(...).get_final_message()` returns the same
+        # `Message` object `create()` would have, so the rest of the
+        # parsing path (`_extract_anthropic_content`, usage tally) is
+        # unchanged. The threshold is below the SDK's actual hard limit
+        # so we don't have to chase the formula — anything ≥8192 takes
+        # the streaming path and just-in-case calls stay correct.
+        if max_tokens >= 8192:
+            with self._anthropic.messages.stream(**request) as stream:
+                # Drain events so the helper can build the final message.
+                for _ in stream:
+                    pass
+                response = stream.get_final_message()
+        else:
+            response = self._anthropic.messages.create(**request)
 
         usage = self._extract_anthropic_usage(response)
         priced = price_call(model=model, **usage)
