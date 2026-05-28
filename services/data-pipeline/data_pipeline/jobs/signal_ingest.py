@@ -1,26 +1,23 @@
 """Signal ingest job (M39c) — drives adapters + extractor + DB writes.
 
 For each (vision × capability) tuple:
-  1. Load keyword set from
-     `data_pipeline/signals/keywords/<vision_slug>.json`
-  2. Call each registered SignalSource (adapters/arxiv, +newsapi/uspto
-     when those ship in M39d/e) with the keywords + `since` cutoff
+  1. Read the keyword set from `capabilities.signal_keywords` (the
+     Vision Builder writes this column at commit time)
+  2. Call each registered SignalSource (arXiv / Google News / crawl4ai
+     / USPTO) with the keywords + `since` cutoff
   3. For each RawSignal returned, call the SignalExtractor agent via
      HTTP (`POST agent-orchestration:8002/signal-extractor/score`)
   4. Upsert into signals with extractor-supplied deltas + actor_id
 
 Failures are per-signal: one bad arXiv hit doesn't kill the whole run.
-Cron schedules this once daily (default 18:00 KST = 09:00 UTC).
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import httpx
 
@@ -39,9 +36,6 @@ from data_pipeline.signals.crawl4ai_news import (
 from data_pipeline.signals.uspto import UsptoSource
 
 log = logging.getLogger(__name__)
-
-# Per-vision keyword files live alongside the adapters.
-_KEYWORDS_DIR = Path(__file__).resolve().parent.parent / "signals" / "keywords"
 
 # Default windows. Daily cron uses 3 days to catch what missed via
 # adapter timeouts on the last run.
@@ -64,28 +58,6 @@ class IngestStats:
     signals_written: int = 0
     extractor_total_cost_usd: float = 0.0
     errors: list[str] = field(default_factory=list)
-
-
-def _load_keywords(sector_slug: str) -> dict[str, list[str]]:
-    """Load per-capability keyword set for a vision. Returns {} if the
-    file doesn't exist (memory-semi + sofc don't have curated keywords
-    yet — the cron just skips them)."""
-    path = _KEYWORDS_DIR / f"{sector_slug}.json"
-    if not path.exists():
-        return {}
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
-        log.warning("signal_ingest: bad keywords file %s: %s", path, e)
-        return {}
-    caps = raw.get("capabilities", {})
-    if not isinstance(caps, dict):
-        return {}
-    out: dict[str, list[str]] = {}
-    for k, v in caps.items():
-        if isinstance(v, list) and all(isinstance(s, str) for s in v):
-            out[k] = v
-    return out
 
 
 async def _score_signal(
@@ -146,11 +118,14 @@ async def run_signal_ingest(
     """Drive one ingest pass across all visions × capabilities × sources.
 
     Args:
-        sector_slugs: Visions to ingest. Visions without a keywords file
-            are skipped (logged).
+        sector_slugs: Visions to ingest. Visions whose capabilities all
+            have empty signal_keywords are skipped (logged).
         repo: SignalRepository implementation (Postgres in prod).
-        sources: SignalSource implementations to call. Defaults to
-            ArxivSource() only.
+        sources: SignalSource implementations to call. Defaults to the
+            full lineup (arXiv + crawl4ai Yahoo/Finviz/Naver, with
+            USPTO behind ENABLE_USPTO). The default crawl4ai sources
+            get a DB-backed ticker provider so news fetches read
+            actors.ticker from `repo`.
         agent_url: agent-orchestration base URL. Defaults to env
             AGENT_ORCHESTRATION_URL or http://localhost:8002.
         lookback_days: Adapter `since` window.
@@ -158,9 +133,9 @@ async def run_signal_ingest(
         skip_extractor: For test/CI — write raw signals without extractor
             scoring (all deltas null).
         capability_keys: M49c — optional whitelist. When provided, only
-            these capability keys are ingested within each vision; keys
-            outside the keyword file are silently dropped. None = every
-            capability with a keyword entry (legacy behavior).
+            these capability keys are ingested within each vision.
+            None = every capability with a non-empty signal_keywords
+            list.
 
     Returns:
         IngestStats summary.
@@ -172,13 +147,16 @@ async def run_signal_ingest(
         # Default lineup for the manual /jobs/signal-ingest sweep:
         # arXiv + the three crawl4ai news adapters. USPTO is gated by
         # ENABLE_USPTO since the bulk endpoint isn't usable from every
-        # network (M56-4). NewsAPI was dropped earlier — crawl4ai over
-        # Yahoo/Naver/Finviz covers the news surface without an API key.
+        # network (M56-4). crawl4ai sources read tickers from the DB
+        # via repo.list_vision_tickers — no static fallback.
+        async def _db_ticker_provider(slug: str):  # noqa: ANN202
+            return await repo.list_vision_tickers(slug)
+
         sources = [
             ArxivSource(),
-            Crawl4aiYahooSource(),
-            Crawl4aiFinvizSource(),
-            Crawl4aiNaverSource(),
+            Crawl4aiYahooSource(ticker_provider=_db_ticker_provider),
+            Crawl4aiFinvizSource(ticker_provider=_db_ticker_provider),
+            Crawl4aiNaverSource(ticker_provider=_db_ticker_provider),
         ]
         if os.environ.get("ENABLE_USPTO", "").lower() in {"1", "true", "yes", "on"}:
             sources.insert(1, UsptoSource())
@@ -190,12 +168,19 @@ async def run_signal_ingest(
 
     async with httpx.AsyncClient() as client:
         for slug in sector_slugs:
-            keywords_by_cap = _load_keywords(slug)
-            if not keywords_by_cap:
-                log.info("signal_ingest: %s has no keywords file — skipping", slug)
-                continue
             capabilities = await repo.list_vision_capabilities(slug)
             actors = await repo.list_vision_actors(slug)
+            # Keyword set lives on the capability row (Vision Builder
+            # writes `capabilities.signal_keywords` at commit time).
+            keywords_by_cap = {
+                c.key: c.signal_keywords for c in capabilities if c.signal_keywords
+            }
+            if not keywords_by_cap:
+                log.info(
+                    "signal_ingest: %s has no capabilities with signal_keywords — skipping",
+                    slug,
+                )
+                continue
             cap_by_key = {c.key: c for c in capabilities}
             stats.visions_processed += 1
 
@@ -204,11 +189,9 @@ async def run_signal_ingest(
                     continue
                 cap = cap_by_key.get(cap_key)
                 if cap is None:
-                    log.info(
-                        "signal_ingest: %s/%s — capability not seeded, skipping",
-                        slug,
-                        cap_key,
-                    )
+                    # Defensive — keywords_by_cap was built from
+                    # `capabilities` itself, so this branch is
+                    # unreachable. Kept as a safety net.
                     continue
                 stats.capabilities_processed += 1
 

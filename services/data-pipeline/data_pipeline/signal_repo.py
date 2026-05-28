@@ -9,7 +9,7 @@ Used by data_pipeline.jobs.signal_ingest.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -23,7 +23,10 @@ from data_pipeline.signals.tickers import VisionTickers
 class CapabilityHandle:
     """Info the cron needs to address a capability — id (for FK) + slug
     + key (for adapter args) + name/description/rationale (for extractor
-    prompt context). Loaded once at ingest start."""
+    prompt context) + signal_keywords (the per-cap keyword set the
+    adapters use to filter sources). Loaded once at ingest start;
+    signal_keywords is sourced from the `capabilities.signal_keywords`
+    column the Vision Builder writes at commit time."""
 
     id: str
     sector_slug: str
@@ -31,6 +34,7 @@ class CapabilityHandle:
     name: str
     description: str
     rationale: str
+    signal_keywords: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,7 +228,8 @@ class InMemorySignalRepository:
 
 
 _LIST_CAPS_SQL = """
-SELECT id, sector_slug, key, name, description, rationale
+SELECT id, sector_slug, key, name, description, rationale,
+       COALESCE(signal_keywords, ARRAY[]::text[]) AS signal_keywords
 FROM capabilities
 WHERE sector_slug = $1
 ORDER BY display_order ASC
@@ -344,6 +349,7 @@ class PostgresSignalRepository:
                 name=r["name"],
                 description=r["description"],
                 rationale=r["rationale"],
+                signal_keywords=list(r["signal_keywords"] or []),
             )
             for r in rows
         ]

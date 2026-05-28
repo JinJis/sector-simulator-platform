@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from data_pipeline.jobs.signal_ingest import _load_keywords, run_signal_ingest
+from data_pipeline.jobs.signal_ingest import run_signal_ingest
 from data_pipeline.signal_repo import (
     ActorHandle,
     CapabilityHandle,
@@ -87,6 +87,7 @@ def _cap(
     id: str = "cap_rad_hard",
     key: str = "rad_hard_compute",
     sector_slug: str = "space-data-center",
+    signal_keywords: list[str] | None = None,
 ) -> CapabilityHandle:
     return CapabilityHandle(
         id=id,
@@ -95,24 +96,10 @@ def _cap(
         name="Radiation-hard compute",
         description="GPUs that survive LEO radiation.",
         rationale="Binding constraint for orbital DCs.",
+        signal_keywords=(
+            signal_keywords if signal_keywords is not None else ["rad-hard", "SEU"]
+        ),
     )
-
-
-# ---- Keyword loader -------------------------------------------------------
-
-class TestLoadKeywords:
-    def test_loads_sdc_keywords(self) -> None:
-        kw = _load_keywords("space-data-center")
-        assert "rad_hard_compute" in kw
-        assert len(kw["rad_hard_compute"]) > 0
-        # Every capability key should map to a non-empty list.
-        for cap_key, terms in kw.items():
-            assert isinstance(terms, list)
-            assert all(isinstance(t, str) and t for t in terms)
-
-    def test_missing_file_returns_empty(self) -> None:
-        kw = _load_keywords("nonexistent-vision")
-        assert kw == {}
 
 
 # ---- Orchestrator ---------------------------------------------------------
@@ -230,11 +217,27 @@ class TestRunSignalIngest:
         assert stats.extractor_failures == 1
         assert stats.extractor_calls == 1
 
-    async def test_skips_vision_with_no_keywords_file(self) -> None:
-        repo = InMemorySignalRepository()
+    async def test_skips_vision_with_no_capability_keywords(self) -> None:
+        """A vision whose capabilities all have empty signal_keywords
+        (e.g., fresh Vision Builder run before the keyword set was
+        filled in) is skipped — no source fetches, 0 visions
+        processed."""
+        repo = InMemorySignalRepository(
+            capabilities={
+                "fresh-vision": [
+                    _cap(
+                        id="cap_x",
+                        key="x",
+                        sector_slug="fresh-vision",
+                        signal_keywords=[],
+                    )
+                ]
+            },
+            actors={"fresh-vision": []},
+        )
         source = FakeSignalSource(results=[])
         stats = await run_signal_ingest(
-            sector_slugs=["nonexistent-vision"],
+            sector_slugs=["fresh-vision"],
             repo=repo,
             sources=[source],
             skip_extractor=True,
