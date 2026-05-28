@@ -885,12 +885,33 @@ async def _run_digest_daily_job(*, app: FastAPI):  # noqa: ANN201
         )
         return None
     visions: list[str] = app.state.signal_ingest_visions
+    # Pre-filter to visions that actually have capabilities — the digest
+    # anchors itself on one capability per vision, and on an empty
+    # vision the inner check fails + writes an error crawl_run. Cron
+    # runs every minute (or hourly) so without this pre-filter the
+    # cockpit fills with `error: no_capabilities_for_vision` noise on
+    # every tick. Manual SQLAdmin triggers bypass this gate (operator
+    # gets a clear error row when they hit a misconfigured vision).
+    eligible: list[str] = []
+    skipped: list[str] = []
+    for slug in visions:
+        caps = await sig_repo.list_vision_capabilities(slug)
+        if caps:
+            eligible.append(slug)
+        else:
+            skipped.append(slug)
+    if skipped:
+        log.info(
+            "[cron digest_daily] skipping %d vision(s) with no capabilities: %s",
+            len(skipped),
+            ",".join(skipped),
+        )
     log.info(
         "[cron digest_daily] START visions=%s",
-        ",".join(visions) or "<none>",
+        ",".join(eligible) or "<none>",
     )
     ok = err = 0
-    for slug in visions:
+    for slug in eligible:
         log.info("[cron digest_daily] vision=%s — calling DR digest", slug)
         try:
             await run_deep_research_digest(
@@ -906,12 +927,18 @@ async def _run_digest_daily_job(*, app: FastAPI):  # noqa: ANN201
             log.error("[cron digest_daily] vision=%s failed: %s", slug, exc)
             err += 1
     log.info(
-        "[cron digest_daily] DONE ok=%d err=%d visions=%d",
+        "[cron digest_daily] DONE ok=%d err=%d skipped=%d visions=%d",
         ok,
         err,
+        len(skipped),
         len(visions),
     )
-    return {"ok": ok, "err": err, "visions": len(visions)}
+    return {
+        "ok": ok,
+        "err": err,
+        "skipped_no_capabilities": len(skipped),
+        "visions": len(visions),
+    }
 
 
 async def _run_recompute_feasibility_job(*, app: FastAPI):  # noqa: ANN201
