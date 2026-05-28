@@ -1222,19 +1222,34 @@ class VisionDecompositionWorkflow:
         llm = self._llm.clone(cost_meter=cost_meter)
         system = load_prompt("vision_decomposition")
         user = self._format_user_turn(request)
+        # 32K instead of 16K: opus-4-7 trivially hits 16K on broad-scope
+        # visions (15 capabilities × ~6 actors × prose rationales =
+        # ~14-18K tokens of JSON). When the cap is hit, the schema
+        # truncates AFTER initial_feasibility and BEFORE the closing
+        # `rationale` + `confidence` fields → Pydantic 422 with "Field
+        # required" on those two. 32K gives 2x headroom; opus-4-7
+        # supports up to 32K output natively (no beta header needed).
         result = await asyncio.to_thread(
             llm.call,
             tier="opus",
             system=system,
             user=user,
-            max_tokens=16_000,
+            max_tokens=32_000,
             adaptive_thinking=True,
             response_model=VisionDecompositionResult,
         )
         if result.parsed is None:
+            # Truncation case: stop_reason=="max_tokens" means the model
+            # ran out of budget mid-JSON. Surface the cause loudly so
+            # the operator knows to either narrow scope or wait for the
+            # max_tokens beta-header bump.
+            stop_hint = (
+                " (hit max_tokens — output truncated before schema close)"
+                if result.stop_reason == "max_tokens"
+                else f" (stop_reason={result.stop_reason})"
+            )
             raise RuntimeError(
-                "vision-decomposition returned unparseable output "
-                f"(stop_reason={result.stop_reason})"
+                f"vision-decomposition returned unparseable output{stop_hint}"
             )
         assert isinstance(result.parsed, VisionDecompositionResult)
         draft = result.parsed

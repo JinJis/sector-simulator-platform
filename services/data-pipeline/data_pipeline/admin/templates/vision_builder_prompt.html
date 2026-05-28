@@ -20,6 +20,7 @@
     </div>
     <div class="card-body">
       <form method="post"
+            id="propose-form"
             action="{{ url_for('admin:propose') }}">
         <div class="mb-3">
           <label for="prompt" class="form-label required">
@@ -56,14 +57,81 @@
 
         <div class="d-flex justify-content-between align-items-center">
           <div class="text-muted small">
-            Synchronous opus call — expect 15-60s wall time. Budget ≤$0.55.
+            Synchronous opus + sonnet calls — expect 30-90s wall time.
+            Budget ≤$0.60.
           </div>
-          <button type="submit" class="btn btn-primary">
-            <i class="fa-solid fa-wand-magic-sparkles me-2"></i>
-            Propose
+          <button type="submit" id="propose-submit" class="btn btn-primary">
+            <i class="fa-solid fa-wand-magic-sparkles me-2"
+               id="propose-submit-icon"></i>
+            <span id="propose-submit-label">Propose</span>
           </button>
         </div>
       </form>
+
+      {# In-flight overlay — appears after submit. The form POSTs
+         synchronously and the page won't navigate until propose
+         returns (success → review.html; failure → redirect back here
+         with ?error=…). The overlay's the ONLY signal during the
+         30-90s wait, so make it impossible to miss. #}
+      <div id="propose-running" class="alert alert-info mt-4 d-none">
+        <div class="d-flex align-items-center gap-3">
+          <div class="spinner-border spinner-border-sm" role="status">
+            <span class="visually-hidden">Running…</span>
+          </div>
+          <div>
+            <strong>Running the Vision Builder pipeline…</strong>
+            <div class="text-muted small">
+              <span id="propose-stage-label">Stage 1 — PromptValidator (haiku, ~2s)</span>
+              <span class="ms-2 font-monospace" id="propose-elapsed">0s</span>
+            </div>
+            <div class="text-muted small mt-1">
+              Don't close this tab — the page will refresh when the
+              pipeline finishes. Typical run is 30-90s; opus calls in
+              the decomposition stage can occasionally take 2-3 min on
+              broad-scope visions.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        (function () {
+          const form = document.getElementById("propose-form");
+          const btn = document.getElementById("propose-submit");
+          const btnIcon = document.getElementById("propose-submit-icon");
+          const btnLabel = document.getElementById("propose-submit-label");
+          const overlay = document.getElementById("propose-running");
+          const stageLabel = document.getElementById("propose-stage-label");
+          const elapsed = document.getElementById("propose-elapsed");
+          // Rough stage timing model — drives the "Stage N of 5"
+          // label so the operator sees progress instead of a static
+          // string. Each entry is [label, lower-bound-seconds].
+          const stages = [
+            ["Stage 1 — PromptValidator (haiku)", 0],
+            ["Stage 2 — VisionDecomposition (opus)", 3],
+            ["Stage 3 — DataSourceSelector (sonnet)", 35],
+            ["Stage 4 — ValidationGate (pure-Python)", 50],
+            ["Stage 5 — ThesisDrafter (sonnet)", 52],
+          ];
+          form.addEventListener("submit", function () {
+            btn.disabled = true;
+            btnIcon.className = "spinner-border spinner-border-sm me-2";
+            btnLabel.textContent = "Running…";
+            overlay.classList.remove("d-none");
+            const t0 = Date.now();
+            setInterval(function () {
+              const dt = Math.round((Date.now() - t0) / 1000);
+              elapsed.textContent = dt + "s";
+              for (let i = stages.length - 1; i >= 0; i--) {
+                if (dt >= stages[i][1]) {
+                  stageLabel.textContent = stages[i][0];
+                  break;
+                }
+              }
+            }, 500);
+          });
+        })();
+      </script>
     </div>
   </div>
 </div>

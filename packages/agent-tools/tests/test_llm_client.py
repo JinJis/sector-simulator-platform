@@ -375,6 +375,46 @@ def test_opus_response_model_uses_tool_choice_with_schema() -> None:
     assert result.parsed.intermediates == ["i1"]
 
 
+def test_opus_truncated_tool_use_returns_parsed_none_not_raise() -> None:
+    """When opus hits max_tokens mid tool_use, Anthropic returns the
+    partial input dict and `stop_reason="max_tokens"`. The wrapper
+    used to call `model_validate(raw)` directly — that raised
+    pydantic.ValidationError on missing required fields and
+    propagated out of llm_client, crashing every workflow that hit
+    the budget. Post-fix: validation failure is caught + logged and
+    `parsed` comes back None so the caller can branch on
+    `stop_reason` for a useful error."""
+
+    class FullSchema(BaseModel):
+        slug: str
+        rationale: str  # would be the truncated-away field
+        confidence: float  # would be the truncated-away field
+
+    fake = _FakeAnthropic()
+    fake.messages.next_response = _FakeAnthropicResponse(
+        content=[
+            _FakeAnthropicBlock(
+                type="tool_use",
+                name="FullSchema",
+                # Only slug present — rationale + confidence were past
+                # the truncation point.
+                input={"slug": "space-data-center"},
+            )
+        ],
+        stop_reason="max_tokens",
+        usage=_FakeAnthropicUsage(input_tokens=100, output_tokens=16000),
+    )
+    client = LLMClient(anthropic_client=fake)
+    result = client.call(
+        tier="opus",
+        system="sys",
+        user="hi",
+        response_model=FullSchema,
+    )
+    assert result.parsed is None
+    assert result.stop_reason == "max_tokens"
+
+
 def test_opus_call_drops_thinking_when_response_model_forces_tool_choice() -> None:
     """Anthropic forbids `thinking` together with a forced `tool_choice`
     on a specific tool (which is how the wrapper implements structured

@@ -55,7 +55,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 try:  # Allow import without the optional dep present (tests using fakes
     # can still exercise the cost meter and tool defs).
@@ -448,7 +448,25 @@ class LLMClient:
                 if schema_name is None or getattr(block, "name", "") == schema_name:
                     raw = getattr(block, "input", None)
                     if isinstance(raw, dict):
-                        parsed = response_model.model_validate(raw)
+                        try:
+                            parsed = response_model.model_validate(raw)
+                        except ValidationError as exc:
+                            # Most common cause: the model hit max_tokens
+                            # and Anthropic returned the partial tool_use
+                            # input. Trying to parse a half-truncated JSON
+                            # object against a strict Pydantic schema
+                            # surfaces as "Field required" on the trailing
+                            # fields. Don't let that crash the call —
+                            # leave parsed=None so the caller can inspect
+                            # `stop_reason == "max_tokens"` and produce a
+                            # useful error message.
+                            sys.stderr.write(
+                                f"llm_client: response_model validation "
+                                f"failed (model={schema_name!r}, "
+                                f"errors={exc.error_count()}); returning "
+                                f"parsed=None\n"
+                            )
+                            parsed = None
         return "".join(text_parts), parsed
 
     @staticmethod
