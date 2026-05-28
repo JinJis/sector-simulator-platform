@@ -11,8 +11,7 @@
 import { Breadcrumbs } from "@platform/ui";
 
 import { getT } from "@/lib/i18n/server";
-
-import { listVisionFixtures } from "./_fixtures";
+import { fetchVisions } from "@/lib/vision-client";
 
 import { DomainFilter } from "./_components/domain-filter";
 import { themeForVision } from "./_components/domain-theme";
@@ -31,12 +30,24 @@ export default async function VisionsIndexPage({ searchParams }: Props) {
   const { domain: activeDomainRaw } = await searchParams;
   const activeDomain = activeDomainRaw && activeDomainRaw !== "all" ? activeDomainRaw : null;
   const anchorYear = new Date().getFullYear();
-  const fixtures = listVisionFixtures();
+  // DB-driven (sector-service `vision.list` tRPC). When SEED_DATA=off
+  // + volumes wiped, this returns an empty list and the page renders
+  // the empty-state card — operator builds a vision via SQLAdmin's
+  // Vision Builder wizard, then it shows up here. No more hidden
+  // fixture fallback that made an empty DB look populated.
+  let visions: Awaited<ReturnType<typeof fetchVisions>> = [];
+  try {
+    visions = await fetchVisions();
+  } catch (err) {
+    // sector-service down → show empty state with a hint instead of
+    // 500'ing the whole page.
+    console.warn(
+      "[/visions] vision.list failed:",
+      err instanceof Error ? err.message : err,
+    );
+  }
 
-  // Project to tile data + resolve theme. We resolve theme once and
-  // bucket by theme.key so the domain filter shows accurate counts.
-  const tiles: Array<{ tile: VisionTileData; themeKey: string }> = fixtures.map((f) => {
-    const v = f.overview.vision;
+  const tiles: Array<{ tile: VisionTileData; themeKey: string }> = visions.map((v) => {
     const theme = themeForVision(null, v.slug);
     return {
       tile: {

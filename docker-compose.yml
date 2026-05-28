@@ -77,6 +77,17 @@ services:
         pnpm --filter @platform/db migrate:deploy
         if [ "${SEED_DATA:-on}" = "off" ]; then
           echo "[db-migrate] SEED_DATA=off — skipping demo seed (visions/actors/equities)"
+          # SEED_DATA toggles the seed scripts but NEVER touches existing
+          # rows. If `docker compose down` was used without --volumes,
+          # the previous run's data is still here. Surface a warning so
+          # the operator isn't surprised.
+          existing=$(PGPASSWORD="$POSTGRES_PASSWORD" psql -h postgres -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -c "SELECT count(*) FROM sectors" 2>/dev/null || echo 0)
+          if [ "$existing" -gt 0 ]; then
+            echo "[db-migrate] WARNING: SEED_DATA=off but $existing sector rows already exist."
+            echo "[db-migrate] WARNING: For a truly empty DB, run:"
+            echo "[db-migrate] WARNING:   docker compose -f docker-compose.yml -f docker-compose.local.yml down --volumes"
+            echo "[db-migrate] WARNING: then bring the stack back up. The seed gate only skips inserts; it never deletes."
+          fi
         else
           pnpm --filter @platform/db seed
           pnpm --filter @platform/db seed:visions
