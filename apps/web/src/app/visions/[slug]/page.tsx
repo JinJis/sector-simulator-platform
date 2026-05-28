@@ -107,12 +107,11 @@ async function loadEconomicsPreview(slug: string): Promise<EconomicsPreview | nu
  * DB and made `SEED_DATA=off` look populated. Vision Builder is the
  * only way to add new visions; uncommitted slugs render notFound().
  *
- * thesis + catalysts are still optional editorial overlays — when
- * present they enrich the page; absent ones get gracefully hidden
- * by the section guards below. A future slice will add a DB-backed
- * source for them (Prisma model + Vision Builder LLM step or admin
- * curation), at which point we'd swap the `null` here for that
- * fetch.
+ * F8a-3: thesis + catalysts are also DB-backed now — the
+ * `vision.getOverview` payload carries `investment_thesis` (0-or-1)
+ * and `catalysts[]` rows the ThesisDrafter stage wrote at commit
+ * time. The panels still hide cleanly when those come back empty
+ * (e.g., for an admin-edited vision whose thesis was deleted).
  */
 async function loadVisionData(slug: string): Promise<{
   overview: VisionOverview;
@@ -125,7 +124,30 @@ async function loadVisionData(slug: string): Promise<{
       fetchVisionOverview(slug),
       fetchFeasibilityHistory(slug).catch(() => [] as FeasibilityHistoryPoint[]),
     ]);
-    return { overview, history, thesis: null, catalysts: null };
+    const thesis: InvestmentThesis | null = overview.investment_thesis
+      ? {
+          the_bet: overview.investment_thesis.the_bet,
+          bull_case: overview.investment_thesis.bull_case,
+          bear_case: overview.investment_thesis.bear_case,
+          conviction: overview.investment_thesis.conviction,
+          last_reviewed: new Date(
+            overview.investment_thesis.last_reviewed,
+          ).toISOString(),
+        }
+      : null;
+    const catalysts: Catalyst[] | null =
+      overview.catalysts.length > 0
+        ? overview.catalysts.map((c) => ({
+            id: c.id,
+            expected_at: new Date(c.expected_at).toISOString(),
+            label: c.label,
+            capability_key: c.capability_key,
+            side: c.side,
+            source_url: c.source_url ?? undefined,
+            note: c.note ?? undefined,
+          }))
+        : null;
+    return { overview, history, thesis, catalysts };
   } catch {
     return null;
   }

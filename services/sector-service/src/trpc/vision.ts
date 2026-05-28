@@ -155,6 +155,34 @@ const SignalInVisionOverview = z.object({
     .default([]),
 });
 
+// F8a-3: editorial overlay shapes. Match
+// apps/web/src/app/visions/_types.ts so the renderer types stay
+// stable. SourceRef is loose here (just URL) — the DB column is JSON
+// and the frontend SourceChip degrades to URL-only.
+const ThesisBulletDto = z.object({
+  text: z.string(),
+  source_urls: z.array(z.string()).default([]),
+});
+
+const InvestmentThesisDto = z.object({
+  the_bet: z.string(),
+  bull_case: z.array(ThesisBulletDto),
+  bear_case: z.array(ThesisBulletDto),
+  conviction: z.enum(["high", "medium", "low", "exploratory"]),
+  last_reviewed: z.date(),
+});
+
+const CatalystDto = z.object({
+  id: z.string(),
+  expected_at: z.date(),
+  label: z.string(),
+  capability_key: z.string().nullable(),
+  side: z.enum(["bull", "bear", "neutral"]),
+  source_url: z.string().nullable(),
+  note: z.string().nullable(),
+  display_order: z.number().int(),
+});
+
 const VisionOverview = z.object({
   vision: VisionSummary,
   capabilities: z.array(CapabilityInVisionOverview),
@@ -162,6 +190,10 @@ const VisionOverview = z.object({
   recent_signals: z.array(SignalInVisionOverview),
   // M45a: vision-level top-N actor cards for the Hero "Actors" band.
   actors: z.array(ActorInVisionOverview),
+  // F8a-3: editorial overlay rows — null/empty when the Vision Builder's
+  // ThesisDrafter stage didn't run or the admin hasn't authored them.
+  investment_thesis: InvestmentThesisDto.nullable(),
+  catalysts: z.array(CatalystDto),
 });
 
 const FeasibilityHistoryPoint = z.object({
@@ -180,6 +212,35 @@ const FeasibilityHistoryPoint = z.object({
  * surfaces as the "delta_composite" on the latest-signal hero pill.
  * Returns null when every dim is null (signal not yet scored).
  */
+/**
+ * Defensive parse of the InvestmentThesis bull_case / bear_case JSONB
+ * column. The agent-orchestration ThesisDrafter writes
+ * `{ text: string, source_urls: string[] }[]`; older / hand-edited
+ * rows may be plain string[]. Both shapes are coerced to the canonical
+ * Dto shape so the frontend never branches.
+ */
+function parseThesisBullets(
+  raw: unknown,
+): { text: string; source_urls: string[] }[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (typeof item === "string") {
+        return { text: item, source_urls: [] as string[] };
+      }
+      if (item && typeof item === "object") {
+        const rec = item as Record<string, unknown>;
+        const text = typeof rec.text === "string" ? rec.text : null;
+        const urls = Array.isArray(rec.source_urls)
+          ? (rec.source_urls.filter((u) => typeof u === "string") as string[])
+          : [];
+        if (text) return { text, source_urls: urls };
+      }
+      return null;
+    })
+    .filter((b): b is { text: string; source_urls: string[] } => b !== null);
+}
+
 /**
  * Same helper as in signal.ts — defensive parse of Signal.citations
  * (JSONB column). Kept duplicated rather than extracted because each
@@ -379,7 +440,16 @@ export const visionRouter = router({
     .query(async ({ ctx, input }) => {
       // Pull the sector + everything in parallel — the page can't render
       // until all of these arrive anyway.
-      const [sector, capabilities, risks, recentSignals, currentFeas, visionActors] =
+      const [
+        sector,
+        capabilities,
+        risks,
+        recentSignals,
+        currentFeas,
+        visionActors,
+        investmentThesis,
+        catalysts,
+      ] =
         await Promise.all([
           ctx.prisma.sector.findUnique({ where: { slug: input.slug } }),
           ctx.prisma.capability.findMany({
@@ -431,6 +501,19 @@ export const visionRouter = router({
               { display_order: "asc" },
             ],
             take: input.actor_limit,
+          }),
+          // F8a-3: editorial overlay — InvestmentThesis (0-or-1) +
+          // Catalyst[] timeline. The frontend hides the panels when
+          // these come back null / empty.
+          ctx.prisma.investmentThesis.findUnique({
+            where: { sector_slug: input.slug },
+          }),
+          ctx.prisma.catalyst.findMany({
+            where: { sector_slug: input.slug },
+            orderBy: [
+              { display_order: "asc" },
+              { expected_at: "asc" },
+            ],
           }),
         ]);
       if (!sector) {
@@ -581,6 +664,30 @@ export const visionRouter = router({
           relevance: va.relevance,
           rationale: va.rationale,
           display_order: va.display_order,
+        })),
+        investment_thesis: investmentThesis
+          ? {
+              the_bet: investmentThesis.the_bet,
+              bull_case: parseThesisBullets(investmentThesis.bull_case),
+              bear_case: parseThesisBullets(investmentThesis.bear_case),
+              conviction:
+                (investmentThesis.conviction as
+                  | "high"
+                  | "medium"
+                  | "low"
+                  | "exploratory"),
+              last_reviewed: investmentThesis.last_reviewed,
+            }
+          : null,
+        catalysts: catalysts.map((c) => ({
+          id: c.id,
+          expected_at: c.expected_at,
+          label: c.label,
+          capability_key: c.capability_key,
+          side: c.side as "bull" | "bear" | "neutral",
+          source_url: c.source_url,
+          note: c.note,
+          display_order: c.display_order,
         })),
       };
     }),
