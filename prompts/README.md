@@ -16,7 +16,7 @@ followed by the prompt body:
 ```markdown
 ---
 role: Vision Decomposition Agent
-tier: opus
+tier: deep
 inputs: VisionDecompositionRequest
 outputs: VisionDecomposition
 version: 1
@@ -32,7 +32,7 @@ version: 1
 | Key       | Meaning                                                              |
 | --------- | -------------------------------------------------------------------- |
 | `role`    | Human-readable agent role.                                           |
-| `tier`    | Model tier — one of `haiku`, `sonnet`, `opus`.                       |
+| `tier`    | Model tier — one of `fast`, `balanced`, `deep`.                       |
 | `inputs`  | Pydantic model name the orchestrator passes (string, not imported).  |
 | `outputs` | Pydantic model name the agent must return (structured output).       |
 | `version` | Integer. Bump on every behavioral change — never silently overwrite. |
@@ -51,27 +51,27 @@ or editing front-matter therefore does NOT invalidate the prompt cache.
 
 | Name                    | Tier   | Outputs                | Workflow |
 | ----------------------- | ------ | ---------------------- | -------- |
-| `prompt_validator`      | haiku  | `PromptValidation`     | `PromptValidatorWorkflow` |
-| `research`              | sonnet | `ResearchBrief`        | `ResearchWorkflow` (shared with legacy) |
-| `vision_decomposition`  | opus   | `VisionDecomposition`  | `VisionDecompositionWorkflow` |
-| `data_source_selector`  | sonnet | `DataSourceSelection`  | `DataSourceSelectorWorkflow` |
+| `prompt_validator`      | fast  | `PromptValidation`     | `PromptValidatorWorkflow` |
+| `research`              | balanced | `ResearchBrief`        | `ResearchWorkflow` (shared with legacy) |
+| `vision_decomposition`  | deep   | `VisionDecomposition`  | `VisionDecompositionWorkflow` |
+| `data_source_selector`  | balanced | `DataSourceSelection`  | `DataSourceSelectorWorkflow` |
 
 ### Signal pipeline (M39 + M40)
 
 | Name                    | Tier   | Outputs                  | Workflow |
 | ----------------------- | ------ | ------------------------ | -------- |
-| `signal_extractor`      | haiku  | `SignalScoring`          | `SignalExtractorWorkflow` |
-| `score_updater`         | sonnet | `CapabilityScoreUpdate`  | `CapabilityScoreUpdaterWorkflow` |
+| `signal_extractor`      | fast  | `SignalScoring`          | `SignalExtractorWorkflow` |
+| `score_updater`         | balanced | `CapabilityScoreUpdate`  | `CapabilityScoreUpdaterWorkflow` |
 
 ### Legacy sim-builder track (pre-pivot, retained)
 
 | Name              | Tier    | Outputs                 | Workflow |
 | ----------------- | ------- | ----------------------- | -------- |
-| `decomposition`   | opus    | `Decomposition`         | `DecompositionWorkflow` |
-| `edge-inference`  | opus    | `EdgeInferenceResult`   | `EdgeInferenceWorkflow` |
-| `driver-inference`| sonnet  | `DriverInferenceResult` | `DriverInferenceWorkflow` |
-| `code-gen`        | sonnet  | `CodeGenResult`         | `CodeGenWorkflow` |
-| `code-review`     | sonnet  | `CodeReviewResult`      | `CodeReviewWorkflow` |
+| `decomposition`   | deep    | `Decomposition`         | `DecompositionWorkflow` |
+| `edge-inference`  | deep    | `EdgeInferenceResult`   | `EdgeInferenceWorkflow` |
+| `driver-inference`| balanced  | `DriverInferenceResult` | `DriverInferenceWorkflow` |
+| `code-gen`        | balanced  | `CodeGenResult`         | `CodeGenWorkflow` |
+| `code-review`     | balanced  | `CodeReviewResult`      | `CodeReviewWorkflow` |
 
 The sim-builder chain still powers agent-generated `Sector` rows
 (legacy `/propose` flow), now consumed by the Playground sub-tab.
@@ -99,12 +99,12 @@ this).
 
 ## Provider notes
 
-The platform routes via Vertex AI:
-- `opus` → Anthropic Claude 4.7 (forced `tool_choice` trick for
-  structured output)
-- `sonnet` → Gemini 3.5 Flash (native `response_schema`)
-- `haiku` → Gemini 3.5 Flash Lite
+Post-F9, every tier routes through Google Gemini via the `google-genai`
+SDK (Vertex AI in prod, AI Studio in dev):
+- `deep` → Gemini 3.1 Pro Preview
+- `balanced` → Gemini 3.5 Flash
+- `fast` → Gemini 3.5 Flash Lite
 
-Pydantic structured-output validation runs on every call regardless of
-provider — schema mismatches surface as a typed exception, not silent
-drift. See [CLAUDE.md "LLM auth + tier routing"](../CLAUDE.md#llm-auth--tier-routing-m35).
+Pydantic structured-output validation runs on every call — schema
+mismatches surface as a typed exception, not silent drift. See
+[CLAUDE.md "LLM auth + tier routing"](../CLAUDE.md#llm-auth--tier-routing-f9--gemini-only).

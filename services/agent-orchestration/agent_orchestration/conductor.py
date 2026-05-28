@@ -2,14 +2,14 @@
 
 End-to-end pipeline:
 
-  1. PromptValidator (haiku)         → reject early on bad prompts
-  2. VisionDecomposition (opus)      → full structured draft
-  3. DataSourceSelector (sonnet)     → per-capability keyword sets
+  1. PromptValidator (fast)         → reject early on bad prompts
+  2. VisionDecomposition (deep)      → full structured draft
+  3. DataSourceSelector (balanced)     → per-capability keyword sets
   4. ValidationGate (pure Python)    → relational checks, DAG, FK,
                                        weight normalization
 
 Total cost target per successful build: <$0.55. Pipeline aborts at the
-first failure — no point calling opus if the prompt is bad. Cost is
+first failure — no point calling the deep tier if the prompt is bad. Cost is
 reported per stage so the admin UI can show "where the budget went."
 
 The conductor does NOT persist anything. Its output is a draft + a
@@ -79,7 +79,7 @@ class VisionBuilderResult:
     signal_config: DataSourceConfigDraft | None
     gate: ValidationGateResult | None
     # F8a-2: editorial overlay produced by ThesisDrafter (stage 5). Null
-    # when the gate failed (we don't waste a sonnet call on a rejected
+    # when the gate failed (we don't waste a balanced-tier call on a rejected
     # draft) or when the drafter itself threw — neither blocks commit.
     thesis_catalysts: ThesisCatalystsDraft | None
     stages: list[StageMetric]
@@ -96,7 +96,7 @@ class VisionBuilderConductor:
 
     We could parallelize stage 3 (DataSourceSelector) with the
     pure-Python parts of stage 4, but the marginal speedup isn't worth
-    the code complexity — the opus call dominates wall-clock.
+    the code complexity — the deep-tier call dominates wall-clock.
     """
 
     def __init__(self, llm: LLMClient) -> None:
@@ -115,7 +115,7 @@ class VisionBuilderConductor:
         existing_vision_slugs = existing_vision_slugs or []
         existing_actor_keys = existing_actor_keys or []
 
-        # ---- Stage 1: PromptValidator (haiku) -------------------------
+        # ---- Stage 1: PromptValidator (fast) -------------------------
         validation, m1 = await self._run_validator(
             prompt=prompt,
             existing_vision_slugs=existing_vision_slugs,
@@ -138,7 +138,7 @@ class VisionBuilderConductor:
                 total_duration_ms=int((perf_counter() - total_start) * 1000),
             )
 
-        # ---- Stage 2: VisionDecomposition (opus) ----------------------
+        # ---- Stage 2: VisionDecomposition (deep) ----------------------
         draft, m2 = await self._run_decomposition(
             validation=validation,
             existing_actor_keys=existing_actor_keys,
@@ -146,7 +146,7 @@ class VisionBuilderConductor:
         )
         stages.append(m2)
 
-        # ---- Stage 3: DataSourceSelector (sonnet) ---------------------
+        # ---- Stage 3: DataSourceSelector (balanced) ---------------------
         signal_config, m3 = await self._run_selector(draft=draft)
         stages.append(m3)
 
@@ -171,9 +171,9 @@ class VisionBuilderConductor:
         # passed cleanly OR gate failed and rejected the draft).
         final_draft = gate.normalized_draft or draft
 
-        # ---- Stage 5 (optional): ThesisDrafter (sonnet) ---------------
-        # Only runs when the gate passed — no point spending a sonnet
-        # call on a rejected draft. Failures here don't propagate;
+        # ---- Stage 5 (optional): ThesisDrafter (balanced) ---------------
+        # Only runs when the gate passed — no point spending a balanced-
+        # tier call on a rejected draft. Failures here don't propagate;
         # commit just lands without thesis/catalysts and the panels
         # render empty.
         thesis_catalysts: ThesisCatalystsDraft | None = None

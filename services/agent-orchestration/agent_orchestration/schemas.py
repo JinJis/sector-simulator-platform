@@ -430,7 +430,7 @@ class FullPipelineRequest(BaseModel):
 
 
 # =====================================================================
-# M39b — SignalExtractor (haiku tier, ~100-1000 calls/day)
+# M39b — SignalExtractor (fast tier, ~100-1000 calls/day)
 # =====================================================================
 
 
@@ -461,7 +461,7 @@ class SignalExtractorRequest(BaseModel):
     signal_summary: str | None = Field(default=None, max_length=4000)
     source_kind: str = Field(..., description="paper / patent / news / filing / ...")
     # Actor keyword sets — extractor matches signal text against these
-    # to tag a single best actor. Keep ≤25 to fit in haiku context.
+    # to tag a single best actor. Keep ≤25 to fit in fast-tier context.
     actor_keywords: list[ActorKeywordSet] = Field(default_factory=list, max_length=25)
 
 
@@ -512,7 +512,7 @@ __all_signal_extractor__ = (
 
 
 # =====================================================================
-# M40b — CapabilityScoreUpdater (sonnet tier)
+# M40b — CapabilityScoreUpdater (balanced tier)
 # =====================================================================
 
 
@@ -583,11 +583,11 @@ class CapabilityScoreUpdaterRunResult(BaseModel):
 # M41 — Vision Builder pipeline schemas
 #
 # Six-stage flow:
-#   1. PromptValidator (haiku)        — sanity-check user prompt
-#   2. VisionResearch (sonnet)        — context gathering (existing
+#   1. PromptValidator (fast)        — sanity-check user prompt
+#   2. VisionResearch (balanced)        — context gathering (existing
 #                                       ResearchWorkflow reused)
-#   3. VisionDecomposition (opus)     — full vision draft
-#   4. DataSourceSelector (sonnet)    — per-capability keyword sets
+#   3. VisionDecomposition (deep)     — full vision draft
+#   4. DataSourceSelector (balanced)    — per-capability keyword sets
 #   5. ValidationGate (pure Python)   — DAG + uniqueness + FK checks
 #   6. Conductor → admin → persist    — atomic create
 #
@@ -602,7 +602,7 @@ class CapabilityScoreUpdaterRunResult(BaseModel):
 
 class VisionBuilderPromptRequest(BaseModel):
     """Raw user prompt + optional context. The validator does the
-    sanity check before any expensive opus call burns budget."""
+    sanity check before any expensive deep-tier call burns budget."""
 
     prompt: str = Field(
         ...,
@@ -677,7 +677,7 @@ class PromptValidatorRunResult(BaseModel):
     duration_ms: int
 
 
-# ---- Stage 3: Vision decomposition (opus tier — biggest call) ----------
+# ---- Stage 3: Vision decomposition (deep tier — biggest call) ----------
 
 
 class CapabilityDraft(BaseModel):
@@ -833,7 +833,7 @@ class VisionDecompositionRunResult(BaseModel):
     duration_ms: int
 
 
-# ---- Stage 5 (F8a-2): Investment thesis + catalysts drafter (sonnet) ---
+# ---- Stage 5 (F8a-2): Investment thesis + catalysts drafter (balanced) ---
 #
 # Produces the editorial-overlay rows persisted into InvestmentThesis +
 # Catalyst tables. Optional stage — if the LLM call fails or the gate
@@ -924,7 +924,7 @@ class ThesisCatalystsDraft(BaseModel):
     rationale: str = Field(default="", max_length=2000)
 
 
-# ---- Stage 4: Data source selector (sonnet) ----------------------------
+# ---- Stage 4: Data source selector (balanced) ----------------------------
 
 
 class CapabilityKeywordSet(BaseModel):
@@ -1024,7 +1024,7 @@ class VisionBuilderRunResult(BaseModel):
 # ====================================================================
 # M55 follow-up — Community Proposal Payload Drafter
 #
-# Light haiku agent that fills in the `proposed_payload` JSON for a
+# Light fast-tier agent that fills in the `proposed_payload` JSON for a
 # user-filed CommunityProposal, given the kind + sector + title + body.
 # The user reviews the draft and either confirms or regenerates. Each
 # target_kind has its own field set — we use per-kind Pydantic models

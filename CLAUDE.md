@@ -150,7 +150,9 @@ Phase 3 context lives in
   exceptions after F9.
 - **Agent tier map** (`packages/agent-tools/llm_client.py`) — all
   tiers route through the same `google-genai` SDK; env-overridable
-  via `LLM_{OPUS,SONNET,HAIKU}_MODEL`:
+  via `LLM_{DEEP,BALANCED,FAST}_MODEL` (post-F9 semantic names;
+  legacy `LLM_{OPUS,SONNET,HAIKU}_MODEL` still honoured with a
+  deprecation log):
   - `opus` → `gemini-3.1-pro-preview` (deepest reasoning — VisionDecomposition /
     CapabilityDependencies / CapabilityScoringCode / CodeReview)
   - `sonnet` → `gemini-3.5-flash` (balanced — VisionResearch /

@@ -10,7 +10,7 @@ block at the top:
 
     ---
     role: Decomposition Agent
-    tier: opus
+    tier: deep
     inputs: DecompositionRequest
     outputs: Decomposition
     version: 1
@@ -19,7 +19,7 @@ block at the top:
     # ... body markdown ...
 
 `load_prompt(name)` returns the **body only** — that's what reaches
-Claude as the system prompt, so adding metadata won't invalidate the
+Gemini as the system prompt, so adding metadata won't invalidate the
 prompt-cache prefix.
 
 `prompt_metadata(name)` returns the parsed front-matter dict.
@@ -50,7 +50,7 @@ class PromptMeta:
 
     name: str
     role: str
-    tier: str  # "haiku" / "sonnet" / "opus"
+    tier: str  # "fast" / "balanced" / "deep"
     inputs: str  # Pydantic model name, e.g. "DecompositionRequest"
     outputs: str  # Pydantic model name, e.g. "Decomposition"
     version: int
@@ -58,7 +58,7 @@ class PromptMeta:
 
 
 _REQUIRED_KEYS = {"role", "tier", "inputs", "outputs", "version"}
-_VALID_TIERS = {"haiku", "sonnet", "opus"}
+_VALID_TIERS = {"fast", "balanced", "deep"}
 
 
 def _find_prompts_dir() -> Path:

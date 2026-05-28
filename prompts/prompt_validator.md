@@ -1,6 +1,6 @@
 ---
 role: Vision Builder Prompt Validator
-tier: haiku
+tier: fast
 inputs: VisionBuilderPromptRequest
 outputs: PromptValidationResult
 version: 1

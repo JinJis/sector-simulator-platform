@@ -27,12 +27,12 @@ def _reset() -> None:
 # Expected catalog members + their tier. Update when adding / removing
 # prompts; this is the test that catches "I forgot to ship a prompt".
 _EXPECTED_PROMPTS = {
-    "research": "sonnet",
-    "decomposition": "opus",
-    "driver-inference": "sonnet",
-    "edge-inference": "opus",
-    "code-gen": "sonnet",
-    "code-review": "sonnet",
+    "research": "balanced",
+    "decomposition": "deep",
+    "driver-inference": "balanced",
+    "edge-inference": "deep",
+    "code-gen": "balanced",
+    "code-review": "balanced",
 }
 
 
@@ -107,7 +107,7 @@ def test_missing_front_matter_keys_raises(tmp_path, monkeypatch) -> None:
     incomplete.write_text(
         "---\n"
         "role: Incomplete\n"
-        "tier: opus\n"
+        "tier: deep\n"
         # missing inputs/outputs/version
         "---\n\n"
         "# body\n"
@@ -126,7 +126,7 @@ def test_unclosed_front_matter_raises(tmp_path, monkeypatch) -> None:
     bad.write_text(
         "---\n"
         "role: X\n"
-        "tier: opus\n"
+        "tier: deep\n"
         "# this is a comment, not the close\n"
     )
     (tmp_path / "README.md").write_text("# tmp")

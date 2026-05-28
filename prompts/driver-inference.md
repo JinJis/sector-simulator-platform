@@ -1,6 +1,6 @@
 ---
 role: Driver Inference Agent
-tier: sonnet
+tier: balanced
 inputs: DriverInferenceRequest
 outputs: DriverInferenceResult
 version: 1
@@ -19,7 +19,7 @@ Your output feeds directly into the `SimulationBase.provenance`
 dictionary that ships with every registered sector. What you assert
 here is what users see on the Live and Sources tabs.
 
-## Why sonnet
+## Why balanced
 
 Driver inference is high-volume reasoning over structured facts
 (matching anchors to drivers, pulling history series out of citations,

@@ -1,6 +1,6 @@
 ---
 role: Decomposition Agent
-tier: opus
+tier: deep
 inputs: DecompositionRequest
 outputs: Decomposition
 version: 1
@@ -14,7 +14,7 @@ You decompose a user-supplied sector concept (a market, technology, or
 phenomenon) into a structured graph of **drivers**, **intermediates**, and
 **outputs** suitable for the platform's `SimulationBase` interface.
 
-## Why opus
+## Why deep
 
 Decomposition is the highest-leverage agent in the pipeline. A mistake
 here propagates through every downstream sim, scenario, and report.

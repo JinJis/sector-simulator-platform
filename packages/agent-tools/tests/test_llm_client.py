@@ -5,7 +5,7 @@ builds the right request shape and threads tier → model id correctly.
 History:
 - pre-M34: faked the Anthropic SDK.
 - M34 (2026-05-22): swapped to Gemini.
-- M35 (2026-05-22): added Anthropic back for the opus tier (dual fakes).
+- M35 (2026-05-22): added Anthropic back for the deep tier (dual fakes).
 - F9 (2026-05-28): dropped Anthropic. All three tiers now route through
   Gemini and the test file is back to a single fake surface.
 """
@@ -101,44 +101,45 @@ class _FakeGenAI:
 
 def test_available_models_returns_expected_tier_mapping() -> None:
     models = available_models()
-    assert models["haiku"] == "gemini-3.5-flash-lite"
-    assert models["sonnet"] == "gemini-3.5-flash"
-    assert models["opus"] == "gemini-3.1-pro-preview"
+    assert models["fast"] == "gemini-3.5-flash-lite"
+    assert models["balanced"] == "gemini-3.5-flash"
+    assert models["deep"] == "gemini-3.1-pro-preview"
 
 
 def test_env_override_takes_precedence_over_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`LLM_OPUS_MODEL` env var should redirect the opus tier without
-    requiring a code change — useful for trying a newer Pro model
-    without rebuilding the container."""
-    monkeypatch.setenv("LLM_OPUS_MODEL", "gemini-3.2-pro-experimental")
-    assert available_models()["opus"] == "gemini-3.2-pro-experimental"
+    """`LLM_DEEP_MODEL` redirects the deep tier without requiring a
+    code change — useful for trying a newer Pro model without rebuilding
+    the container. Same pattern for `LLM_BALANCED_MODEL` /
+    `LLM_FAST_MODEL`."""
+    monkeypatch.setenv("LLM_DEEP_MODEL", "gemini-3.2-pro-experimental")
+    assert available_models()["deep"] == "gemini-3.2-pro-experimental"
 
 
 # ---- per-tier dispatch + request shape -------------------------------------
 
 
-def test_call_routes_sonnet_to_correct_gemini_model_id() -> None:
+def test_call_routes_balanced_to_correct_gemini_model_id() -> None:
     fake = _FakeGenAI()
     client = LLMClient(genai_client=fake)
-    client.call(tier="sonnet", system="sys", user="hi")
+    client.call(tier="balanced", system="sys", user="hi")
     sent = fake.models.requests[-1]
     assert sent["model"] == "gemini-3.5-flash"
 
 
-def test_call_routes_haiku_to_correct_gemini_model_id() -> None:
+def test_call_routes_fast_to_correct_gemini_model_id() -> None:
     fake = _FakeGenAI()
     client = LLMClient(genai_client=fake)
-    client.call(tier="haiku", system="sys", user="hi")
+    client.call(tier="fast", system="sys", user="hi")
     sent = fake.models.requests[-1]
     assert sent["model"] == "gemini-3.5-flash-lite"
 
 
-def test_call_routes_opus_to_gemini_pro_preview() -> None:
-    """F9 swap: opus tier now routes to gemini-3.1-pro-preview through
+def test_call_routes_deep_to_gemini_pro_preview() -> None:
+    """F9 swap: deep tier now routes to gemini-3.1-pro-preview through
     the same Gemini SDK, not Claude via AnthropicVertex."""
     fake = _FakeGenAI()
     client = LLMClient(genai_client=fake)
-    client.call(tier="opus", system="sys", user="hi")
+    client.call(tier="deep", system="sys", user="hi")
     sent = fake.models.requests[-1]
     assert sent["model"] == "gemini-3.1-pro-preview"
     # Opus + sonnet + haiku all go through the same Gemini surface now.
@@ -151,7 +152,7 @@ def test_call_passes_system_instruction_in_config() -> None:
     fake = _FakeGenAI()
     client = LLMClient(genai_client=fake)
     client.call(
-        tier="haiku",
+        tier="fast",
         system=["chunk one — generic instructions", "chunk two — task-specific addenda"],
         user="hi",
     )
@@ -164,7 +165,7 @@ def test_call_passes_system_instruction_in_config() -> None:
 def test_call_translates_user_turn_into_contents() -> None:
     fake = _FakeGenAI()
     client = LLMClient(genai_client=fake)
-    client.call(tier="haiku", system="sys", user="current question")
+    client.call(tier="fast", system="sys", user="current question")
     sent = fake.models.requests[-1]
     contents = sent["contents"]
     assert contents[-1]["role"] == "user"
@@ -174,10 +175,10 @@ def test_call_translates_user_turn_into_contents() -> None:
 # ---- thinking_budget --------------------------------------------------------
 
 
-def test_thinking_budget_zero_for_haiku_by_default() -> None:
+def test_thinking_budget_zero_for_fast_by_default() -> None:
     fake = _FakeGenAI()
     client = LLMClient(genai_client=fake)
-    client.call(tier="haiku", system="sys", user="hi")
+    client.call(tier="fast", system="sys", user="hi")
     sent = fake.models.requests[-1]
     assert sent["config"]["thinking_config"] == {"thinking_budget": 0}
 
@@ -185,27 +186,27 @@ def test_thinking_budget_zero_for_haiku_by_default() -> None:
 def test_thinking_budget_dynamic_when_adaptive_thinking_on() -> None:
     fake = _FakeGenAI()
     client = LLMClient(genai_client=fake)
-    client.call(tier="sonnet", system="sys", user="hi", adaptive_thinking=True)
+    client.call(tier="balanced", system="sys", user="hi", adaptive_thinking=True)
     sent = fake.models.requests[-1]
     assert sent["config"]["thinking_config"] == {"thinking_budget": -1}
 
 
-def test_thinking_budget_medium_for_sonnet_without_adaptive() -> None:
+def test_thinking_budget_medium_for_balanced_without_adaptive() -> None:
     fake = _FakeGenAI()
     client = LLMClient(genai_client=fake)
-    client.call(tier="sonnet", system="sys", user="hi")
+    client.call(tier="balanced", system="sys", user="hi")
     sent = fake.models.requests[-1]
     # sonnet default effort = "medium" → budget 1024
     assert sent["config"]["thinking_config"] == {"thinking_budget": 1024}
 
 
-def test_thinking_budget_high_for_opus_by_default() -> None:
-    """Opus tier (gemini-3.1-pro-preview) defaults to effort='high' →
+def test_thinking_budget_high_for_deep_by_default() -> None:
+    """Deep tier (gemini-3.1-pro-preview) defaults to effort='high' →
     4096-token thinking budget — gives the pro model room to plan
     before emitting the JSON decomposition."""
     fake = _FakeGenAI()
     client = LLMClient(genai_client=fake)
-    client.call(tier="opus", system="sys", user="hi")
+    client.call(tier="deep", system="sys", user="hi")
     sent = fake.models.requests[-1]
     assert sent["config"]["thinking_config"] == {"thinking_budget": 4096}
 
@@ -213,7 +214,7 @@ def test_thinking_budget_high_for_opus_by_default() -> None:
 def test_thinking_budget_low_effort_override() -> None:
     fake = _FakeGenAI()
     client = LLMClient(genai_client=fake)
-    client.call(tier="sonnet", system="sys", user="hi", effort="low")
+    client.call(tier="balanced", system="sys", user="hi", effort="low")
     sent = fake.models.requests[-1]
     assert sent["config"]["thinking_config"] == {"thinking_budget": 512}
 
@@ -233,11 +234,11 @@ def test_call_records_usage_and_cost_via_meter() -> None:
         ),
     )
     client = LLMClient(genai_client=fake)
-    result = client.call(tier="haiku", system="sys", user="hi")
+    result = client.call(tier="fast", system="sys", user="hi")
     assert result.text == "response body"
     assert result.raw_usage["input_tokens"] == 1000
     assert result.raw_usage["output_tokens"] == 500
-    # flash-lite (haiku tier): 1000 * $0.25/1M + 500 * $1.50/1M
+    # flash-lite (fast tier): 1000 * $0.25/1M + 500 * $1.50/1M
     #                       = 0.00025 + 0.00075 = 0.001
     assert abs(client.cost_meter.total_usd - 0.001) < 1e-6
 
@@ -256,7 +257,7 @@ def test_cache_read_tokens_billed_at_discounted_rate() -> None:
         ),
     )
     client = LLMClient(genai_client=fake)
-    client.call(tier="sonnet", system="sys", user="hi")
+    client.call(tier="balanced", system="sys", user="hi")
     # sonnet (gemini-3.5-flash): input 1000 * $0.50/1M = $0.0005
     # plus cache-read 1000 * $0.50/1M * 0.25 = $0.000125
     # output 0
@@ -264,8 +265,8 @@ def test_cache_read_tokens_billed_at_discounted_rate() -> None:
     assert abs(client.cost_meter.total_usd - expected) < 1e-6
 
 
-def test_opus_call_records_cost_at_gemini_pro_pricing() -> None:
-    """Opus tier now bills at gemini-3.1-pro-preview rates ($1.25 in /
+def test_deep_tier_records_cost_at_gemini_pro_pricing() -> None:
+    """Deep tier now bills at gemini-3.1-pro-preview rates ($1.25 in /
     $10 out per 1M tokens) instead of claude-opus-4-7 ($15/$75)."""
     fake = _FakeGenAI()
     fake.models.next_response = _FakeResponse(
@@ -275,7 +276,7 @@ def test_opus_call_records_cost_at_gemini_pro_pricing() -> None:
         ),
     )
     client = LLMClient(genai_client=fake)
-    client.call(tier="opus", system="sys", user="hi")
+    client.call(tier="deep", system="sys", user="hi")
     # 1000 * $1.25/1M + 500 * $10/1M = 0.00125 + 0.005 = 0.00625
     assert abs(client.cost_meter.total_usd - 0.00625) < 1e-6
 
@@ -296,7 +297,7 @@ def test_call_with_pydantic_response_model_sets_response_schema() -> None:
         ),
     )
     client = LLMClient(genai_client=fake)
-    result = client.call(tier="sonnet", system="sys", user="hi", response_model=Item)
+    result = client.call(tier="balanced", system="sys", user="hi", response_model=Item)
     sent = fake.models.requests[-1]
     assert sent["config"]["response_schema"] is Item
     assert sent["config"]["response_mime_type"] == "application/json"
@@ -312,7 +313,7 @@ def test_extra_messages_are_prepended_and_assistant_becomes_model() -> None:
     fake = _FakeGenAI()
     client = LLMClient(genai_client=fake)
     client.call(
-        tier="sonnet",
+        tier="balanced",
         system="sys",
         user="current question",
         extra_messages=[
@@ -333,7 +334,7 @@ def test_tools_passed_through_when_supplied() -> None:
     fake = _FakeGenAI()
     client = LLMClient(genai_client=fake)
     tools = [{"function_declarations": [{"name": "lookup_sector"}]}]
-    client.call(tier="sonnet", system="sys", user="hi", tools=tools)
+    client.call(tier="balanced", system="sys", user="hi", tools=tools)
     assert fake.models.requests[-1]["config"]["tools"] == tools
 
 
@@ -378,7 +379,7 @@ def test_gemini_retries_without_response_schema_on_constraint_too_tall() -> None
     )
     client = LLMClient(genai_client=fake)
     result = client.call(
-        tier="sonnet",
+        tier="balanced",
         system="sys",
         user="hi",
         response_model=Item,
@@ -424,7 +425,7 @@ def test_gemini_retry_injects_json_schema_into_prompt() -> None:
     )
     client = LLMClient(genai_client=fake)
     result = client.call(
-        tier="sonnet", system="sys", user="orig", response_model=Item,
+        tier="balanced", system="sys", user="orig", response_model=Item,
     )
     assert isinstance(result.parsed, Item)
     # The retry call (second request) must contain BOTH the original
@@ -462,7 +463,7 @@ def test_gemini_retry_tolerates_markdown_fence_around_json() -> None:
     )
     client = LLMClient(genai_client=fake)
     result = client.call(
-        tier="sonnet", system="sys", user="hi", response_model=Item,
+        tier="balanced", system="sys", user="hi", response_model=Item,
     )
     assert isinstance(result.parsed, Item)
     assert result.parsed.name == "fenced"
@@ -496,7 +497,7 @@ def test_gemini_retry_tolerates_prose_preamble_around_json() -> None:
     )
     client = LLMClient(genai_client=fake)
     result = client.call(
-        tier="sonnet", system="sys", user="hi", response_model=Item,
+        tier="balanced", system="sys", user="hi", response_model=Item,
     )
     assert isinstance(result.parsed, Item)
     assert result.parsed.name == "loose"
@@ -515,7 +516,7 @@ def test_gemini_propagates_non_constraint_errors_unchanged() -> None:
     client = LLMClient(genai_client=fake)
     with pytest.raises(RuntimeError, match="PERMISSION_DENIED"):
         client.call(
-            tier="sonnet", system="sys", user="hi", response_model=Item,
+            tier="balanced", system="sys", user="hi", response_model=Item,
         )
     assert len(fake.models.requests) == 1  # no retry
 
@@ -528,7 +529,7 @@ def test_legacy_client_kwarg_maps_to_genai_client() -> None:
     still accepts that as an alias for `genai_client=`."""
     fake = _FakeGenAI()
     client = LLMClient(client=fake)
-    client.call(tier="haiku", system="sys", user="hi")
+    client.call(tier="fast", system="sys", user="hi")
     assert len(fake.models.requests) == 1
 
 

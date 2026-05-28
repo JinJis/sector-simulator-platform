@@ -255,7 +255,7 @@ class DecompositionWorkflow:
         # thread so the event loop stays free for other workflows.
         result = await asyncio.to_thread(
             llm.call,
-            tier="opus",
+            tier="deep",
             system=system,
             user="\n".join(user_parts),
             max_tokens=8192,
@@ -298,7 +298,7 @@ class EdgeInferenceWorkflow:
         user = self._format_user_turn(request.decomposition)
         result = await asyncio.to_thread(
             llm.call,
-            tier="opus",
+            tier="deep",
             system=system,
             user=user,
             max_tokens=8192,
@@ -398,11 +398,11 @@ class ProposeSectorWorkflow:
 
 
 class ResearchWorkflow:
-    """Wraps the Research Agent (sonnet). Loads
+    """Wraps the Research Agent (balanced). Loads
     `prompts/research.md`, calls Claude Sonnet 4.6 with the user
     description + optional focus areas, validates `ResearchBrief`.
 
-    Why sonnet: per the prompt, this is high-volume extraction +
+    Why balanced: per the prompt, this is high-volume extraction +
     citation collection. Opus here would be wasteful — the reasoning
     burden is on Decomposition + EdgeInference downstream.
     """
@@ -420,7 +420,7 @@ class ResearchWorkflow:
         user = self._format_user_turn(request)
         result = await asyncio.to_thread(
             llm.call,
-            tier="sonnet",
+            tier="balanced",
             system=system,
             user=user,
             max_tokens=4096,
@@ -459,12 +459,12 @@ class ResearchWorkflow:
 
 
 class DriverInferenceWorkflow:
-    """Wraps the Driver Inference Agent (sonnet). Takes a
+    """Wraps the Driver Inference Agent (balanced). Takes a
     `Decomposition` + optional `ResearchBrief`, produces
     `DriverInferenceResult` with calibrated defaults / ranges /
     history / sources per driver.
 
-    Why sonnet: the work is matching anchors to drivers + normalizing
+    Why balanced: the work is matching anchors to drivers + normalizing
     units, which Sonnet handles well at half the per-token cost of
     Opus.
     """
@@ -482,7 +482,7 @@ class DriverInferenceWorkflow:
         user = self._format_user_turn(request)
         result = await asyncio.to_thread(
             llm.call,
-            tier="sonnet",
+            tier="balanced",
             system=system,
             user=user,
             max_tokens=8192,
@@ -552,7 +552,7 @@ class DriverInferenceWorkflow:
 
 
 class CodeGenWorkflow:
-    """Wraps the Code Generation Agent (sonnet). Takes the full
+    """Wraps the Code Generation Agent (balanced). Takes the full
     structured spec (Decomposition + DriverInference + EdgeInference)
     and produces a `CodeGenResult` containing the `SimulationBase`
     subclass source as a string.
@@ -575,7 +575,7 @@ class CodeGenWorkflow:
         user = self._format_user_turn(request)
         result = await asyncio.to_thread(
             llm.call,
-            tier="sonnet",
+            tier="balanced",
             system=system,
             user=user,
             max_tokens=16384,
@@ -687,7 +687,7 @@ class CodeGenWorkflow:
 
 
 class CodeReviewWorkflow:
-    """Wraps the Code Review Agent (sonnet). Takes the generated source
+    """Wraps the Code Review Agent (balanced). Takes the generated source
     + the structured spec it implements + any concerns Code Gen
     surfaced about itself, returns a `CodeReviewResult` with status
     `approve` / `revise` / `reject`.
@@ -710,7 +710,7 @@ class CodeReviewWorkflow:
         user = self._format_user_turn(request)
         result = await asyncio.to_thread(
             llm.call,
-            tier="sonnet",
+            tier="balanced",
             system=system,
             user=user,
             max_tokens=4096,
@@ -891,16 +891,16 @@ class FullPipelineWorkflow:
 
 
 # =====================================================================
-# M39b — SignalExtractorWorkflow (haiku tier)
+# M39b — SignalExtractorWorkflow (fast tier)
 # =====================================================================
 #
 # Highest-volume workflow in the platform — runs ~100-1000x/day (one
-# call per ingested signal). Lives on the haiku tier so total monthly
+# call per ingested signal). Lives on the fast tier so total monthly
 # cost stays under the per-user $30 budget even at thousands of
 # signals.
 #
 # Output is structured (Pydantic SignalScoring). No adaptive_thinking
-# (haiku doesn't benefit much, and we want fast turnaround).
+# (fast tier doesn't benefit much, and we want fast turnaround).
 # =====================================================================
 
 
@@ -930,7 +930,7 @@ class SignalExtractorWorkflow:
         user = self._format_user_turn(request)
         result = await asyncio.to_thread(
             llm.call,
-            tier="haiku",
+            tier="fast",
             system=system,
             user=user,
             max_tokens=1024,
@@ -987,7 +987,7 @@ class SignalExtractorWorkflow:
 
 
 # =====================================================================
-# M40b — CapabilityScoreUpdaterWorkflow (sonnet tier)
+# M40b — CapabilityScoreUpdaterWorkflow (balanced tier)
 # =====================================================================
 #
 # One call per (capability × recompute cycle). Reasoning-heavy: agent
@@ -1020,7 +1020,7 @@ class CapabilityScoreUpdaterWorkflow:
         user = self._format_user_turn(request)
         result = await asyncio.to_thread(
             llm.call,
-            tier="sonnet",
+            tier="balanced",
             system=system,
             user=user,
             max_tokens=2048,
@@ -1091,11 +1091,11 @@ class CapabilityScoreUpdaterWorkflow:
 
 
 # =====================================================================
-# M41 — PromptValidatorWorkflow (haiku tier)
+# M41 — PromptValidatorWorkflow (fast tier)
 # =====================================================================
 #
 # Stage-1 gate of the Vision Builder pipeline. Cheap classification +
-# refinement so we don't burn opus budget on nonsense, off-topic, or
+# refinement so we don't burn deep-tier budget on nonsense, off-topic, or
 # duplicate prompts. Output drives whether the pipeline proceeds and
 # sizes the downstream decomposition.
 # =====================================================================
@@ -1103,7 +1103,7 @@ class CapabilityScoreUpdaterWorkflow:
 
 class PromptValidatorWorkflow:
     """Sanity-check a user vision prompt before the expensive pipeline
-    stages run. Cheap (haiku) — runs once per user submission.
+    stages run. Cheap (fast) — runs once per user submission.
     Prompt: prompts/prompt_validator.md.
     """
 
@@ -1123,7 +1123,7 @@ class PromptValidatorWorkflow:
         user = self._format_user_turn(request)
         result = await asyncio.to_thread(
             llm.call,
-            tier="haiku",
+            tier="fast",
             system=system,
             user=user,
             max_tokens=1024,
@@ -1183,7 +1183,7 @@ class PromptValidatorWorkflow:
 
 
 # =====================================================================
-# M41 — VisionDecompositionWorkflow (opus tier — the heart of M41)
+# M41 — VisionDecompositionWorkflow (deep tier — the heart of M41)
 # =====================================================================
 #
 # Stage-3 of the Vision Builder pipeline. Takes a validated prompt and
@@ -1191,7 +1191,7 @@ class PromptValidatorWorkflow:
 # dependencies (DAG edges), risks, actors, capability-actor wiring,
 # and an initial feasibility estimate.
 #
-# Why opus: this single call produces the entire structured shape of
+# Why deep: this single call produces the entire structured shape of
 # a new vision — magnitude calibration, capability decomposition,
 # realistic actor selection across geographies, and DAG construction
 # all at once. Skimping here cascades into bad downstream UX.
@@ -1223,14 +1223,14 @@ class VisionDecompositionWorkflow:
         system = load_prompt("vision_decomposition")
         user = self._format_user_turn(request)
         # 16K is enough for a typical decomposition (15 capabilities,
-        # 12 risks, 30 actors with bounded prose); the opus tier
+        # 12 risks, 30 actors with bounded prose); the deep tier
         # (gemini-3.1-pro-preview) can extend further if needed.
         # adaptive_thinking=True lets Gemini spend extra tokens
         # reasoning before emitting the JSON — important for the
         # capability/dependency synthesis quality.
         result = await asyncio.to_thread(
             llm.call,
-            tier="opus",
+            tier="deep",
             system=system,
             user=user,
             max_tokens=16_000,
@@ -1304,14 +1304,14 @@ class VisionDecompositionWorkflow:
 
 
 # =====================================================================
-# M41 — DataSourceSelectorWorkflow (sonnet tier)
+# M41 — DataSourceSelectorWorkflow (balanced tier)
 # =====================================================================
 #
 # Stage-4 of the Vision Builder pipeline. Given the decomposition's
 # capabilities, emit per-capability keyword sets that the M39 signal
 # ingest cron will use to fetch arXiv / USPTO / News results.
 #
-# Why sonnet: keyword generation is narrower than decomposition, but
+# Why balanced: keyword generation is narrower than decomposition, but
 # domain vocab matters enough that haiku produces overly generic
 # terms. Sonnet hits the sweet spot.
 #
@@ -1338,7 +1338,7 @@ class DataSourceSelectorWorkflow:
         user = self._format_user_turn(request)
         result = await asyncio.to_thread(
             llm.call,
-            tier="sonnet",
+            tier="balanced",
             system=system,
             user=user,
             max_tokens=4096,
@@ -1393,7 +1393,7 @@ class DataSourceSelectorWorkflow:
 
 
 # =====================================================================
-# F8a-2 — ThesisDrafterWorkflow (sonnet tier)
+# F8a-2 — ThesisDrafterWorkflow (balanced tier)
 # =====================================================================
 #
 # Stage 5 (final, optional) of the Vision Builder pipeline. Takes the
@@ -1401,7 +1401,7 @@ class DataSourceSelectorWorkflow:
 # bundle — the editorial-overlay rows that populate /visions/<slug>'s
 # hero thesis card + catalyst timeline.
 #
-# Why sonnet: narrative quality matters, but the input space is already
+# Why balanced: narrative quality matters, but the input space is already
 # narrowed by stages 2-4. Opus would 2-3x the cost without proportional
 # quality gain. Caller treats this stage as best-effort — if it fails
 # the vision still commits with thesis=null.
@@ -1430,7 +1430,7 @@ class ThesisDrafterWorkflow:
         user = self._format_user_turn(request)
         result = await asyncio.to_thread(
             llm.call,
-            tier="sonnet",
+            tier="balanced",
             system=system,
             user=user,
             max_tokens=4096,
@@ -1495,7 +1495,7 @@ class ThesisDrafterWorkflow:
 
 
 # =====================================================================
-# M55 follow-up — ProposalPayloadDrafterWorkflow (haiku tier)
+# M55 follow-up — ProposalPayloadDrafterWorkflow (fast tier)
 # =====================================================================
 #
 # Fills the structured `proposed_payload` for a community proposal
@@ -1504,7 +1504,7 @@ class ThesisDrafterWorkflow:
 # — user reviews + confirms instead of filling.
 #
 # Prompt: prompts/proposal_payload_drafter.md
-# Cost target: ≤$0.001 per call (haiku; regenerate is cheap).
+# Cost target: ≤$0.001 per call (fast; regenerate is cheap).
 # =====================================================================
 
 
@@ -1520,7 +1520,7 @@ _PROPOSAL_PAYLOAD_SCHEMA_BY_KIND: dict[str, type[BaseModel]] = {
 
 class ProposalPayloadDrafterWorkflow:
     """Draft a structured `proposed_payload` from the user's free-text
-    proposal title + body. One haiku call; consumer (sector-service
+    proposal title + body. One fast-tier call; consumer (sector-service
     tRPC + UI) re-validates against Zod before persisting."""
 
     kind = "proposal_payload_drafter"
@@ -1547,7 +1547,7 @@ class ProposalPayloadDrafterWorkflow:
         user = self._format_user_turn(request)
         result = await asyncio.to_thread(
             llm.call,
-            tier="haiku",
+            tier="fast",
             system=system,
             user=user,
             max_tokens=1024,

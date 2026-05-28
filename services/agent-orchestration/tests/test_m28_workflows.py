@@ -240,7 +240,7 @@ async def test_research_workflow_succeeds(
     user_text = last["messages"][-1]["content"]
     assert "launch cost trends" in user_text
     assert "radiation tolerance" in user_text
-    # Sonnet tier — adaptive thinking should NOT be set for sonnet calls.
+    # Balanced tier — adaptive thinking should NOT be set for balanced-tier calls.
     # (post-M34: Gemini-backed wrapper still routes thinking via budget;
     # the assertion now checks that the *adaptive* mode isn't enabled.)
     assert last.get("thinking") != {"type": "adaptive"}

@@ -303,7 +303,7 @@ def create_app() -> FastAPI:
         req: SignalExtractorRequest,
     ) -> SignalExtractorRunResult:
         """Synchronous extractor endpoint — called by the signal_ingest
-        cron once per raw Signal. Single haiku call (~$0.001 each at
+        cron once per raw Signal. Single fast-tier call (~$0.001 each at
         current pricing), so we run inline rather than through the
         WorkflowRunner queue. Returns the scoring + cost roll-up.
         """
@@ -340,7 +340,7 @@ def create_app() -> FastAPI:
     ) -> ProposalPayloadDraftResult:
         """M55 follow-up — fill a community proposal's `proposed_payload`
         from the (target_kind, sector, title, body) the user typed in the
-        wizard's first 3 steps. Single haiku call (~$0.001 each), so
+        wizard's first 3 steps. Single fast-tier call (~$0.001 each), so
         regenerate is cheap; user just confirms instead of hand-typing
         the per-kind form. Caller (sector-service tRPC) re-validates
         with the existing Zod schemas before persisting."""
@@ -373,7 +373,7 @@ def create_app() -> FastAPI:
     ) -> PromptValidatorRunResult:
         """Stage 1 of the Vision Builder pipeline — sanity-check the
         user's natural-language prompt before kicking off the
-        expensive decomposition stages. Cheap (haiku tier, ~$0.0005
+        expensive decomposition stages. Cheap (fast tier, ~$0.0005
         per call). Returns rejection details + a refined_question
         suggestion that the admin UI surfaces as "did you mean…?".
         """
@@ -406,7 +406,7 @@ def create_app() -> FastAPI:
     ) -> VisionDecompositionRunResult:
         """Stage 3 of the Vision Builder pipeline — full structured
         decomposition (capabilities + dependencies + risks + actors +
-        initial feasibility). Opus tier; cost target <$0.50 per call.
+        initial feasibility). Deep tier; cost target <$0.50 per call.
         Admin must approve the resulting draft before it's persisted.
         """
         llm: LLMClient = _require_llm(app)
@@ -484,7 +484,7 @@ def create_app() -> FastAPI:
         req: DataSourceSelectorRequest,
     ) -> DataSourceSelectorRunResult:
         """Stage 4 of the Vision Builder pipeline — per-capability
-        keyword sets for arXiv / USPTO / News adapters. Sonnet tier;
+        keyword sets for arXiv / USPTO / News adapters. Balanced tier;
         cheap (~$0.005 per vision). Output gets persisted into each
         Capability.signal_keywords column so the M39 ingest cron
         picks them up on the next run.
@@ -516,7 +516,7 @@ def create_app() -> FastAPI:
     ) -> CapabilityScoreUpdaterRunResult:
         """Synchronous score-updater endpoint — called by the
         recompute_feasibility cron once per (vision × capability) per
-        day. Single sonnet call with extended thinking; ~$0.01-0.03
+        day. Single balanced-tier call with extended thinking; ~$0.01-0.03
         each at current pricing. Returns the update + cost roll-up.
         """
         llm: LLMClient = _require_llm(app)

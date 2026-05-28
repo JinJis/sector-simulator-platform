@@ -1,7 +1,7 @@
 """Thin wrapper around Google Gemini via the `google-genai` SDK.
 
 Single-provider after F9 (was dual-provider Anthropic + Gemini through
-F8). The opus tier — used by VisionDecomposition, CodeReview, etc. —
+F8). The deep tier — used by VisionDecomposition, CodeReview, etc. —
 now also routes to Gemini (a Pro-class model) rather than Claude on
 Vertex Model Garden. The Vertex Claude path proved unstable on
 multiple axes (10-minute nonstreaming timeout for long requests,
@@ -9,15 +9,15 @@ opaque tool_use truncation, region routing surprises) and the
 dual-SDK split was paying for problems we didn't actually need to
 solve.
 
-Tier mapping (env-overridable via `LLM_{OPUS,SONNET,HAIKU}_MODEL`):
+Tier mapping (env-overridable via `LLM_{DEEP,BALANCED,FAST}_MODEL`):
 
-  - opus    → gemini-3.1-pro-preview  (most capable, deepest thinking)
-  - sonnet  → gemini-3.5-flash         (balanced)
-  - haiku   → gemini-3.5-flash-lite    (cheapest, extraction / routing)
+  - deep     → gemini-3.1-pro-preview  (most capable, deepest thinking)
+  - balanced → gemini-3.5-flash         (bulk of agent reasoning)
+  - fast     → gemini-3.5-flash-lite    (cheapest, extraction / routing)
 
 Design decisions
 ----------------
-- Routing is by tier (`"haiku"` / `"sonnet"` / `"opus"`). The dispatch
+- Routing is by tier (`"fast"` / `"balanced"` / `"deep"`). The dispatch
   table here is the only place to bump when the mapping changes; every
   callsite stays generic.
 - `LLMClient.call(...)` surface (tier, system, user, max_tokens,
@@ -31,7 +31,7 @@ Design decisions
   Pydantic post-parse. Callers always get a typed `parsed` field.
 - `adaptive_thinking=True` enables Gemini's dynamic thinking budget
   (`-1` sentinel). Otherwise `thinking_budget` follows
-  (tier, effort) — haiku defaults to 0, sonnet/opus to a small fixed
+  (tier, effort) — fast defaults to 0, balanced/deep to a small fixed
   cap unless effort="high".
 
 What this file does NOT do (deliberately):
@@ -61,32 +61,34 @@ except ImportError:  # pragma: no cover - exercised only in environments
     genai = None  # type: ignore[assignment]
 
 
-ModelTier = Literal["haiku", "sonnet", "opus"]
+ModelTier = Literal["fast", "balanced", "deep"]
 
 
 # Defaults — env vars below override per tier so model rolls don't need
 # a code change. Update the defaults only when migrating the base
-# lineup. All three tiers now route through google-genai; the model id
-# is what differs.
+# lineup. Names are semantic (depth/cost trade-off), not vendor-branded:
+#   fast      — cheapest, used for extraction / routing / classification
+#   balanced  — middle, used for the bulk of agent reasoning
+#   deep      — most capable, used for synthesis (decomposition, review)
 _DEFAULT_MODEL_BY_TIER: dict[ModelTier, str] = {
-    "haiku": "gemini-3.5-flash-lite",
-    "sonnet": "gemini-3.5-flash",
-    "opus": "gemini-3.1-pro-preview",
+    "fast": "gemini-3.5-flash-lite",
+    "balanced": "gemini-3.5-flash",
+    "deep": "gemini-3.1-pro-preview",
 }
 
 # Env var that overrides each tier's model id. Read at call time, not
 # import time, so tests can monkeypatch + container restarts pick up new
 # values without a wheel rebuild.
 _MODEL_ENV_BY_TIER: dict[ModelTier, str] = {
-    "haiku": "LLM_HAIKU_MODEL",
-    "sonnet": "LLM_SONNET_MODEL",
-    "opus": "LLM_OPUS_MODEL",
+    "fast": "LLM_FAST_MODEL",
+    "balanced": "LLM_BALANCED_MODEL",
+    "deep": "LLM_DEEP_MODEL",
 }
 
 
 def model_for_tier(tier: ModelTier) -> str:
     """Resolve the active model id for `tier`. Order of precedence:
-    env (`LLM_{TIER}_MODEL`) → built-in default."""
+    env (`LLM_{DEEP,BALANCED,FAST}_MODEL`) → built-in default."""
     env_key = _MODEL_ENV_BY_TIER[tier]
     return os.environ.get(env_key) or _DEFAULT_MODEL_BY_TIER[tier]
 
@@ -185,9 +187,9 @@ def _schema_reminder_turn(response_model: type[BaseModel]) -> dict[str, Any]:
 # Effort hints retained for API compatibility. Drives the thinking
 # budget heuristic in `_thinking_budget` below.
 _DEFAULT_EFFORT_BY_TIER: dict[ModelTier, str] = {
-    "haiku": "medium",
-    "sonnet": "medium",
-    "opus": "high",
+    "fast": "medium",
+    "balanced": "medium",
+    "deep": "high",
 }
 
 
@@ -226,7 +228,7 @@ class LLMClient:
     ```python
     # Free-form text
     result = client.call(
-        tier="sonnet",
+        tier="balanced",
         system=SYSTEM_PROMPT,
         user="What's the area of a triangle with sides 3, 4, 5?",
     )
@@ -236,7 +238,7 @@ class LLMClient:
         drivers: list[str]
         intermediates: list[str]
     result = client.call(
-        tier="opus",
+        tier="deep",
         system=DECOMP_SYSTEM,
         user=user_question,
         response_model=Decomposition,
@@ -320,7 +322,7 @@ class LLMClient:
         extra_messages: list[dict[str, Any]] | None = None,
     ) -> LLMCallResult:
         """Make one LLM call. Always dispatches to google-genai now
-        (F9 made the opus tier route to Gemini Pro instead of Claude)."""
+        (F9 made the deep tier route to Gemini Pro instead of Claude)."""
         from agent_tools.cost import price_call
 
         if self._genai is None:
@@ -626,13 +628,13 @@ def _thinking_budget(
     Translation stays conservative — overthinking is the main failure
     mode for these models, so we only opt into a big budget when the
     caller explicitly passes adaptive_thinking=True or sets
-    effort="high". The opus tier (gemini-3.1-pro-preview) defaults to
+    effort="high". The deep tier (gemini-3.1-pro-preview) defaults to
     effort="high" + a 4096-token thinking cap for its synthesis work
     (vision decomposition, code review).
     """
     if adaptive:
         return -1
-    if tier == "haiku":
+    if tier == "fast":
         return 0
     if effort == "high":
         return 4096

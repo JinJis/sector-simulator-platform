@@ -285,7 +285,7 @@ class TestVisionBuilderConductor:
         self, fake_llm, fake_anthropic
     ) -> None:
         """The validator's defensive duplicate guard rejects → conductor
-        stops before opus call."""
+        stops before deep-tier call."""
         fake_anthropic.models.parsed_factory = _make_stage_factory(
             validation=_valid_validation(suggested_slug="space-data-center"),
             draft=_valid_draft(),

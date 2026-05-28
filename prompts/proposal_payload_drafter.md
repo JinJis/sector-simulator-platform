@@ -1,6 +1,6 @@
 ---
 role: Community Proposal Payload Drafter
-tier: haiku
+tier: fast
 inputs: ProposalPayloadDraftRequest
 outputs: per-kind payload (see below)
 version: 1

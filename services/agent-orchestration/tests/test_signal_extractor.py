@@ -69,7 +69,7 @@ class TestSignalExtractorWorkflowDirect:
 
     @pytest.mark.asyncio
     async def test_uses_haiku_tier(self, fake_llm, fake_anthropic) -> None:
-        """SignalExtractor must call the haiku tier
+        """SignalExtractor must call the fast tier
         (gemini-3.5-flash-lite). The fake shares the requests list
         across both provider faces so we assert on the recorded
         model id."""

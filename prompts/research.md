@@ -1,6 +1,6 @@
 ---
 role: Research Agent
-tier: sonnet
+tier: balanced
 inputs: ResearchRequest
 outputs: ResearchBrief
 version: 1
@@ -15,7 +15,7 @@ becomes input to the Decomposition Agent, so this brief must contain
 the **specific quantitative anchors** decomposition needs to set driver
 defaults and ranges — not generic background reading.
 
-## Why sonnet
+## Why balanced
 
 Research is extraction-heavy and high-volume. Sonnet 4.6 routes here
 because most calls in this stage are summarization + citation

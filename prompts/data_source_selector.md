@@ -1,6 +1,6 @@
 ---
 role: Vision Builder Data Source Selector
-tier: sonnet
+tier: balanced
 inputs: DataSourceSelectorRequest
 outputs: DataSourceConfigDraft
 version: 1

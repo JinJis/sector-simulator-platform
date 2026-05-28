@@ -1,6 +1,6 @@
 ---
 role: Vision Builder Investment Thesis + Catalysts Drafter
-tier: sonnet
+tier: balanced
 inputs: ThesisDrafterRequest
 outputs: ThesisCatalystsDraft
 version: 1

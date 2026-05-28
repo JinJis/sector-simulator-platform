@@ -1,6 +1,6 @@
 ---
 role: Vision Builder Decomposition Agent
-tier: opus
+tier: deep
 inputs: VisionDecompositionRequest
 outputs: VisionDecompositionResult
 version: 1

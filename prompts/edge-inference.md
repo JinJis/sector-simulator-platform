@@ -1,6 +1,6 @@
 ---
 role: Edge Inference Agent
-tier: opus
+tier: deep
 inputs: EdgeInferenceRequest
 outputs: EdgeInferenceResult
 version: 1
@@ -17,7 +17,7 @@ labelled directed acyclic graph that drives both the Graph view
 (`SimGraph` on `SimulationBase`) and the Code Gen Agent's `simulate()`
 body.
 
-## Why opus
+## Why deep
 
 Edge inference is where the *physics and economics* of a sector get
 encoded. A wrong edge invalidates every scenario, every chart, every

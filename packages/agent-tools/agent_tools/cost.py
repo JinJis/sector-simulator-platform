@@ -5,8 +5,8 @@ Prices stored as USD per **1M** tokens so the multipliers stay readable.
 History:
 - pre-M34: Anthropic Claude only.
 - M34 (2026-05-22): swapped entirely to Google Gemini.
-- M35 (2026-05-22): brought Claude back for the opus tier alongside
-  Gemini for sonnet/haiku.
+- M35 (2026-05-22): brought Claude back for the deep tier alongside
+  Gemini for balanced/fast.
 - F9 (2026-05-28): dropped Claude entirely. All three tiers now route
   through Gemini; the per-model entries here are Gemini-only and the
   cache_read multiplier reflects Gemini's `cachedContent` 0.25× discount
@@ -37,16 +37,16 @@ class ModelPrice:
 # Sources: https://ai.google.dev/gemini-api/docs/pricing,
 #          https://cloud.google.com/vertex-ai/generative-ai/pricing.
 _PRICES: dict[str, ModelPrice] = {
-    # gemini-3.1-pro-preview — opus tier (post-F9). Most capable; used by
+    # gemini-3.1-pro-preview — deep tier (post-F9). Most capable; used by
     # VisionDecomposition, CodeReview, ThesisDrafter, and the grounded-
     # research DEEP path (daily digest). Carries the heaviest thinking
     # config so output tokens trend high.
     "gemini-3.1-pro-preview": ModelPrice(1.25, 10.00),
-    # gemini-3.5-flash — sonnet tier. Cheap, fast, used for the bulk
+    # gemini-3.5-flash — balanced tier. Cheap, fast, used for the bulk
     # of research / driver inference / prediction rationale analysis /
     # DataSourceSelector keyword generation.
     "gemini-3.5-flash": ModelPrice(0.50, 3.00),
-    # gemini-3.5-flash-lite — haiku tier. Cheapest tier; used for
+    # gemini-3.5-flash-lite — fast tier. Cheapest tier; used for
     # extraction + routing + classification (SignalExtractor,
     # PromptValidator, ProposalPayloadDrafter).
     "gemini-3.5-flash-lite": ModelPrice(0.25, 1.50),

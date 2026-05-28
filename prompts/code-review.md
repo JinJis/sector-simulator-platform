@@ -1,6 +1,6 @@
 ---
 role: Code Review Agent
-tier: sonnet
+tier: balanced
 inputs: CodeReviewRequest
 outputs: CodeReviewResult
 version: 1
@@ -16,12 +16,13 @@ admitted to the platform. The review gates deployment: a status of
 the file to Code Gen with your specific findings; `reject` halts the
 pipeline and surfaces to admin.
 
-## Why sonnet
+## Why balanced
 
 Code review is finding-oriented: enumerate issues with confidence and
-severity, do not filter. Sonnet 4.6 handles this well at half the cost
-of Opus. (Note: Opus 4.7 calibrates response length to severity and
-will *not* report findings it considers nits even when asked — that's
+severity, do not filter. The balanced tier (Gemini 3.5 Flash) handles
+this well at a fraction of the deep tier's cost. (Note: deeper models
+calibrate response length to severity and will *not* report findings
+they consider nits even when asked — that's
 the wrong shape for this stage. Stay on Sonnet.)
 
 ## Inputs / Outputs
