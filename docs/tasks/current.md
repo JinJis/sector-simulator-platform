@@ -1,11 +1,17 @@
-# Current task — M55: Admin reset (SQLAdmin)
+# Current task — M55 (admin reset) + M56 (ingest pipeline verify)
 
-**Last updated**: 2026-05-27. Phase 4 (M48–M54) is shipped and in
-steady state. M55 reset the admin surface: the `apps/admin/` Next.js
-console — login, ~14 hand-rolled pages, tRPC client wrappers, repeated
-drift between trigger UIs and the actual fetcher contracts — was
-deleted and replaced with **SQLAdmin** mounted on the data-pipeline
-FastAPI at `data-pipeline:8003/admin`.
+**Last updated**: 2026-05-28. Phase 4 (M48–M54) is shipped and in
+steady state. M55 reset the admin surface. M56 stood the data-
+pipeline stack up against live arxiv + crawl4ai and traced six bugs
+that prevented any new signal from landing in Postgres — see the
+M56 commit for the cluster + a verified end-to-end ingest write
+(arxiv `TCBiRRT` paper → `signals` row).
+
+M55 reset the admin surface: the `apps/admin/` Next.js console —
+login, ~14 hand-rolled pages, tRPC client wrappers, repeated drift
+between trigger UIs and the actual fetcher contracts — was deleted
+and replaced with **SQLAdmin** mounted on the data-pipeline FastAPI
+at `data-pipeline:8003/admin`.
 
 What survived M55: the data pipeline itself (data-pipeline +
 agent-orchestration), the Prisma schema, the scoring engine, the
@@ -99,6 +105,44 @@ Operations
   ├─ Audit log                 (read-only)
   └─ Queue + Crons             ← new live page
 ```
+
+---
+
+## M56 — Ingest pipeline verify (2026-05-28)
+
+**Goal**: stand up the data-pipeline stack against live data sources
+and confirm signals actually land in Postgres. Operator reported "내가
+보니까 cron이 매분 돌고 있는데 데이터가 적재되지 않는거 같아." A 1-hour
+trace surfaced six independent bugs that each silently broke an
+ingest path. After M56, `research_ingest_hourly` writes a real arxiv
+paper into `signals` on every tick (verified by query — 91 → 92 rows
+with title "TCBiRRT: Rapid Motion Planning for Tightly Coupled Dual-
+arm Space Manipulator...").
+
+| Bug | Root cause | Fix |
+|---|---|---|
+| **M56-1** orchestrator tick raised `TypeError` every minute | `pick_for_tick` passed aware `since` to asyncpg, but `crawl_runs.ended_at` is Prisma-default `timestamp` (no tz) | Strip tz at the call site — `(now - timedelta(hours=24)).replace(tzinfo=None)` |
+| **M56-2** arxiv returned 0 signals every fetch | arxiv moved to https-only; old http URL returned 301; httpx doesn't follow by default | Pin `https://export.arxiv.org/api/query` |
+| **M56-3** `/signal-extractor/score` returned 422 (digest + 3 fetchers) | DR digest output ~10KB busted `SignalExtractorRequest.signal_summary` max_length=4000 | Added `_clip_for_extractor` inside `HttpAgentClient.score_signal` — clips signal_title 500, signal_summary 4000, capability_description 2000, capability_rationale 2000 |
+| **M56-4** USPTO API not usable from operator's network | n/a — env policy | Default `research_ingest_hourly` sources to `[ArxivSource()]`; gate USPTO behind `ENABLE_USPTO=1` env |
+| **M56-5** Yahoo / Finviz / Naver all returned `list-page empty` | Yahoo redesigned the news-list DOM mid-2026; the CSS selector matched zero rows | Switch from `JsonCssExtractionStrategy` to per-source markdown-regex extraction; tests rewritten to render `[title](href)` markdown |
+| **M56-6** `upsert_signal` raised `DataError` after M56-1+M56-2 unblocked the path | `signals.published_at` is naive `timestamp`; adapters return aware `datetime` | Strip tz in `PostgresSignalRepository.upsert_signal` (same family as M56-1) |
+
+**Bonus diagnosis — env typo trap**: the operator's `.env` contained
+six leading-`i` typos (`iNEWS_INGEST_INTERVAL_MIN`, `iDIGEST_CRON`,
+etc.) that silently no-op'd. Documented in [.env.example](../../.env.example);
+worth adding a startup sanity check in a follow-up. For now: if
+something cron-shaped isn't behaving, double-check that the env var
+spelling matches the documentation exactly (case-sensitive, no leading
+prefix).
+
+**What needs Vertex SA on the operator's machine** (already configured
+on theirs, not on the verification sandbox): SignalExtractor scoring
+fills the per-dim deltas, ScoreUpdater writes `capability_scores`,
+DR digest writes its own signals + crawl_runs. Without the SA every
+LLM-dependent path 503s gracefully and raw signals still land
+(verified — extractor unreachable in sandbox, signal still written
+with null deltas).
 
 ---
 

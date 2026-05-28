@@ -174,8 +174,56 @@ def _build_source() -> DataSource:
     return YFinanceSource()
 
 
+_KNOWN_PIPELINE_ENVS = {
+    "INGEST_SCHEDULE",
+    "INGEST_SOURCE",
+    "INGEST_CRON_QUOTES",
+    "INGEST_THROTTLE_MS",
+    "NEWS_INGEST_SCHEDULE",
+    "NEWS_INGEST_INTERVAL_MIN",
+    "RESEARCH_INGEST_SCHEDULE",
+    "RESEARCH_INGEST_CRON",
+    "RECOMPUTE_FEASIBILITY_CRON",
+    "ORCHESTRATOR_SCHEDULE",
+    "ORCHESTRATOR_INTERVAL_MIN",
+    "CRAWLER_SCHEDULE",  # deprecated alias
+    "DIGEST_SCHEDULE",
+    "DIGEST_CRON",
+    "RESOLVE_PREDICTIONS_V2_CRON",
+    "ENABLE_USPTO",
+}
+
+
+def _warn_on_suspicious_env() -> None:
+    """Surface typo'd ingest env vars at boot. The operator's .env in
+    the M56 verification had six leading-`i` typos
+    (`iNEWS_INGEST_INTERVAL_MIN`, etc.) that silently no-op'd — env
+    vars are case + spelling exact, no validation. This best-effort
+    check matches obvious near-misses (single-char prefix typos, the
+    most common shape) and prints a WARNING so the operator catches it
+    before they wonder why crons aren't honoring the override."""
+    suspicious: list[tuple[str, str]] = []
+    for key in os.environ:
+        # Strip a single non-letter prefix char (most common typo) and
+        # see if the remainder matches a known env. Catches "iNEWS_…"
+        # without flagging legitimate "OS_…"/"HOME"/etc.
+        if len(key) > 1 and not key[0].isupper() and key[1:].isupper():
+            candidate = key[1:]
+            if candidate in _KNOWN_PIPELINE_ENVS:
+                suspicious.append((key, candidate))
+    for bad, good in suspicious:
+        log.warning(
+            "data-pipeline: env var %r looks like a typo of %r — value is "
+            "being ignored. Fix the .env entry; otherwise the cron stays "
+            "on its default cadence.",
+            bad,
+            good,
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ANN201
+    _warn_on_suspicious_env()
     # Allow tests to pre-wire these.
     if not hasattr(app.state, "repo"):
         repo = await build_repository(os.environ.get("DATABASE_URL"))
