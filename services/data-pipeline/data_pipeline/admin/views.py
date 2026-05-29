@@ -22,14 +22,124 @@ from data_pipeline.admin import actions
 from data_pipeline.admin import models as m
 from data_pipeline.admin.format import KST_TYPE_FORMATTERS, status_badge_formatter
 
-# Sector.status enum (mirrors schema.prisma comment: draft | live | archived).
-# Centralised so the edit-form dropdown and any future filter share the
-# same source of truth.
+# ──────────────────────────────────────────────────────────────────────
+# Enum choice lists for SQLAdmin edit-form dropdowns.
+#
+# Every value below mirrors the corresponding `// a | b | c` comment in
+# packages/db/prisma/schema.prisma — the schema comment is the source of
+# truth; this file is the cockpit's rendering of it. When you add a new
+# value to the schema enum, mirror it here too (no validator will catch
+# the drift — SQLAdmin will silently render the form without it).
+#
+# The pattern below is repeated per editable ModelView:
+#   form_overrides = {"<col>": SelectField}
+#   form_args      = {"<col>": {"choices": _XYZ_CHOICES, "coerce": str}}
+# A leading ("", "—") choice is added for nullable enums (Risk.source_kind,
+# CapabilityActor.stage) so the operator can clear the field without
+# tripping WTForms' validate_choice.
+# ──────────────────────────────────────────────────────────────────────
+
+# Sector lifecycle (schema.prisma: draft | live | archived).
 _SECTOR_STATUS_CHOICES: list[tuple[str, str]] = [
     ("draft", "draft — invisible on /visions, freshly built"),
     ("live", "live — published, surfaced to end users"),
     ("archived", "archived — soft-hidden from both UIs"),
 ]
+
+# Risk taxonomy (schema.prisma Risk model).
+_RISK_CATEGORY_CHOICES: list[tuple[str, str]] = [
+    ("political", "political"),
+    ("legal", "legal"),
+    ("supply", "supply"),
+    ("safety", "safety"),
+    ("environmental", "environmental"),
+    ("financial", "financial"),
+    ("social", "social"),
+]
+_RISK_SEVERITY_CHOICES: list[tuple[str, str]] = [
+    ("low", "low"),
+    ("medium", "medium"),
+    ("high", "high"),
+    ("critical", "critical"),
+]
+_RISK_LIKELIHOOD_CHOICES: list[tuple[str, str]] = [
+    ("low", "low"),
+    ("medium", "medium"),
+    ("high", "high"),
+]
+# time_horizon — schema comment says "free string so we can extend";
+# we still pre-populate the known set and let admins add via DB if needed.
+_RISK_TIME_HORIZON_CHOICES: list[tuple[str, str]] = [
+    ("immediate", "immediate"),
+    ("1y", "1y"),
+    ("3y", "3y"),
+    ("5y", "5y"),
+    ("10y", "10y"),
+]
+
+# Shared by Risk.source_kind (nullable) + EconomicsDatapoint.source_kind +
+# Signal.source_kind. Pulled from observed seed-data values, broader than
+# the schema comment on EconomicsDatapoint.
+_SOURCE_KIND_CHOICES: list[tuple[str, str]] = [
+    ("analyst_report", "analyst_report"),
+    ("filing", "filing"),
+    ("gov_report", "gov_report"),
+    ("news", "news"),
+    ("paper", "paper"),
+    ("patent", "patent"),
+    ("press", "press"),
+]
+
+# Actor (schema.prisma Actor model).
+_ACTOR_CATEGORY_CHOICES: list[tuple[str, str]] = [
+    ("public_corp", "public_corp"),
+    ("private_startup", "private_startup"),
+    ("government_lab", "government_lab"),
+    ("national_lab", "national_lab"),
+    ("academic_lab", "academic_lab"),
+    ("standards_body", "standards_body"),
+    ("ngo", "ngo"),
+]
+# Shared by Actor.stage + CapabilityActor.stage (override).
+_ACTOR_STAGE_CHOICES: list[tuple[str, str]] = [
+    ("research", "research"),
+    ("pilot", "pilot"),
+    ("commercial", "commercial"),
+    ("scaling", "scaling"),
+]
+
+# CapabilityActor.role (schema.prisma CapabilityActor model).
+_CAPABILITY_ACTOR_ROLE_CHOICES: list[tuple[str, str]] = [
+    ("lead", "lead — primary developer / consortium lead"),
+    ("competitor", "competitor — alternative pursuing same outcome"),
+    ("supplier", "supplier — upstream inputs"),
+    ("customer", "customer — buys when ready"),
+    ("regulator", "regulator — sets rules / approvals"),
+]
+
+# CommunityProposal lifecycle + payload kind (schema.prisma comments).
+_PROPOSAL_TARGET_KIND_CHOICES: list[tuple[str, str]] = [
+    ("add_driver", "add_driver"),
+    ("add_equity", "add_equity"),
+    ("add_capability", "add_capability"),
+    ("add_risk", "add_risk"),
+    ("add_actor", "add_actor"),
+    ("add_signal_source", "add_signal_source"),
+    ("edit", "edit"),
+    ("other", "other"),
+]
+_PROPOSAL_STATUS_CHOICES: list[tuple[str, str]] = [
+    ("open", "open — accepting votes"),
+    ("review", "review — admin is looking"),
+    ("applied", "applied — DB write succeeded"),
+    ("rejected", "rejected"),
+    ("stale", "stale — auto-aged out, no decision"),
+]
+
+# Empty-leading variant for nullable enum columns. WTForms' SelectField
+# defaults to validate_choice=True, so an empty submit needs a matching
+# ("", "—") option to clear the value instead of erroring.
+_NULLABLE_PREFIX: list[tuple[str, str]] = [("", "— (none)")]
 
 log = logging.getLogger(__name__)
 
@@ -273,6 +383,28 @@ class RiskView(_BaseModelView, model=m.Risk):
     column_default_sort = [("sector_slug", False), ("severity", False)]
     can_create = False
     can_delete = False
+    # Render the five Risk enum columns (category / severity / likelihood
+    # / time_horizon / source_kind) as dropdowns. Freeform input is how
+    # we ended up with severity="High" vs "high" drift in the seed data
+    # before — every typo silently filters out of severity-sorted views.
+    form_overrides = {
+        "category": SelectField,
+        "severity": SelectField,
+        "likelihood": SelectField,
+        "time_horizon": SelectField,
+        "source_kind": SelectField,
+    }
+    form_args = {
+        "category": {"choices": _RISK_CATEGORY_CHOICES, "coerce": str},
+        "severity": {"choices": _RISK_SEVERITY_CHOICES, "coerce": str},
+        "likelihood": {"choices": _RISK_LIKELIHOOD_CHOICES, "coerce": str},
+        "time_horizon": {"choices": _RISK_TIME_HORIZON_CHOICES, "coerce": str},
+        # source_kind is nullable on Risk — empty option clears it.
+        "source_kind": {
+            "choices": _NULLABLE_PREFIX + _SOURCE_KIND_CHOICES,
+            "coerce": str,
+        },
+    }
 
     @action(
         name="trigger_risk_fetch",
@@ -313,6 +445,17 @@ class ActorView(_BaseModelView, model=m.Actor):
     column_default_sort = ("name", False)
     can_create = False
     can_delete = False
+    # Actor.category drives the badge colour + filter on the public
+    # Actors page; Actor.stage is the maturity pill. Both are enum-shaped
+    # in schema.prisma — render as dropdowns to prevent silent typo drift.
+    form_overrides = {
+        "category": SelectField,
+        "stage": SelectField,
+    }
+    form_args = {
+        "category": {"choices": _ACTOR_CATEGORY_CHOICES, "coerce": str},
+        "stage": {"choices": _ACTOR_STAGE_CHOICES, "coerce": str},
+    }
 
 
 class VisionActorView(_BaseModelView, model=m.VisionActor):
@@ -383,6 +526,20 @@ class CapabilityActorView(_BaseModelView, model=m.CapabilityActor):
     column_default_sort = ("updated_at", True)
     can_create = False
     can_delete = False
+    # role is required (schema default "competitor"); stage is a nullable
+    # per-capability override of Actor.stage. Both render as dropdowns
+    # sharing _ACTOR_STAGE_CHOICES with the global ActorView.
+    form_overrides = {
+        "role": SelectField,
+        "stage": SelectField,
+    }
+    form_args = {
+        "role": {"choices": _CAPABILITY_ACTOR_ROLE_CHOICES, "coerce": str},
+        "stage": {
+            "choices": _NULLABLE_PREFIX + _ACTOR_STAGE_CHOICES,
+            "coerce": str,
+        },
+    }
 
 
 class EconomicsDatapointView(_BaseModelView, model=m.EconomicsDatapoint):
@@ -493,6 +650,18 @@ class CommunityProposalView(_BaseModelView, model=m.CommunityProposal):
     column_formatters_detail = {m.CommunityProposal.status: status_badge_formatter}
     can_create = False
     can_delete = False
+    # target_kind drives the M46e applier dispatch — a typo here means
+    # the proposal silently never applies. status drives the queue +
+    # filter view. Both must be dropdowns. Note: the approve/reject row
+    # actions remain the preferred path; this just hardens manual edits.
+    form_overrides = {
+        "target_kind": SelectField,
+        "status": SelectField,
+    }
+    form_args = {
+        "target_kind": {"choices": _PROPOSAL_TARGET_KIND_CHOICES, "coerce": str},
+        "status": {"choices": _PROPOSAL_STATUS_CHOICES, "coerce": str},
+    }
 
     @action(
         name="approve",
