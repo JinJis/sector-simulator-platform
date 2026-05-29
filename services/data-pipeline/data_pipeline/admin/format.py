@@ -144,11 +144,19 @@ _STATUS_BADGE_TONES: dict[str, str] = {
 }
 
 
-def status_badge_formatter(value: Any) -> Markup | str:
+def status_badge_formatter(obj: Any, prop: Any) -> Markup | str:
     """Render a status string as a Tabler `badge bg-<tone>-lt` pill so
     list / detail views show colored tags instead of bare text. Pass
     via `column_formatters = {Model.status: status_badge_formatter}`
-    on the ModelView."""
+    on the ModelView.
+
+    SQLAdmin invokes `column_formatters` entries as `(obj, prop)` —
+    the row instance plus the property name (string, after SQLAdmin
+    normalises the InstrumentedAttribute key). Note this is a *different*
+    signature than `column_type_formatters`, which passes `(value)`."""
+    value = getattr(obj, prop, None) if isinstance(prop, str) else getattr(
+        obj, getattr(prop, "key", str(prop)), None
+    )
     if value is None or value == "":
         return ""
     s = str(value)
