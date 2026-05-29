@@ -1,0 +1,704 @@
+"""Concrete workflow classes — Phase-3 workflows (Decomposition, Research, FullPipeline, …).
+
+Extracted from the monolithic ``workflows.py`` in slice 6b. The
+:class:`Workflow` protocol + :class:`WorkflowRunner` still live in
+:mod:`agent_orchestration.runner`; this module just holds the
+domain-specific implementations.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+
+from agent_tools import CostMeter, LLMClient
+
+from agent_orchestration.prompts import load_prompt
+from agent_orchestration.schemas import (
+    CodeGenRequest,
+    CodeGenResult,
+    CodeReviewRequest,
+    CodeReviewResult,
+    Decomposition,
+    DecompositionRequest,
+    DriverInferenceRequest,
+    DriverInferenceResult,
+    EdgeInferenceRequest,
+    EdgeInferenceResult,
+    FullPipelineRequest,
+    FullPipelineResult,
+    ProposeSectorRequest,
+    ProposeSectorResult,
+    ResearchBrief,
+    ResearchRequest,
+)
+
+log = logging.getLogger("agent_orchestration")
+
+
+class DecompositionWorkflow:
+    """Wraps the decomposition agent call. Loads the system prompt from
+    `prompts/decomposition.md`, calls Claude Opus 4.7 with the user's
+    description, validates the structured output."""
+
+    kind = "decomposition"
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+
+    async def run(
+        self, request: DecompositionRequest, *, cost_meter: CostMeter
+    ) -> Decomposition:
+        # `cost_meter` is the per-workflow meter; rebind the client onto
+        # it so each call rolls into the right ledger.
+        llm = self._llm.clone(cost_meter=cost_meter)
+        system = load_prompt("decomposition")
+        user_parts = [request.description]
+        if request.reference_data:
+            user_parts.append(
+                "\n\n## Reference data\n\n" + request.reference_data
+            )
+        # messages.parse() is sync in the Anthropic SDK; offload to a
+        # thread so the event loop stays free for other workflows.
+        result = await asyncio.to_thread(
+            llm.call,
+            tier="deep",
+            system=system,
+            user="\n".join(user_parts),
+            max_tokens=8192,
+            adaptive_thinking=True,
+            response_model=Decomposition,
+        )
+        if result.parsed is None:
+            raise RuntimeError(
+                f"decomposition agent returned unparseable output (stop_reason={result.stop_reason})"
+            )
+        # mypy can't narrow result.parsed via response_model — assert here.
+        assert isinstance(result.parsed, Decomposition)
+        return result.parsed
+
+
+# ---- EdgeInferenceWorkflow ----------------------------------------------
+
+class EdgeInferenceWorkflow:
+    """Closes the causal DAG over a sector's `Decomposition`. Loads the
+    system prompt from `prompts/edge-inference.md`, calls Claude Opus
+    4.7 with the decomposition serialized into the user turn, validates
+    `EdgeInferenceResult`.
+
+    Why Opus: edges are where the *physics + economics* of a sector
+    get encoded. A wrong edge invalidates every downstream simulation.
+    Adaptive thinking on, same posture as DecompositionWorkflow.
+    """
+
+    kind = "edge_inference"
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+
+    async def run(
+        self, request: EdgeInferenceRequest, *, cost_meter: CostMeter
+    ) -> EdgeInferenceResult:
+        llm = self._llm.clone(cost_meter=cost_meter)
+        system = load_prompt("edge-inference")
+        user = self._format_user_turn(request.decomposition)
+        result = await asyncio.to_thread(
+            llm.call,
+            tier="deep",
+            system=system,
+            user=user,
+            max_tokens=8192,
+            adaptive_thinking=True,
+            response_model=EdgeInferenceResult,
+        )
+        if result.parsed is None:
+            raise RuntimeError(
+                f"edge-inference agent returned unparseable output (stop_reason={result.stop_reason})"
+            )
+        assert isinstance(result.parsed, EdgeInferenceResult)
+        return result.parsed
+
+    @staticmethod
+    def _format_user_turn(decomp: Decomposition) -> str:
+        """Serialize the Decomposition into a compact user turn. We
+        deliberately keep this plain-Markdown rather than JSON so the
+        Opus prompt cache can hit on the static template — only the
+        node values change between calls."""
+        lines: list[str] = []
+        lines.append(f"# Sector: {decomp.name} (slug `{decomp.slug}`)")
+        lines.append(f"Horizon: {decomp.horizon_years} years")
+        lines.append("")
+        lines.append(f"## Description\n\n{decomp.description}")
+        lines.append("")
+        lines.append("## Drivers")
+        for d in decomp.drivers:
+            lines.append(
+                f"- `{d.name}` ({d.unit}) — group: {d.group} — "
+                f"default {d.default}, range [{d.min}, {d.max}] — {d.description}"
+            )
+        if decomp.intermediates:
+            lines.append("")
+            lines.append("## Intermediates")
+            for i in decomp.intermediates:
+                lines.append(f"- `{i.name}` ({i.unit}) — {i.description}")
+        lines.append("")
+        lines.append("## Outputs")
+        for o in decomp.outputs:
+            lines.append(
+                f"- `{o.name}` ({o.kind}, {o.unit}) — {o.description}"
+            )
+        lines.append("")
+        lines.append(
+            "Produce an `EdgeInferenceResult` connecting every "
+            "intermediate and every output back through drivers. Include "
+            "every edge — driver → intermediate, intermediate → "
+            "intermediate, intermediate → output — and a `formula` field "
+            "for every non-driver node. State any modelling assumptions "
+            "you had to make in `assumptions`."
+        )
+        return "\n".join(lines)
+
+
+# ---- ProposeSectorWorkflow ----------------------------------------------
+
+class ProposeSectorWorkflow:
+    """Multi-step chain: Decomposition → EdgeInference. Persists the
+    composed result so a single workflow id captures the full
+    proposal — the admin's `sector.proposeFromAgent` reads one row
+    and creates nodes + edges in a single transaction.
+
+    Cost rolls up across both stages via the same `CostMeter`.
+    """
+
+    kind = "propose_sector"
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+        self._decomposition = DecompositionWorkflow(llm)
+        self._edge_inference = EdgeInferenceWorkflow(llm)
+
+    async def run(
+        self, request: ProposeSectorRequest, *, cost_meter: CostMeter
+    ) -> ProposeSectorResult:
+        decomp = await self._decomposition.run(
+            DecompositionRequest(
+                description=request.description,
+                reference_data=request.reference_data,
+            ),
+            cost_meter=cost_meter,
+        )
+        edges = await self._edge_inference.run(
+            EdgeInferenceRequest(decomposition=decomp),
+            cost_meter=cost_meter,
+        )
+        # Sanity guard: every edge's source/target should reference a node
+        # that exists in the decomposition. We don't *reject* the result
+        # on a mismatch (the agent's intent is preserved), but we surface
+        # the issue in the workflow record so an admin can see what to
+        # patch manually.
+        return ProposeSectorResult(decomposition=decomp, edge_inference=edges)
+
+
+# ---- ResearchWorkflow (M28) ---------------------------------------------
+
+class ResearchWorkflow:
+    """Wraps the Research Agent (balanced). Loads
+    `prompts/research.md`, calls Claude Sonnet 4.6 with the user
+    description + optional focus areas, validates `ResearchBrief`.
+
+    Why balanced: per the prompt, this is high-volume extraction +
+    citation collection. Opus here would be wasteful — the reasoning
+    burden is on Decomposition + EdgeInference downstream.
+    """
+
+    kind = "research"
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+
+    async def run(
+        self, request: ResearchRequest, *, cost_meter: CostMeter
+    ) -> ResearchBrief:
+        llm = self._llm.clone(cost_meter=cost_meter)
+        system = load_prompt("research")
+        user = self._format_user_turn(request)
+        result = await asyncio.to_thread(
+            llm.call,
+            tier="balanced",
+            system=system,
+            user=user,
+            max_tokens=4096,
+            response_model=ResearchBrief,
+        )
+        if result.parsed is None:
+            raise RuntimeError(
+                f"research agent returned unparseable output (stop_reason={result.stop_reason})"
+            )
+        assert isinstance(result.parsed, ResearchBrief)
+        return result.parsed
+
+    @staticmethod
+    def _format_user_turn(request: ResearchRequest) -> str:
+        lines = [
+            "# Sector to research",
+            "",
+            request.description,
+        ]
+        if request.focus_areas:
+            lines.append("")
+            lines.append("## Focus areas")
+            for fa in request.focus_areas:
+                lines.append(f"- {fa}")
+        lines.append("")
+        lines.append(
+            "Produce a `ResearchBrief` with the numeric anchors a downstream "
+            "Decomposition + Driver Inference pipeline can use to calibrate "
+            "drivers. 5-10 anchors is the right count; each anchor needs at "
+            "least one source with a `kind` label."
+        )
+        return "\n".join(lines)
+
+
+# ---- DriverInferenceWorkflow (M28) --------------------------------------
+
+class DriverInferenceWorkflow:
+    """Wraps the Driver Inference Agent (balanced). Takes a
+    `Decomposition` + optional `ResearchBrief`, produces
+    `DriverInferenceResult` with calibrated defaults / ranges /
+    history / sources per driver.
+
+    Why balanced: the work is matching anchors to drivers + normalizing
+    units, which Sonnet handles well at half the per-token cost of
+    Opus.
+    """
+
+    kind = "driver_inference"
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+
+    async def run(
+        self, request: DriverInferenceRequest, *, cost_meter: CostMeter
+    ) -> DriverInferenceResult:
+        llm = self._llm.clone(cost_meter=cost_meter)
+        system = load_prompt("driver-inference")
+        user = self._format_user_turn(request)
+        result = await asyncio.to_thread(
+            llm.call,
+            tier="balanced",
+            system=system,
+            user=user,
+            max_tokens=8192,
+            response_model=DriverInferenceResult,
+        )
+        if result.parsed is None:
+            raise RuntimeError(
+                f"driver-inference agent returned unparseable output (stop_reason={result.stop_reason})"
+            )
+        assert isinstance(result.parsed, DriverInferenceResult)
+        return result.parsed
+
+    @staticmethod
+    def _format_user_turn(request: DriverInferenceRequest) -> str:
+        d = request.decomposition
+        lines = [
+            f"# Decomposition to calibrate: {d.name} (`{d.slug}`)",
+            f"Horizon: {d.horizon_years} years",
+            "",
+            "## Drivers (un-calibrated)",
+        ]
+        for drv in d.drivers:
+            lines.append(
+                f"- `{drv.name}` ({drv.unit}) — group {drv.group} — "
+                f"current default {drv.default}, range [{drv.min}, {drv.max}] — "
+                f"{drv.description}"
+            )
+        if request.research_brief is not None:
+            rb = request.research_brief
+            lines.append("")
+            lines.append("## Research Brief")
+            lines.append(f"Summary: {rb.summary}")
+            if rb.anchors:
+                lines.append("")
+                lines.append("### Anchors")
+                for a in rb.anchors:
+                    lines.append(
+                        f"- {a.concept} = {a.value_range} (as of {a.as_of})"
+                    )
+                    for src in a.sources:
+                        lines.append(
+                            f"  · [{src.kind}] {src.title} — {src.excerpt}"
+                        )
+            if rb.open_questions:
+                lines.append("")
+                lines.append("### Open questions")
+                for q in rb.open_questions:
+                    lines.append(f"- {q}")
+        else:
+            lines.append("")
+            lines.append(
+                "_No research brief was supplied — fall back to general "
+                "knowledge of the sector to calibrate drivers, and list "
+                "any driver you can't confidently source in `unresolved`._"
+            )
+        lines.append("")
+        lines.append(
+            "Produce a `DriverInferenceResult`. Every driver in the "
+            "Decomposition must appear in `drivers` (or be listed in "
+            "`unresolved`). Driver names must match the Decomposition "
+            "verbatim."
+        )
+        return "\n".join(lines)
+
+
+# ---- CodeGenWorkflow (M28) ----------------------------------------------
+
+class CodeGenWorkflow:
+    """Wraps the Code Generation Agent (balanced). Takes the full
+    structured spec (Decomposition + DriverInference + EdgeInference)
+    and produces a `CodeGenResult` containing the `SimulationBase`
+    subclass source as a string.
+
+    The orchestrator does NOT execute the generated source — the
+    Modal sandbox slice handles that. CodeGen's responsibility ends
+    at producing the file; CodeReview is the next gate.
+    """
+
+    kind = "code_gen"
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+
+    async def run(
+        self, request: CodeGenRequest, *, cost_meter: CostMeter
+    ) -> CodeGenResult:
+        llm = self._llm.clone(cost_meter=cost_meter)
+        system = load_prompt("code-gen")
+        user = self._format_user_turn(request)
+        result = await asyncio.to_thread(
+            llm.call,
+            tier="balanced",
+            system=system,
+            user=user,
+            max_tokens=16384,
+            response_model=CodeGenResult,
+        )
+        if result.parsed is None:
+            raise RuntimeError(
+                f"code-gen agent returned unparseable output (stop_reason={result.stop_reason})"
+            )
+        assert isinstance(result.parsed, CodeGenResult)
+        return result.parsed
+
+    @staticmethod
+    def _format_user_turn(request: CodeGenRequest) -> str:
+        d = request.decomposition
+        dr = request.driver_inference
+        ei = request.edge_inference
+        lines = [
+            f"# Sector spec: {d.name} (`{request.slug}`)",
+            "",
+            f"Horizon: {d.horizon_years} years",
+            f"Description: {d.description}",
+            "",
+            "## Drivers (calibrated)",
+        ]
+        # Index calibrated drivers by name so we can show the spec
+        # value + the calibrated-by-driver-inference value side by side.
+        cal = {c.name: c for c in dr.drivers}
+        for drv in d.drivers:
+            c = cal.get(drv.name)
+            if c is None:
+                lines.append(
+                    f"- `{drv.name}` ({drv.unit}) — group {drv.group} — "
+                    f"UNCALIBRATED (use decomp defaults: default {drv.default}, "
+                    f"range [{drv.min}, {drv.max}])"
+                )
+                continue
+            lines.append(
+                f"- `{drv.name}` ({c.unit or drv.unit}) — group {drv.group} — "
+                f"default {c.default}, range [{c.min}, {c.max}] — {c.description or drv.description}"
+            )
+            if c.history:
+                hp = ", ".join(f"({h.date}, {h.value})" for h in c.history)
+                lines.append(f"    history: {hp}")
+            if c.sources:
+                for src in c.sources:
+                    lines.append(
+                        f"    source [{src.kind}] {src.title} (as of {src.as_of}) — {src.excerpt}"
+                    )
+            if c.note:
+                lines.append(f"    note: {c.note}")
+        if dr.unresolved:
+            lines.append("")
+            lines.append("### Unresolved drivers (use decomposition defaults)")
+            for u in dr.unresolved:
+                lines.append(f"- {u}")
+        lines.append("")
+        lines.append("## Intermediates")
+        # Index intermediate formulas by name to merge with decomposition
+        if_idx = {i.name: i for i in ei.intermediates}
+        for inter in d.intermediates:
+            i_form = if_idx.get(inter.name)
+            if i_form is not None:
+                lines.append(
+                    f"- `{inter.name}` ({i_form.unit or inter.unit}) — "
+                    f"formula: {i_form.formula} — {i_form.description or inter.description}"
+                )
+            else:
+                lines.append(
+                    f"- `{inter.name}` ({inter.unit}) — NO FORMULA — {inter.description}"
+                )
+        lines.append("")
+        lines.append("## Outputs")
+        of_idx = {o.name: o for o in ei.outputs}
+        for out in d.outputs:
+            o_form = of_idx.get(out.name)
+            if o_form is not None:
+                deps = ", ".join(o_form.depends_on) if o_form.depends_on else "(unstated)"
+                lines.append(
+                    f"- `{out.name}` ({out.kind}, {out.unit}) — "
+                    f"formula: {o_form.formula} — depends on: {deps}"
+                )
+            else:
+                lines.append(
+                    f"- `{out.name}` ({out.kind}, {out.unit}) — NO FORMULA"
+                )
+        lines.append("")
+        lines.append("## Causal edges")
+        for e in ei.edges:
+            label = e.label or "(no label)"
+            lines.append(f"- {e.source} → {e.target} [{label}]")
+        if ei.assumptions:
+            lines.append("")
+            lines.append("## Modelling assumptions")
+            for a in ei.assumptions:
+                lines.append(f"- {a}")
+        lines.append("")
+        lines.append(
+            "Produce a `CodeGenResult` whose `source` is the complete "
+            "Python file. The file must subclass `platform_sdk.SimulationBase`, "
+            "match the existing house style (see `space_data_center.py`), "
+            "and use the driver / intermediate / output names verbatim. "
+            "List anything you had to assume or smooth over in `concerns`."
+        )
+        return "\n".join(lines)
+
+
+# ---- CodeReviewWorkflow (M28) -------------------------------------------
+
+class CodeReviewWorkflow:
+    """Wraps the Code Review Agent (balanced). Takes the generated source
+    + the structured spec it implements + any concerns Code Gen
+    surfaced about itself, returns a `CodeReviewResult` with status
+    `approve` / `revise` / `reject`.
+
+    Sonnet on purpose — see the prompt for the calibration rationale
+    (Opus 4.7's length calibration would suppress legitimate `nit`
+    findings).
+    """
+
+    kind = "code_review"
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+
+    async def run(
+        self, request: CodeReviewRequest, *, cost_meter: CostMeter
+    ) -> CodeReviewResult:
+        llm = self._llm.clone(cost_meter=cost_meter)
+        system = load_prompt("code-review")
+        user = self._format_user_turn(request)
+        result = await asyncio.to_thread(
+            llm.call,
+            tier="balanced",
+            system=system,
+            user=user,
+            max_tokens=4096,
+            response_model=CodeReviewResult,
+        )
+        if result.parsed is None:
+            raise RuntimeError(
+                f"code-review agent returned unparseable output (stop_reason={result.stop_reason})"
+            )
+        assert isinstance(result.parsed, CodeReviewResult)
+        return result.parsed
+
+    @staticmethod
+    def _format_user_turn(request: CodeReviewRequest) -> str:
+        d = request.decomposition
+        dr = request.driver_inference
+        ei = request.edge_inference
+        lines = [
+            f"# Code review for sector `{d.slug}`",
+            "",
+            "## Generated source",
+            "```python",
+            request.source,
+            "```",
+            "",
+            "## Spec — drivers",
+        ]
+        cal = {c.name: c for c in dr.drivers}
+        for drv in d.drivers:
+            c = cal.get(drv.name)
+            if c is not None:
+                lines.append(
+                    f"- `{drv.name}` ({c.unit or drv.unit}) — default {c.default}, "
+                    f"range [{c.min}, {c.max}]"
+                )
+            else:
+                lines.append(
+                    f"- `{drv.name}` ({drv.unit}) — UNCALIBRATED "
+                    f"(spec default {drv.default}, [{drv.min}, {drv.max}])"
+                )
+        lines.append("")
+        lines.append("## Spec — intermediates")
+        for inter in ei.intermediates:
+            lines.append(
+                f"- `{inter.name}` ({inter.unit}) — formula: {inter.formula}"
+            )
+        lines.append("")
+        lines.append("## Spec — outputs")
+        for o in ei.outputs:
+            deps = ", ".join(o.depends_on) if o.depends_on else "(unstated)"
+            lines.append(
+                f"- `{o.name}` ({o.kind}) — formula: {o.formula} — depends on: {deps}"
+            )
+        if ei.assumptions:
+            lines.append("")
+            lines.append("## Modelling assumptions")
+            for a in ei.assumptions:
+                lines.append(f"- {a}")
+        if request.concerns:
+            lines.append("")
+            lines.append("## Code Gen self-reported concerns")
+            for c_str in request.concerns:
+                lines.append(f"- {c_str}")
+        lines.append("")
+        lines.append(
+            "Produce a `CodeReviewResult`. Report every finding you "
+            "are confident about with severity + category + concrete "
+            "location + suggestion. Set `status` per the rubric in the "
+            "prompt: `approve` if zero blockers and ≤2 majors; `revise` "
+            "otherwise; `reject` only if the spec itself is broken."
+        )
+        return "\n".join(lines)
+
+
+# ---- FullPipelineWorkflow (M28) -----------------------------------------
+
+class FullPipelineWorkflow:
+    """Six-stage chain that turns a user description into a reviewed
+    `SimulationBase` source file:
+
+        Research → Decomposition → DriverInference → EdgeInference
+                 → CodeGen → CodeReview
+
+    All stages share the same `CostMeter`, so the workflow record's
+    rolled-up `cost_usd` is the headline number. Typical end-to-end
+    cost is $0.50–$1.00 — gated by the per-user budget at the tRPC
+    layer.
+
+    Failure in any stage short-circuits the chain — the workflow
+    record's `error` field surfaces which stage broke.
+    """
+
+    kind = "full_pipeline"
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+        self._research = ResearchWorkflow(llm)
+        self._decomposition = DecompositionWorkflow(llm)
+        self._driver_inference = DriverInferenceWorkflow(llm)
+        self._edge_inference = EdgeInferenceWorkflow(llm)
+        self._code_gen = CodeGenWorkflow(llm)
+        self._code_review = CodeReviewWorkflow(llm)
+
+    async def run(
+        self, request: FullPipelineRequest, *, cost_meter: CostMeter
+    ) -> FullPipelineResult:
+        # Stage 1: research
+        research = await self._research.run(
+            ResearchRequest(
+                description=request.description,
+                focus_areas=request.focus_areas,
+            ),
+            cost_meter=cost_meter,
+        )
+        # Stage 2: decomposition. We pass the research brief summary
+        # as reference_data when the caller didn't provide their own —
+        # giving the Decomposition agent the same numeric anchors the
+        # Driver Inference agent will see later.
+        reference_data = request.reference_data
+        if reference_data is None and research.anchors:
+            anchors_text = "\n".join(
+                f"- {a.concept} = {a.value_range} ({a.as_of})"
+                for a in research.anchors
+            )
+            reference_data = (
+                f"Research brief summary: {research.summary}\n\n"
+                f"Anchors:\n{anchors_text}"
+            )
+        decomp = await self._decomposition.run(
+            DecompositionRequest(
+                description=request.description,
+                reference_data=reference_data,
+            ),
+            cost_meter=cost_meter,
+        )
+        # Stage 3: driver inference (uses the research brief).
+        driver_inf = await self._driver_inference.run(
+            DriverInferenceRequest(
+                decomposition=decomp, research_brief=research
+            ),
+            cost_meter=cost_meter,
+        )
+        # Stage 4: edge inference (uses the decomposition).
+        edge_inf = await self._edge_inference.run(
+            EdgeInferenceRequest(decomposition=decomp),
+            cost_meter=cost_meter,
+        )
+        # Stage 5: code gen. The slug comes from the decomposition.
+        code_gen = await self._code_gen.run(
+            CodeGenRequest(
+                slug=decomp.slug,
+                decomposition=decomp,
+                driver_inference=driver_inf,
+                edge_inference=edge_inf,
+            ),
+            cost_meter=cost_meter,
+        )
+        # Stage 6: code review.
+        code_review = await self._code_review.run(
+            CodeReviewRequest(
+                source=code_gen.source,
+                decomposition=decomp,
+                driver_inference=driver_inf,
+                edge_inference=edge_inf,
+                concerns=code_gen.concerns,
+            ),
+            cost_meter=cost_meter,
+        )
+        return FullPipelineResult(
+            research=research,
+            decomposition=decomp,
+            driver_inference=driver_inf,
+            edge_inference=edge_inf,
+            code_gen=code_gen,
+            code_review=code_review,
+        )
+
+
+# =====================================================================
+# M39b — SignalExtractorWorkflow (fast tier)
+# =====================================================================
+#
+# Highest-volume workflow in the platform — runs ~100-1000x/day (one
+# call per ingested signal). Lives on the fast tier so total monthly
+# cost stays under the per-user $30 budget even at thousands of
+# signals.
+#
+# Output is structured (Pydantic SignalScoring). No adaptive_thinking
+# (fast tier doesn't benefit much, and we want fast turnaround).
+# =====================================================================
