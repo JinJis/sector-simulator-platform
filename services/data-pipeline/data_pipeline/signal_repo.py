@@ -10,7 +10,7 @@ Used by data_pipeline.jobs.signal_ingest.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, Protocol
 
 # VisionTickers lives in data_pipeline.signals.tickers so the crawl4ai
