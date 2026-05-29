@@ -113,14 +113,18 @@ T = TypeVar("T", bound=BaseModel)
 
 def _parse_text_as_pydantic(
     *, text: str, response_model: type[T],
-) -> BaseModel | None:
+) -> tuple[BaseModel | None, str | None]:
     """Best-effort: parse `text` as JSON + validate via Pydantic.
     Tolerates the model wrapping its output in a markdown code fence
     (``` or ```json) which Gemini does when not under strict schema
     enforcement. Also tolerates prose-prefix ("Here is the JSON: …{}")
-    by extracting the first top-level {…} or […] block. Returns None
-    on either JSON parse or Pydantic validation failure — caller
-    branches on parsed-is-None."""
+    by extracting the first top-level {…} or […] block.
+
+    Returns ``(parsed, None)`` on success and ``(None, error_summary)``
+    on either JSON parse or Pydantic validation failure. The error
+    summary is a human-readable string the caller can paste into a
+    correction prompt — see ``_validation_correction_turn``.
+    """
     raw = text.strip()
     # 1. Strip markdown code fence if present.
     if raw.startswith("```"):
@@ -143,18 +147,20 @@ def _parse_text_as_pydantic(
     try:
         data = json.loads(raw)
     except (json.JSONDecodeError, ValueError) as exc:
+        msg = f"JSON parse failed: {exc}"
         sys.stderr.write(
             f"llm_client: post-retry JSON parse failed "
             f"(model={response_model.__name__}, err={exc}, "
             f"text_prefix={text[:200]!r})\n"
         )
-        return None
+        return None, msg
     try:
-        return response_model.model_validate(data)
+        return response_model.model_validate(data), None
     except ValidationError as exc:
-        # Surface the FIRST error's path + message so the operator can
-        # see what field tripped the validator.
-        first = exc.errors()[0] if exc.errors() else {}
+        # Surface every error's path + message — the correction prompt
+        # benefits from seeing all of them, not just the first one.
+        errors = exc.errors()
+        first = errors[0] if errors else {}
         sys.stderr.write(
             f"llm_client: post-retry Pydantic validation failed "
             f"(model={response_model.__name__}, errors={exc.error_count()}, "
@@ -162,7 +168,35 @@ def _parse_text_as_pydantic(
             f"first_error={first.get('msg', '?')!r}, "
             f"data_keys={list(data) if isinstance(data, dict) else type(data).__name__})\n"
         )
-        return None
+        # Format all errors for the correction prompt. Cap at 10 to keep
+        # the user turn small; a response with > 10 errors is broken
+        # enough that one correction round won't save it.
+        lines = []
+        for e in errors[:10]:
+            path = ".".join(str(p) for p in e.get("loc", ())) or "<root>"
+            lines.append(f"- {path}: {e.get('msg', '?')}")
+        summary = "Pydantic validation failed:\n" + "\n".join(lines)
+        return None, summary
+
+
+def _validation_correction_turn(
+    response_model: type[BaseModel], error_summary: str
+) -> dict[str, Any]:
+    """Build a user-role turn telling Gemini *what* failed validation
+    on its previous response. Pairs with the model's failed JSON
+    (sent back as an assistant turn) to form a 3-message correction
+    cycle: original prompt → schema reminder → model's wrong JSON →
+    "here's what was wrong, regenerate." Keeps the schema name in the
+    message so the model has a strong hint about which output to
+    re-emit."""
+    body = (
+        f"Your previous response failed validation against the "
+        f"{response_model.__name__} schema:\n\n"
+        f"{error_summary}\n\n"
+        f"Re-emit ONLY a single corrected JSON object that fixes every "
+        f"listed error. No prose, no markdown fence, no commentary."
+    )
+    return {"role": "user", "parts": [{"text": body}]}
 
 
 def _schema_reminder_turn(response_model: type[BaseModel]) -> dict[str, Any]:
@@ -353,6 +387,11 @@ class LLMClient:
         if tools:
             config["tools"] = list(tools)
 
+        # Track whether we fell back to the prompt-injection retry path,
+        # and the contents/config used there — the validation-error
+        # re-prompt below needs them to construct a 3rd-turn correction.
+        retry_contents: list[Any] | None = None
+        retry_config: dict[str, Any] | None = None
         try:
             response = self._genai.models.generate_content(
                 model=model,
@@ -407,9 +446,57 @@ class LLMClient:
             # Retry path (or any case where Gemini returned text-only
             # JSON despite a response_model being requested) — parse
             # the text as JSON and validate via Pydantic.
-            parsed = _parse_text_as_pydantic(
+            parsed, validation_error = _parse_text_as_pydantic(
                 text=text, response_model=response_model,
             )
+            # Validation-error re-prompt: if Pydantic rejected the
+            # text-only JSON, send Gemini one more turn telling it
+            # *what* failed and asking for a corrected JSON. Costs one
+            # extra round-trip (deep tier ≈ $0.30) but turns a hard
+            # failure into a soft retry. Capped at 1 attempt — a
+            # response with > 10 validation errors is broken enough
+            # that another round won't fix it.
+            if (
+                parsed is None
+                and validation_error is not None
+                and retry_contents is not None
+                and retry_config is not None
+            ):
+                sys.stderr.write(
+                    f"llm_client: re-prompting Gemini with validation "
+                    f"errors (model={response_model.__name__})\n"
+                )
+                correction_contents = list(retry_contents) + [
+                    {"role": "model", "parts": [{"text": text}]},
+                    _validation_correction_turn(
+                        response_model, validation_error
+                    ),
+                ]
+                correction_response = self._genai.models.generate_content(
+                    model=model,
+                    contents=correction_contents,
+                    config=retry_config,
+                )
+                correction_usage = self._extract_gemini_usage(
+                    correction_response
+                )
+                self.cost_meter.record(
+                    price_call(model=model, **correction_usage)
+                )
+                correction_text = self._extract_gemini_text(
+                    correction_response
+                )
+                if correction_text:
+                    parsed, _ = _parse_text_as_pydantic(
+                        text=correction_text,
+                        response_model=response_model,
+                    )
+                if parsed is not None:
+                    # Surface the corrected text + usage so the caller
+                    # sees the final state, not the rejected one.
+                    text = correction_text
+                    response = correction_response
+                    usage = correction_usage
         stop_reason = self._extract_gemini_stop_reason(response)
 
         return LLMCallResult(

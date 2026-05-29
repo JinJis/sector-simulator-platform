@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agent_tools import LLMClient, available_models
 
@@ -67,11 +67,18 @@ class _FakeModels:
         # constraint-too-tall, second call succeeds" — the wrapper's
         # retry path.
         self.exception_queue: list[Exception] = []
+        # Optional queue of responses returned on successive non-exception
+        # calls; popped left-to-right. Falls back to `next_response` when
+        # empty. Lets a test simulate "second call returns invalid JSON,
+        # third call returns corrected JSON" — the re-prompt path.
+        self.response_queue: list[_FakeResponse] = []
 
     def generate_content(self, **kwargs: Any) -> _FakeResponse:
         self.requests.append(kwargs)
         if self.exception_queue:
             raise self.exception_queue.pop(0)
+        if self.response_queue:
+            return self.response_queue.pop(0)
         if self.next_response is not None:
             return self.next_response
         return _FakeResponse(
@@ -501,6 +508,125 @@ def test_gemini_retry_tolerates_prose_preamble_around_json() -> None:
     )
     assert isinstance(result.parsed, Item)
     assert result.parsed.name == "loose"
+
+
+def test_gemini_reprompts_on_pydantic_validation_failure() -> None:
+    """The prompt-injection retry path has no server-side schema
+    enforcement, so Gemini occasionally emits JSON that parses but
+    fails Pydantic validation (e.g., a regex-constrained `key` field
+    coming back with a hyphen or capital letter). The wrapper sends
+    ONE corrective re-prompt that hands Gemini the specific validation
+    error message + asks for a fixed JSON. Real Vision Builder
+    regression — see the production trace where capabilities.3.key
+    failed `^[a-z][a-z0-9_]*$`."""
+
+    class Cap(BaseModel):
+        key: str = Field(..., pattern=r"^[a-z][a-z0-9_]*$")
+
+    fake = _FakeGenAI()
+    # 1st call: constraint-too-tall (drives the schema-injection retry).
+    fake.models.exception_queue = [
+        RuntimeError("Constraint is too tall: 9999 vs 5888")
+    ]
+    # 2nd call (retry): invalid key (hyphen).  3rd call (re-prompt):
+    # corrected key.
+    fake.models.response_queue = [
+        _FakeResponse(
+            text='{"key": "high-throughput"}',
+            candidates=[
+                _FakeCandidate(
+                    content=_FakeContent(
+                        parts=[_FakePart(text='{"key": "high-throughput"}')]
+                    ),
+                    finish_reason="STOP",
+                )
+            ],
+            usage_metadata=_FakeUsage(
+                prompt_token_count=100, candidates_token_count=20,
+            ),
+        ),
+        _FakeResponse(
+            text='{"key": "high_throughput"}',
+            candidates=[
+                _FakeCandidate(
+                    content=_FakeContent(
+                        parts=[_FakePart(text='{"key": "high_throughput"}')]
+                    ),
+                    finish_reason="STOP",
+                )
+            ],
+            usage_metadata=_FakeUsage(
+                prompt_token_count=120, candidates_token_count=20,
+            ),
+        ),
+    ]
+    client = LLMClient(genai_client=fake)
+    result = client.call(
+        tier="balanced", system="sys", user="propose a capability",
+        response_model=Cap,
+    )
+    # Three generate_content calls total: initial (throws) + retry
+    # (invalid) + re-prompt (corrected).
+    assert len(fake.models.requests) == 3
+    initial, retry, correction = fake.models.requests
+    assert "response_schema" in initial["config"]
+    assert "response_schema" not in retry["config"]
+    assert "response_schema" not in correction["config"]
+    # Correction contents = [original_user, schema_reminder, model_failed_json,
+    # validation_correction_user] = 4 turns total when the user prompt was
+    # one turn. The exact count depends on how `contents` was structured
+    # in the call() path, but the LAST two turns must be the model's
+    # rejected JSON + the user's correction.
+    correction_contents = correction["contents"]
+    assert correction_contents[-2]["role"] == "model"
+    assert "high-throughput" in correction_contents[-2]["parts"][0]["text"]
+    assert correction_contents[-1]["role"] == "user"
+    correction_text = correction_contents[-1]["parts"][0]["text"]
+    assert "failed validation" in correction_text
+    assert "Cap" in correction_text  # schema name in correction prompt
+    # Wrapper surfaced the corrected, validated output.
+    assert isinstance(result.parsed, Cap)
+    assert result.parsed.key == "high_throughput"
+    # Final text reflects the corrected payload, not the rejected one.
+    assert result.text == '{"key": "high_throughput"}'
+
+
+def test_gemini_reprompt_gives_up_after_one_attempt() -> None:
+    """Cap the validation re-prompt at one corrective round. If Gemini
+    fails validation a second time, give up — return parsed=None and
+    let the caller decide (raise RuntimeError, retry the whole
+    workflow, etc.). The alternative — looping until success — costs
+    the operator real money on the deep tier."""
+
+    class Cap(BaseModel):
+        key: str = Field(..., pattern=r"^[a-z][a-z0-9_]*$")
+
+    fake = _FakeGenAI()
+    fake.models.exception_queue = [
+        RuntimeError("Constraint is too tall: 9999 vs 5888")
+    ]
+    # Both the retry AND the re-prompt return invalid keys. Wrapper
+    # should stop after the second invalid response.
+    bad = _FakeResponse(
+        text='{"key": "Capital-Case"}',
+        candidates=[
+            _FakeCandidate(
+                content=_FakeContent(
+                    parts=[_FakePart(text='{"key": "Capital-Case"}')]
+                ),
+                finish_reason="STOP",
+            )
+        ],
+    )
+    fake.models.response_queue = [bad, bad]
+    client = LLMClient(genai_client=fake)
+    result = client.call(
+        tier="balanced", system="sys", user="hi", response_model=Cap,
+    )
+    # Three calls total — initial throws, retry returns invalid, re-prompt
+    # returns invalid; no fourth call.
+    assert len(fake.models.requests) == 3
+    assert result.parsed is None
 
 
 def test_gemini_propagates_non_constraint_errors_unchanged() -> None:
