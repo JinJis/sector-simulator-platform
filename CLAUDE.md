@@ -150,14 +150,15 @@ Phase 3 context lives in
   exceptions after F9.
 - **Agent tier map** (`packages/agent-tools/llm_client.py`) — all
   tiers route through the same `google-genai` SDK; env-overridable
-  via `LLM_{DEEP,BALANCED,FAST}_MODEL` (post-F9 semantic names;
-  legacy `LLM_{OPUS,SONNET,HAIKU}_MODEL` still honoured with a
-  deprecation log):
-  - `opus` → `gemini-3.1-pro-preview` (deepest reasoning — VisionDecomposition /
+  via `LLM_{DEEP,BALANCED,FAST}_MODEL`. ⚠ Legacy
+  `LLM_{OPUS,SONNET,HAIKU}_MODEL` env vars from before the F9b rename
+  are **silently ignored** — `llm_client.py` only reads the new names.
+  Update your `.env` if you're carrying old entries.
+  - `deep` → `gemini-3.1-pro-preview` (deepest reasoning — VisionDecomposition /
     CapabilityDependencies / CapabilityScoringCode / CodeReview)
-  - `sonnet` → `gemini-3.5-flash` (balanced — VisionResearch /
+  - `balanced` → `gemini-3.5-flash` (VisionResearch /
     DataSourceSelector / ThesisDrafter / ScoreUpdater / prediction.analyzeRationale)
-  - `haiku` → `gemini-3.5-flash-lite` (extraction / routing /
+  - `fast` → `gemini-3.5-flash-lite` (extraction / routing /
     SignalExtractor / PromptValidator / ProposalPayloadDrafter)
 - **Grounded research tier map**
   (`packages/agent-tools/grounded_research.py`) — `models.generate_content`
@@ -173,7 +174,7 @@ Phase 3 context lives in
   Schema injected into the prompt + post-parses via Pydantic. Caller
   always receives a typed `parsed` field.
 - `adaptive_thinking=True` → dynamic thinking budget (`-1`); otherwise
-  budget follows (tier, effort) — haiku=0, sonnet=1024, opus=4096
+  budget follows (tier, effort) — fast=0, balanced=1024, deep=4096
   (high-effort default).
 - Always call via `packages/agent-tools/llm-client` (agent tiers) or
   `GroundedResearchClient` (research tiers). Both share `CostMeter`.
@@ -278,7 +279,7 @@ pnpm deploy:prod                         # main merge → GitHub Actions
 
 ### LLM calls
 - Always via `packages/agent-tools/llm-client`
-- Choose tier explicitly (`opus | sonnet | haiku`)
+- Choose tier explicitly (`deep | balanced | fast`)
 - Pydantic `response_model` for structured output
 - `adaptive_thinking=True` only when worth it (opt-in)
 
@@ -290,8 +291,8 @@ pnpm deploy:prod                         # main merge → GitHub Actions
 1. Admin opens `data-pipeline:8003/admin` → sidebar **Vision Builder**,
    types a one-line question
 2. SQLAdmin POSTs to sector-service `visionBuilder.propose` tRPC →
-   Conductor runs PromptValidator (haiku) → VisionResearch (sonnet) →
-   VisionDecomposition (opus) → DataSourceSelector (sonnet) →
+   Conductor runs PromptValidator (fast) → VisionResearch (balanced) →
+   VisionDecomposition (deep) → DataSourceSelector (balanced) →
    ValidationGate (DAG + FK + weight-sum checks)
 3. Admin reviews the draft summary (capabilities / risks / actors)
 4. Commit → sector-service `visionBuilder.commit` writes everything in
@@ -339,7 +340,7 @@ pnpm deploy:prod                         # main merge → GitHub Actions
 LLM is biggest cost driver. Apply:
 1. Prompt caching (system prompt + tool defs)
 2. Result caching (`hash(sector_id, code_version, drivers_dict)`)
-3. Model routing (haiku first, escalate only when needed)
+3. Model routing (fast first, escalate only when needed)
 4. Batch API for non-realtime
 Target: per-user month LLM cost < $30 (Pro plan goal $20-$30/mo).
 
