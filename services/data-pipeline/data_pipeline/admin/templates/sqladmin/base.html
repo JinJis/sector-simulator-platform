@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  {% block head_meta %}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  {% endblock %}
+  {% block head_css %}
+  <link rel="stylesheet" href="{{ url_for('admin:statics', path='css/tabler.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('admin:statics', path='css/tabler-icons.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('admin:statics', path='css/fontawesome.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('admin:statics', path='css/select2.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('admin:statics', path='css/flatpickr.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('admin:statics', path='css/main.css') }}">
+  <style>
+    /* SQLAdmin's list + details tables ship with `text-nowrap`, which
+       crops long titles, URLs, descriptions, and any JSON payload to a
+       single horizontally-scrolling line. The cockpit shows JSONB
+       columns (plan, proposed_payload, payload, citations, …) on the
+       details page and they're effectively unreadable without wrap.
+       Override at the cell level so values flow naturally while
+       headers stay compact. */
+    .table.text-nowrap > :not(caption) > * > * {
+      white-space: normal;
+      word-break: break-word;
+      vertical-align: top;
+    }
+    /* Pretty-printed JSON / code blocks emitted by
+       `format.json_pretty_formatter`. Wraps inside the cell, scrolls
+       vertically when very tall so the table layout stays sane. */
+    .admin-pretty {
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      background: var(--tblr-bg-surface-secondary, #f6f8fb);
+      color: var(--tblr-body-color, #232e3c);
+      padding: 8px 10px;
+      border-radius: 6px;
+      max-height: 480px;
+      overflow-y: auto;
+      max-width: 80ch;
+    }
+  </style>
+  {% endblock %}
+  {% if admin.favicon_url %}
+  <link rel="icon" href="{{ admin.favicon_url }}">
+  {% endif %}
+  <title>{{ admin.title }}</title>
+  {% block head %}
+  {% endblock %}
+  {% block head_tail %}
+  {% endblock %}
+</head>
+
+<body>
+  {% block body %}
+  <main>
+    {% block main %}
+    {% endblock %}
+  </main>
+  {% endblock %}
+  {% block tail_js %}
+  <script type="text/javascript" src="{{ url_for('admin:statics', path='js/jquery.min.js') }}"></script>
+  <script type="text/javascript" src="{{ url_for('admin:statics', path='js/tabler.min.js') }}"></script>
+  <script type="text/javascript" src="{{ url_for('admin:statics', path='js/popper.min.js') }}"></script>
+  <script type="text/javascript" src="{{ url_for('admin:statics', path='js/bootstrap.min.js') }}"></script>
+  <script type="text/javascript" src="{{ url_for('admin:statics', path='js/select2.full.min.js') }}"></script>
+  <script type="text/javascript" src="{{ url_for('admin:statics', path='js/flatpickr.min.js') }}"></script>
+  <script type="text/javascript" src="{{ url_for('admin:statics', path='js/main.js') }}"></script>
+  {% endblock %}
+  {% block tail %}
+  {% endblock %}
+
+
+</body>
+
+</html>

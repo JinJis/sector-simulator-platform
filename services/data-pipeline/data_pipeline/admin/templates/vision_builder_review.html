@@ -293,7 +293,8 @@
         One Prisma transaction — writes Sector + Capabilities + Risks +
         Actors + VisionActor + CapabilityActor + initial CapabilityScores
         + seed VisionFeasibility. Sector status starts as <code>draft</code>;
-        promote to <code>live</code> from the Sector detail page when ready.
+        flip it to <code>live</code> on the Sector edit page when ready
+        to surface on <code>/visions</code>.
       </p>
       <form method="post"
             action="{{ url_for('admin:commit') }}"

@@ -354,7 +354,7 @@ export const visionBuilderRouter = router({
             description: draft.description,
             vision_question: draft.vision_question,
             is_vision_eligible: true,
-            status: "draft", // admin promotes to "live" after review
+            status: "draft", // admin promotes to "live" via SQLAdmin Sector edit
           },
         });
 

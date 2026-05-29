@@ -16,10 +16,20 @@ import logging
 from sqladmin import ModelView, action
 from starlette.requests import Request
 from starlette.responses import Response
+from wtforms import SelectField
 
 from data_pipeline.admin import actions
 from data_pipeline.admin import models as m
-from data_pipeline.admin.format import KST_TYPE_FORMATTERS
+from data_pipeline.admin.format import KST_TYPE_FORMATTERS, status_badge_formatter
+
+# Sector.status enum (mirrors schema.prisma comment: draft | live | archived).
+# Centralised so the edit-form dropdown and any future filter share the
+# same source of truth.
+_SECTOR_STATUS_CHOICES: list[tuple[str, str]] = [
+    ("draft", "draft — invisible on /visions, freshly built"),
+    ("live", "live — published, surfaced to end users"),
+    ("archived", "archived — soft-hidden from both UIs"),
+]
 
 log = logging.getLogger(__name__)
 
@@ -53,9 +63,38 @@ class SectorView(_BaseModelView, model=m.Sector):
     column_searchable_list = [m.Sector.slug, m.Sector.name]
     column_sortable_list = [m.Sector.slug, m.Sector.status, m.Sector.updated_at]
     column_default_sort = ("updated_at", True)
-    form_excluded_columns = [m.Sector.created_at, m.Sector.updated_at]
+    # Render Sector.status as a colored Tabler badge on both list and
+    # details so the operator can spot draft / live / archived at a
+    # glance (Vision Builder commits as draft; admin flips to live
+    # via the edit form below).
+    column_formatters = {m.Sector.status: status_badge_formatter}
+    column_formatters_detail = {m.Sector.status: status_badge_formatter}
     can_create = False
     can_delete = False
+    # Enable editing so admins can flip status draft → live and tweak
+    # name / description / vision_question after a Builder commit.
+    # Slug is the FK target everywhere — left out of the form so it
+    # stays immutable. The audit / provenance columns
+    # (source_module, agent_workflow_id, created_by_user_id) are
+    # read-only metadata and don't belong on the edit form either.
+    can_edit = True
+    form_columns = [
+        m.Sector.name,
+        m.Sector.description,
+        m.Sector.vision_question,
+        m.Sector.is_vision_eligible,
+        m.Sector.status,
+    ]
+    # Render status as a dropdown bound to the schema enum instead of
+    # a freeform text input — typos here cascade silently (vision.list
+    # filters by `status = 'live'` exactly).
+    form_overrides = {"status": SelectField}
+    form_args = {
+        "status": {
+            "choices": _SECTOR_STATUS_CHOICES,
+            "coerce": str,
+        }
+    }
 
     @action(
         name="trigger_hello_world",
@@ -421,6 +460,8 @@ class CrawlRunView(_BaseModelView, model=m.CrawlRun):
         m.CrawlRun.fetcher_kind,
     ]
     column_default_sort = ("started_at", True)
+    column_formatters = {m.CrawlRun.status: status_badge_formatter}
+    column_formatters_detail = {m.CrawlRun.status: status_badge_formatter}
     can_create = False
     can_edit = False
     can_delete = False
@@ -448,6 +489,8 @@ class CommunityProposalView(_BaseModelView, model=m.CommunityProposal):
         m.CommunityProposal.vote_score,
     ]
     column_default_sort = ("created_at", True)
+    column_formatters = {m.CommunityProposal.status: status_badge_formatter}
+    column_formatters_detail = {m.CommunityProposal.status: status_badge_formatter}
     can_create = False
     can_delete = False
 

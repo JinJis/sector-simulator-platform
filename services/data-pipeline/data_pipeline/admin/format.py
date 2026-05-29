@@ -21,11 +21,14 @@ if a future operator isn't on KST. Falls back to KST when unset/invalid.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from markupsafe import Markup, escape
 
 log = logging.getLogger(__name__)
 
@@ -95,13 +98,90 @@ def kst_datetime_formatter(value: Any) -> str:
     return format_display(value, fmt="%Y-%m-%d %H:%M:%S", with_tz=True)
 
 
+# ──────────────────────────────────────────────────────────────────────
+# JSON / dict pretty-printer
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _json_default(obj: Any) -> Any:
+    """Last-resort serializer for values json.dumps doesn't know about
+    (datetime, UUID, Decimal, etc.) — convert to ISO/string so the cell
+    still renders something readable instead of raising TypeError."""
+    if isinstance(obj, datetime):
+        return format_display(obj, with_tz=True)
+    return str(obj)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Status badge (lifecycle column on Sector + Workflow + Proposal etc.)
+# ──────────────────────────────────────────────────────────────────────
+
+# Map common lifecycle statuses to Tabler's `bg-*-lt` (light) badge
+# classes so an operator can see at-a-glance whether a row is live
+# (green), in review (yellow), terminated (gray), or errored (red).
+# Falls back to neutral secondary when an unmapped value lands —
+# defensive against future statuses, no need to crash the list view.
+_STATUS_BADGE_TONES: dict[str, str] = {
+    # Sector lifecycle (schema.prisma: draft | live | archived)
+    "live": "green",
+    "draft": "yellow",
+    "archived": "secondary",
+    # Workflow + crawl run lifecycle (pending → running → succeeded / failed)
+    "pending": "azure",
+    "queued": "azure",
+    "running": "blue",
+    "succeeded": "green",
+    "ok": "green",
+    "failed": "red",
+    "error": "red",
+    "cancelled": "secondary",
+    "skipped": "secondary",
+    # Community proposal lifecycle
+    "proposed": "azure",
+    "applied": "green",
+    "rejected": "red",
+    "stale": "secondary",
+}
+
+
+def status_badge_formatter(value: Any) -> Markup | str:
+    """Render a status string as a Tabler `badge bg-<tone>-lt` pill so
+    list / detail views show colored tags instead of bare text. Pass
+    via `column_formatters = {Model.status: status_badge_formatter}`
+    on the ModelView."""
+    if value is None or value == "":
+        return ""
+    s = str(value)
+    tone = _STATUS_BADGE_TONES.get(s.lower(), "secondary")
+    return Markup(f'<span class="badge bg-{tone}-lt">{escape(s)}</span>')
+
+
+def json_pretty_formatter(value: Any) -> Markup | str:
+    """Render dict / list JSONB columns as indented, wrap-friendly
+    `<pre>` blocks. Returned as `Markup` so SQLAdmin's Jinja templates
+    won't HTML-escape the wrapping markup. Truncation is left to the
+    CSS (`max-height` + `overflow-y: auto`) so the operator can scroll
+    inside the cell without the page growing unboundedly."""
+    if value is None:
+        return ""
+    try:
+        text = json.dumps(
+            value, indent=2, ensure_ascii=False, default=_json_default, sort_keys=False
+        )
+    except (TypeError, ValueError):
+        text = str(value)
+    return Markup(f'<pre class="admin-pretty">{escape(text)}</pre>')
+
+
 # Drop-in `column_type_formatters` for every ModelView in the cockpit.
 # Mirrors SQLAdmin's `BASE_FORMATTERS` (None / bool) and adds the
-# datetime override.
+# datetime override + JSON pretty-printer for JSONB columns.
 KST_TYPE_FORMATTERS: dict[type, Any] = {
     type(None): lambda _: "",
     bool: None,  # populated at import to avoid a circular reference
     datetime: kst_datetime_formatter,
+    dict: json_pretty_formatter,
+    list: json_pretty_formatter,
 }
 
 

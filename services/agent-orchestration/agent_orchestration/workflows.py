@@ -1222,18 +1222,19 @@ class VisionDecompositionWorkflow:
         llm = self._llm.clone(cost_meter=cost_meter)
         system = load_prompt("vision_decomposition")
         user = self._format_user_turn(request)
-        # 16K is enough for a typical decomposition (15 capabilities,
-        # 12 risks, 30 actors with bounded prose); the deep tier
-        # (gemini-3.1-pro-preview) can extend further if needed.
-        # adaptive_thinking=True lets Gemini spend extra tokens
-        # reasoning before emitting the JSON — important for the
-        # capability/dependency synthesis quality.
+        # Gemini caps thinking + candidate tokens together against
+        # max_output_tokens. With adaptive_thinking=True (budget=-1)
+        # the model often spends 10K+ tokens reasoning, leaving the
+        # 5K+ JSON payload truncated mid-object on the retry path
+        # (which injects the full schema, inviting even more thinking).
+        # 32K gives ~16K of headroom for the JSON itself — gemini-3.1-
+        # pro-preview supports up to 64K output, so we're well clear.
         result = await asyncio.to_thread(
             llm.call,
             tier="deep",
             system=system,
             user=user,
-            max_tokens=16_000,
+            max_tokens=32_000,
             adaptive_thinking=True,
             response_model=VisionDecompositionResult,
         )
