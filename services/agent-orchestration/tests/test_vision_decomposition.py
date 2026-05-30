@@ -406,83 +406,136 @@ def _keyword_set(
 
 
 class TestDataSourceSelectorWorkflow:
+    """Slice 17 — DataSourceSelector now fans out per-capability so each
+    LLM call returns a single ``CapabilityKeywordSet`` instead of the
+    whole batch. Tests reflect that: the fake returns a
+    CapabilityKeywordSet per call (one per capability), N LLM requests
+    are recorded (one per input capability), and a hallucinated
+    capability_key gets hard-overwritten with the canonical input key."""
+
     @pytest.mark.asyncio
     async def test_basic_happy_path(self, fake_llm, fake_anthropic) -> None:
-        fake_anthropic.models.parsed_factory = lambda **_: DataSourceConfigDraft(
-            keywords_by_capability=[
-                _keyword_set("rad_hard_compute"),
-                _keyword_set("orbital_power", arxiv=["space solar"]),
-            ],
-            rationale="One keyword set per capability.",
+        fake_anthropic.models.parsed_factory = lambda **_: _keyword_set(
+            "rad_hard_compute"
         )
         wf = DataSourceSelectorWorkflow(llm=fake_llm)
         out = await wf.run(_selector_request(), cost_meter=CostMeter())
         assert isinstance(out, DataSourceConfigDraft)
+        # One LLM call per input capability (the request has 2).
+        assert len(fake_anthropic.models.requests) == 2
+        # Workflow hard-sets capability_key after parsing, so even
+        # though the fake returns 'rad_hard_compute' twice the output
+        # carries the canonical input keys.
         assert len(out.keywords_by_capability) == 2
         keys = {kws.capability_key for kws in out.keywords_by_capability}
         assert keys == {"rad_hard_compute", "orbital_power"}
 
     @pytest.mark.asyncio
     async def test_uses_sonnet_tier(self, fake_llm, fake_anthropic) -> None:
-        fake_anthropic.models.parsed_factory = lambda **_: DataSourceConfigDraft(
-            keywords_by_capability=[_keyword_set("rad_hard_compute")]
+        fake_anthropic.models.parsed_factory = lambda **_: _keyword_set(
+            "rad_hard_compute"
         )
         wf = DataSourceSelectorWorkflow(llm=fake_llm)
         await wf.run(_selector_request(), cost_meter=CostMeter())
-        sent = fake_anthropic.models.requests[-1]
-        assert sent["model"] == "gemini-3.5-flash"
+        # Every per-cap request goes to the balanced (sonnet) tier.
+        assert fake_anthropic.models.requests, "expected at least one LLM call"
+        for sent in fake_anthropic.models.requests:
+            assert sent["model"] == "gemini-3.5-flash"
 
     @pytest.mark.asyncio
-    async def test_drops_hallucinated_capability_keys(
+    async def test_capability_key_is_hard_overwritten(
         self, fake_llm, fake_anthropic
     ) -> None:
-        """Agent may emit keyword sets for capabilities that don't exist
-        in the input. The workflow drops them before returning."""
-        fake_anthropic.models.parsed_factory = lambda **_: DataSourceConfigDraft(
-            keywords_by_capability=[
-                _keyword_set("rad_hard_compute"),
-                _keyword_set("orbital_power"),
-                _keyword_set("invented_capability"),  # not in input
-            ]
+        """Slice 17 — even if the agent emits a misspelled capability_key
+        for a per-cap call, the workflow hard-sets it back to the
+        canonical input key. The previous batch-mode failure (one
+        hallucinated key → dropped row → coverage gap) becomes
+        impossible because we KNOW which capability each call is for."""
+        fake_anthropic.models.parsed_factory = lambda **_: _keyword_set(
+            "ghost_capability"  # misspelling — workflow overrides
         )
         wf = DataSourceSelectorWorkflow(llm=fake_llm)
         out = await wf.run(_selector_request(), cost_meter=CostMeter())
         keys = {kws.capability_key for kws in out.keywords_by_capability}
         assert keys == {"rad_hard_compute", "orbital_power"}
-        assert "invented_capability" not in keys
+        assert "ghost_capability" not in keys
 
     @pytest.mark.asyncio
-    async def test_raises_when_all_sets_hallucinated(
+    async def test_raises_when_every_per_cap_call_fails(
         self, fake_llm, fake_anthropic
     ) -> None:
-        """If EVERY keyword set is for a hallucinated capability, we'd
-        end up persisting nothing — that's a hard failure."""
-        fake_anthropic.models.parsed_factory = lambda **_: DataSourceConfigDraft(
-            keywords_by_capability=[
-                _keyword_set("ghost_one"),
-                _keyword_set("ghost_two"),
-            ]
-        )
+        """Only condition that raises post-slice-17: every single per-
+        capability LLM call returned no parseable output through both
+        retry attempts. Partial success (some caps OK, others not) is
+        a soft-fail — workflow returns what it got, conductor commits,
+        admin can re-run the stage for the missing ones."""
+        # parsed_factory returning None forces the workflow to treat
+        # every call as a parse failure. After _PER_CAP_ATTEMPTS×2
+        # retries × N capabilities, the workflow raises.
+        fake_anthropic.models.parsed_factory = lambda **_: None
         wf = DataSourceSelectorWorkflow(llm=fake_llm)
-        with pytest.raises(RuntimeError, match="zero keyword sets"):
+        with pytest.raises(RuntimeError, match="every per-capability call failed"):
             await wf.run(_selector_request(), cost_meter=CostMeter())
 
     @pytest.mark.asyncio
-    async def test_user_turn_lists_capabilities(
+    async def test_partial_success_returns_what_it_got(
         self, fake_llm, fake_anthropic
     ) -> None:
-        fake_anthropic.models.parsed_factory = lambda **_: DataSourceConfigDraft(
-            keywords_by_capability=[
-                _keyword_set("rad_hard_compute"),
-                _keyword_set("orbital_power"),
-            ]
+        """Slice 17 — one capability's LLM call fails (both attempts);
+        the OTHER capability's call succeeds. Workflow returns the
+        successful one + logs the gap, instead of failing the whole
+        stage. The admin can re-run DataSourceSelector for the missing
+        capability later; the M40 signal-ingest cron just skips caps
+        with no keywords."""
+        call_count = {"n": 0}
+
+        def _alternate(**_kwargs: object) -> CapabilityKeywordSet | None:
+            # 1st cap: both attempts succeed (calls 1+2).
+            # 2nd cap: both attempts fail (calls 3+4).
+            # asyncio.gather may interleave, so use a deterministic
+            # call-index check rather than capability_key inspection.
+            call_count["n"] += 1
+            return _keyword_set("rad_hard_compute") if call_count["n"] <= 1 else None
+
+        fake_anthropic.models.parsed_factory = _alternate
+        wf = DataSourceSelectorWorkflow(llm=fake_llm)
+        out = await wf.run(_selector_request(), cost_meter=CostMeter())
+        # At least one capability survived (the first call's success).
+        assert len(out.keywords_by_capability) >= 1
+        # Either capability_key COULD be the one that succeeded —
+        # asyncio.gather ordering is implementation-dependent. Just
+        # assert the survivor is one of the input keys.
+        for kws in out.keywords_by_capability:
+            assert kws.capability_key in {"rad_hard_compute", "orbital_power"}
+
+    @pytest.mark.asyncio
+    async def test_user_turn_focuses_on_one_capability(
+        self, fake_llm, fake_anthropic
+    ) -> None:
+        """Per-cap user turn must mention THIS capability by key + name
+        and NOT mention the other capability (otherwise the fanout
+        leaks context cross-cap, defeating the bounded-output goal)."""
+        fake_anthropic.models.parsed_factory = lambda **_: _keyword_set(
+            "rad_hard_compute"
         )
         wf = DataSourceSelectorWorkflow(llm=fake_llm)
         await wf.run(_selector_request(), cost_meter=CostMeter())
-        sent = fake_anthropic.models.requests[-1]
-        joined = repr(sent.get("contents") or sent.get("messages"))
-        assert "rad_hard_compute" in joined
-        assert "orbital_power" in joined
+        assert len(fake_anthropic.models.requests) == 2
+        # Each request's user turn mentions exactly one capability key
+        # — across both requests, both input caps appear.
+        per_request_keys = []
+        for sent in fake_anthropic.models.requests:
+            joined = repr(sent.get("contents") or sent.get("messages"))
+            mentioned = [
+                k
+                for k in ("rad_hard_compute", "orbital_power")
+                if k in joined
+            ]
+            assert len(mentioned) == 1, (
+                f"per-cap user turn should mention one cap, got {mentioned}"
+            )
+            per_request_keys.extend(mentioned)
+        assert set(per_request_keys) == {"rad_hard_compute", "orbital_power"}
 
 
 # ===== CapabilityKeywordSet schema enforcement ===========================
@@ -569,11 +622,11 @@ class TestDataSourceSelectorEndpoint:
         from agent_orchestration.repo import InMemoryWorkflowRepository
         from agent_orchestration.workflows import WorkflowRunner
 
-        fake_anthropic.models.parsed_factory = lambda **_: DataSourceConfigDraft(
-            keywords_by_capability=[
-                _keyword_set("rad_hard_compute"),
-                _keyword_set("orbital_power"),
-            ],
+        # Slice 17: workflow fans out per-capability so the fake now
+        # returns one CapabilityKeywordSet per call (workflow hard-
+        # sets capability_key after parsing).
+        fake_anthropic.models.parsed_factory = lambda **_: _keyword_set(
+            "rad_hard_compute"
         )
         app = create_app()
         app.state.llm = fake_llm

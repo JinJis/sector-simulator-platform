@@ -215,7 +215,14 @@ def _make_stage_factory(
         if "Anchor at least one catalyst" in text or "ThesisCatalystsDraft" in text:
             return thesis_catalysts
         if "CapabilityKeywordSet" in text or "keyword sets" in text.lower():
-            return signal_config
+            # Slice 17 — DataSourceSelector fans out per-capability.
+            # The fake gets one call per input capability and returns
+            # a single CapabilityKeywordSet each time; the workflow
+            # then aggregates them. The capability_key on the returned
+            # object is hard-overwritten by the workflow to the
+            # canonical input key, so we can safely return the first
+            # available set without thinking about which cap is asking.
+            return signal_config.keywords_by_capability[0]
         # Default: decomposition stage.
         return draft
 

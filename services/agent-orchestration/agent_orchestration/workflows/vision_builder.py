@@ -24,6 +24,7 @@ from agent_orchestration.schemas import (
     AddEquityPayload,
     AddRiskPayload,
     AddSignalSourcePayload,
+    CapabilityDraft,
     CapabilityKeywordSet,
     DataSourceConfigDraft,
     DataSourceSelectorRequest,
@@ -166,12 +167,17 @@ class VisionDecompositionWorkflow:
         # (which injects the full schema, inviting even more thinking).
         # 32K gives ~16K of headroom for the JSON itself — gemini-3.1-
         # pro-preview supports up to 64K output, so we're well clear.
+        # Slice 17 — bumped from 32k to 60k so even ultra-broad
+        # visions (15 caps × 30 actors × 8 risks ≈ 25-30k tokens of
+        # output PLUS adaptive_thinking budget) have headroom.
+        # gemini-3.1-pro-preview supports 64k output; we leave a
+        # small buffer under the model's ceiling.
         result = await asyncio.to_thread(
             llm.call,
             tier="deep",
             system=system,
             user=user,
-            max_tokens=32_000,
+            max_tokens=60_000,
             adaptive_thinking=True,
             response_model=VisionDecompositionResult,
         )
@@ -257,9 +263,40 @@ class VisionDecompositionWorkflow:
 # =====================================================================
 
 class DataSourceSelectorWorkflow:
-    """Generate per-capability arXiv/USPTO/News keyword sets."""
+    """Generate per-capability arXiv/USPTO/News keyword sets.
+
+    Slice 17 — per-capability fanout. Was a single LLM call that
+    returned the full ``DataSourceConfigDraft`` (all N capabilities'
+    keyword sets in one JSON). That JSON exceeded the balanced-tier
+    ``max_output_tokens`` ceiling on broad visions and the response
+    arrived truncated mid-keyword — failing JSON parse → conductor
+    raised → 502 to the admin UI.
+
+    The output here is structurally independent per capability
+    (``keywords_by_capability`` is just a flat list, no cross-
+    references), so we can fan out: one LLM call per capability,
+    each returning a single ``CapabilityKeywordSet`` (~300 tokens of
+    output, well under any cap). N calls run concurrently via
+    ``asyncio.gather`` — total wall-clock ≈ slowest single call
+    (~3-5s on balanced), not N× sum. Per-call retry on parse
+    failure; the whole stage only fails if EVERY capability call
+    fails after retry.
+    """
 
     kind = "data_source_selector"
+
+    # Per-capability call cap. Each capability's CapabilityKeywordSet
+    # is at most 3 arrays × 20 keywords × ~30 chars ≈ 1800 chars of
+    # content + JSON overhead + rationale. 4K of output is generous;
+    # the thinking budget on balanced tier is small so the total
+    # max_tokens cap rarely kicks in.
+    _PER_CAP_MAX_TOKENS = 4_096
+
+    # Each per-cap call gets one retry on parse/validation failure.
+    # The retry uses a slightly tightened user prompt ("your previous
+    # response was malformed; produce ONLY the JSON object …") so
+    # the model has a fresh chance without the original noise.
+    _PER_CAP_ATTEMPTS = 2
 
     def __init__(self, llm: LLMClient) -> None:
         self._llm = llm
@@ -272,69 +309,151 @@ class DataSourceSelectorWorkflow:
     ) -> DataSourceConfigDraft:
         llm = self._llm.clone(cost_meter=cost_meter)
         system = load_prompt("data_source_selector")
-        user = self._format_user_turn(request)
-        # Slice 16 follow-up: was 4096, truncating mid-JSON on
-        # 8+-capability visions (each capability emits 3 keyword
-        # arrays × ~10 strings = ~150-200 tokens; JSON overhead +
-        # capability_key + commas pushes a 10-cap vision past 6k
-        # tokens of OUTPUT alone, and the retry path's schema-
-        # injection inflates the THINKING budget too). 16384 gives
-        # headroom for a 15-cap broad vision without forcing the
-        # caller to bump per-tier limits.
-        result = await asyncio.to_thread(
-            llm.call,
-            tier="balanced",
-            system=system,
-            user=user,
-            max_tokens=16_384,
-            adaptive_thinking=False,
-            response_model=DataSourceConfigDraft,
-        )
-        if result.parsed is None:
-            raise RuntimeError(
-                "data-source-selector returned unparseable output "
-                f"(stop_reason={result.stop_reason}, "
-                f"text_len={len(result.text or '')})"
-            )
-        assert isinstance(result.parsed, DataSourceConfigDraft)
-        config = result.parsed
 
-        # Defensive: drop any keyword sets referring to capabilities
-        # that weren't in the input. This blocks the agent from
-        # hallucinating keys.
-        valid_keys = {c.key for c in request.capabilities}
-        cleaned: list[CapabilityKeywordSet] = []
-        for kws in config.keywords_by_capability:
-            if kws.capability_key in valid_keys:
-                cleaned.append(kws)
-            else:
-                log.info(
-                    "data-source-selector: dropping keyword set for unknown capability %r",
-                    kws.capability_key,
-                )
+        tasks = [
+            self._run_one_capability(
+                llm=llm,
+                system=system,
+                vision_slug=request.slug,
+                domain_label=request.domain_label,
+                capability=capability,
+            )
+            for capability in request.capabilities
+        ]
+        # `gather` runs all per-cap calls concurrently. We don't pass
+        # return_exceptions=True — `_run_one_capability` catches
+        # individual failures + returns None instead.
+        results = await asyncio.gather(*tasks)
+
+        cleaned: list[CapabilityKeywordSet] = [r for r in results if r is not None]
         if not cleaned:
             raise RuntimeError(
-                "data-source-selector emitted zero keyword sets that match input capabilities"
+                "data-source-selector: every per-capability call failed "
+                f"(attempts={self._PER_CAP_ATTEMPTS} × {len(request.capabilities)} caps)"
             )
-        return config.model_copy(update={"keywords_by_capability": cleaned})
+        if len(cleaned) < len(request.capabilities):
+            missing = [
+                c.key
+                for c, r in zip(request.capabilities, results, strict=True)
+                if r is None
+            ]
+            log.warning(
+                "data-source-selector: %d/%d capabilities exhausted retries — "
+                "missing keywords for %s; the admin can re-run the stage to "
+                "fill them, or the M40 ingest cron will just skip those caps "
+                "until they have keywords",
+                len(missing),
+                len(request.capabilities),
+                ", ".join(missing),
+            )
+        return DataSourceConfigDraft(
+            keywords_by_capability=cleaned,
+            rationale=(
+                f"Per-capability fanout (slice 17): {len(cleaned)}/"
+                f"{len(request.capabilities)} capabilities produced keyword "
+                "sets. arXiv vocab favors academic noun phrases; USPTO "
+                "uses patent-formal phrasing; News uses named-entity "
+                "phrasing."
+            ),
+        )
+
+    async def _run_one_capability(
+        self,
+        *,
+        llm: LLMClient,
+        system: str,
+        vision_slug: str,
+        domain_label: str,
+        capability: CapabilityDraft,
+    ) -> CapabilityKeywordSet | None:
+        """Issue one LLM call for ONE capability's keyword set. Returns
+        the parsed CapabilityKeywordSet on success, or None when both
+        attempts produced no parseable response — the caller logs the
+        gap + continues with the other capabilities."""
+        for attempt in range(1, self._PER_CAP_ATTEMPTS + 1):
+            user = self._format_single_capability_user_turn(
+                vision_slug=vision_slug,
+                domain_label=domain_label,
+                capability=capability,
+                attempt=attempt,
+            )
+            try:
+                result = await asyncio.to_thread(
+                    llm.call,
+                    tier="balanced",
+                    system=system,
+                    user=user,
+                    max_tokens=self._PER_CAP_MAX_TOKENS,
+                    adaptive_thinking=False,
+                    response_model=CapabilityKeywordSet,
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "data-source-selector: capability=%r attempt=%d raised: %s",
+                    capability.key,
+                    attempt,
+                    exc,
+                )
+                continue
+            if result.parsed is None:
+                log.warning(
+                    "data-source-selector: capability=%r attempt=%d "
+                    "returned no parseable output (stop_reason=%s, "
+                    "text_len=%d)",
+                    capability.key,
+                    attempt,
+                    result.stop_reason,
+                    len(result.text or ""),
+                )
+                continue
+            assert isinstance(result.parsed, CapabilityKeywordSet)
+            # Hard-set the capability_key — the model occasionally
+            # echoes back a normalized variant; we KNOW the canonical
+            # key from the input so we don't need to trust it.
+            return result.parsed.model_copy(
+                update={"capability_key": capability.key}
+            )
+        return None
 
     @staticmethod
-    def _format_user_turn(request: DataSourceSelectorRequest) -> str:
+    def _format_single_capability_user_turn(
+        *,
+        vision_slug: str,
+        domain_label: str,
+        capability: CapabilityDraft,
+        attempt: int,
+    ) -> str:
         parts = [
-            f"## Vision: {request.slug} ({request.domain_label})",
+            f"## Vision: {vision_slug} ({domain_label})",
             "",
-            "## Capabilities",
+            "## Produce keyword set for THIS ONE capability",
+            "",
+            f"### {capability.key} — {capability.name}",
+            f"Description: {capability.description}",
+            f"Rationale: {capability.rationale}",
+            "",
+            (
+                "Return ONE `CapabilityKeywordSet` JSON object for this "
+                "capability only. capability_key MUST be "
+                f"`{capability.key}` verbatim. arxiv_keywords required "
+                "(1-20 entries); uspto_keywords + news_keywords optional "
+                "(may be empty arrays for purely-academic or purely-news "
+                "capabilities). Total keywords across all three lists "
+                "≤ ~40 — over-padding triggers downstream signal-ingest "
+                "noise."
+            ),
         ]
-        for c in request.capabilities:
-            parts.append(f"### {c.key} — {c.name}")
-            parts.append(f"  Description: {c.description}")
-            parts.append(f"  Rationale: {c.rationale}")
-            parts.append("")
-        parts.append(
-            "For each capability above, produce one CapabilityKeywordSet "
-            "with arxiv_keywords, uspto_keywords, news_keywords. "
-            "Total keyword sets MUST equal the capability count."
-        )
+        if attempt > 1:
+            parts.extend(
+                [
+                    "",
+                    (
+                        "[Retry attempt — your previous response failed "
+                        "parsing. Produce ONLY the JSON object, no prose, "
+                        "no markdown fence.]"
+                    ),
+                ]
+            )
         return "\n".join(parts)
 
 
