@@ -100,6 +100,30 @@ def _sector_service_url() -> str:
     )
 
 
+class TRPCError(RuntimeError):
+    """tRPC call failed. Carries the structured fields the admin error
+    panel needs — operator sees the full chain (sector-service → agent-
+    orchestration) without URL truncation, and the JSON details panel
+    surfaces the tRPC error data dict (path, code, httpStatus, the
+    stack from sector-service when NODE_ENV != production)."""
+
+    def __init__(
+        self,
+        *,
+        procedure: str,
+        status_code: int,
+        message: str,
+        data: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            f"sector-service tRPC {procedure} returned {status_code}: {message}"
+        )
+        self.procedure = procedure
+        self.status_code = status_code
+        self.message = message
+        self.data = data or {}
+
+
 async def _trpc_mutation(
     procedure: str, *, payload: dict[str, Any], timeout_sec: float = 120.0
 ) -> dict[str, Any]:
@@ -113,32 +137,91 @@ async def _trpc_mutation(
       - response body: `{"result": {"data": <output>}}` (again, no
         `.json` sub-wrap)
 
-    Raises RuntimeError on tRPC error responses — the caller catches +
-    flashes the message to the operator. Timeout is deliberately long
-    because propose chains 4 LLM stages including a synchronous deep-
-    tier call (15-60s wall time)."""
+    Raises :class:`TRPCError` on tRPC error responses — caller catches +
+    renders inline via :func:`_format_error_detail`. Timeout is
+    deliberately long because propose chains 4 LLM stages including a
+    synchronous deep-tier call (15-60s wall time)."""
     url = f"{_sector_service_url()}/trpc/{procedure}"
     async with httpx.AsyncClient(timeout=timeout_sec) as client:
         resp = await client.post(url, json=payload)
     if resp.status_code != 200:
-        # Try to extract tRPC error envelope; fall back to raw body.
-        # The error envelope IS still `{error: {message, ...}}` — no
-        # transformer wrapping on errors either.
+        # Try to extract the full tRPC error envelope; fall back to raw
+        # body. The envelope shape is `{error: {message, code, data: {
+        # path, code, httpStatus, stack? }}}` — we keep `data` whole so
+        # the admin's "show details" panel can surface every field.
+        envelope_data: dict[str, Any] = {}
+        msg = resp.text
         try:
-            err = resp.json().get("error", {})
-            msg = err.get("message") or resp.text
+            envelope = resp.json().get("error") or {}
+            msg = envelope.get("message") or resp.text
+            envelope_data = envelope.get("data") or {}
         except (ValueError, AttributeError):
-            msg = resp.text
-        raise RuntimeError(
-            f"sector-service tRPC {procedure} returned {resp.status_code}: {msg}"
+            pass
+        raise TRPCError(
+            procedure=procedure,
+            status_code=resp.status_code,
+            message=msg,
+            data=envelope_data,
         )
     data = resp.json()
     try:
         return data["result"]["data"]
     except (KeyError, TypeError) as exc:
-        raise RuntimeError(
-            f"sector-service tRPC {procedure} returned unexpected envelope: {data}"
+        raise TRPCError(
+            procedure=procedure,
+            status_code=resp.status_code,
+            message=f"unexpected response envelope: {data!r}",
         ) from exc
+
+
+def _format_error_detail(
+    exc: BaseException, *, fallback_title: str = "Operation failed"
+) -> dict[str, Any]:
+    """Build the structured context the admin error banner renders.
+
+    Title is short enough for the alert header; ``message`` is the full
+    chained string with no URL-encoding truncation; ``upstream_status``
+    (when present) shows in a chip; ``trpc_data`` (when present) is the
+    JSON pretty-printed in a collapsible details panel.
+
+    ``debug_hint`` tells the operator the exact docker-compose command
+    to run to dig deeper — saves a round-trip to "where do I find the
+    real stack trace?"
+    """
+    title = fallback_title
+    message = str(exc) or repr(exc)
+    upstream_status: int | None = None
+    trpc_data: dict[str, Any] | None = None
+
+    if isinstance(exc, TRPCError):
+        upstream_status = exc.status_code
+        trpc_data = exc.data or None
+        # Try to detect which downstream stage actually failed from the
+        # message chain. Cheap heuristic — the agent-orchestration
+        # endpoint name is the most reliable signal we get back through
+        # sector-service.
+        if "/vision-builder/build" in message:
+            title = "Vision Builder pipeline failed (agent-orchestration)"
+        elif "/vision-builder/commit" in message:
+            title = "Vision Builder commit failed (sector-service)"
+        elif "agent-orchestration returned" in message:
+            title = "agent-orchestration upstream call failed"
+        else:
+            title = f"sector-service tRPC {exc.procedure} failed"
+
+    debug_hint = (
+        "docker compose logs agent-orchestration --tail=200 | "
+        "grep -iE 'vision-builder|llm_client|workflow' — the full stack "
+        "trace lives in the agent-orchestration container, not the tRPC "
+        "response body."
+    )
+    return {
+        "title": title,
+        "message": message,
+        "upstream_status": upstream_status,
+        "trpc_data": trpc_data,
+        "debug_hint": debug_hint,
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,10 +271,17 @@ class VisionBuilderView(BaseView):
     category = "Vision"
     identity = "vision-builder"
 
-    @expose("/vision-builder", methods=["GET"])
-    async def prompt_page(self, request: Request) -> Response:
-        """Stage 1 form. `?error=...` query param flashes a banner —
-        used after a failed propose redirects back here."""
+    async def _render_prompt(
+        self,
+        request: Request,
+        *,
+        prompt: str = "",
+        research_brief: str = "",
+        error_detail: dict[str, Any] | None = None,
+    ) -> Response:
+        """Render the Stage 1 form. Used by both the GET landing and the
+        POST error path so the operator stays on the same surface with
+        their form values preserved + a structured error banner."""
         return await self.templates.TemplateResponse(
             request,
             "vision_builder_prompt.html",
@@ -204,24 +294,56 @@ class VisionBuilderView(BaseView):
                     "successful build."
                 ),
                 "examples": EXAMPLES,
-                "error": request.query_params.get("error", ""),
+                "prompt": prompt,
+                "research_brief": research_brief,
+                "error_detail": error_detail,
                 "stage_models": _vision_builder_stage_models(),
             },
         )
+
+    @expose("/vision-builder", methods=["GET"])
+    async def prompt_page(self, request: Request) -> Response:
+        """Stage 1 form (GET landing). No error context — the propose
+        POST handler renders this template directly with `error_detail`
+        when a submission fails."""
+        return await self._render_prompt(request)
 
     @expose("/vision-builder/propose", methods=["POST"])
     async def propose(self, request: Request) -> Response:
         """Stage 1 submit. Forward to sector-service tRPC. The propose
         procedure handles pre-fetching slug+actor keys and the audit
-        log — we just render the result."""
+        log — we just render the result. On any failure we re-render
+        the form inline with structured error context so the operator
+        sees the full chain (no URL truncation) and their typed prompt
+        + research_brief survive the round-trip."""
         form = await request.form()
         prompt = str(form.get("prompt", "")).strip()
         research_brief = str(form.get("research_brief", "")).strip()
         if len(prompt) < 15:
-            return _redirect_with_error(request, "prompt is too short (min 15 chars)")
+            return await self._render_prompt(
+                request,
+                prompt=prompt,
+                research_brief=research_brief,
+                error_detail={
+                    "title": "Prompt validation failed",
+                    "message": "prompt is too short (min 15 chars)",
+                    "upstream_status": None,
+                    "trpc_data": None,
+                    "debug_hint": None,
+                },
+            )
         if len(prompt) > 4000:
-            return _redirect_with_error(
-                request, "prompt is too long (max 4000 chars)"
+            return await self._render_prompt(
+                request,
+                prompt=prompt,
+                research_brief=research_brief,
+                error_detail={
+                    "title": "Prompt validation failed",
+                    "message": "prompt is too long (max 4000 chars)",
+                    "upstream_status": None,
+                    "trpc_data": None,
+                    "debug_hint": None,
+                },
             )
 
         payload: dict[str, Any] = {
@@ -231,8 +353,20 @@ class VisionBuilderView(BaseView):
         try:
             result = await _trpc_mutation("visionBuilder.propose", payload=payload)
         except Exception as exc:  # noqa: BLE001
-            log.warning("vision-builder propose failed: %s", exc)
-            return _redirect_with_error(request, f"propose failed: {exc}")
+            # Log the full exception server-side for grep-ability, then
+            # render the form with structured error context — full
+            # message survives, no URL truncation. The operator can
+            # copy-paste the agent-orchestration grep hint from the
+            # details panel.
+            log.warning("vision-builder propose failed", exc_info=exc)
+            return await self._render_prompt(
+                request,
+                prompt=prompt,
+                research_brief=research_brief,
+                error_detail=_format_error_detail(
+                    exc, fallback_title="Vision Builder propose failed"
+                ),
+            )
 
         validation = result.get("validation") or {}
         gate = result.get("gate") or None

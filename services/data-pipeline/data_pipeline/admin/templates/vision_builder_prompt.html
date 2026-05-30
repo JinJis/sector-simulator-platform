@@ -1,12 +1,58 @@
 {% extends "sqladmin/layout.html" %}
 
 {# Vision Builder — step 1 prompt form. POSTs to /admin/vision-builder/propose.
-   On failure the propose handler redirects back here with ?error=…  #}
+   On failure the propose handler re-renders this template with
+   `error_detail` populated (title + full message + optional upstream
+   status / tRPC data / debug hint). Form values (prompt, research_brief)
+   are preserved across the error round-trip.  #}
 
 {% block content %}
-{% if error %}
+{% if error_detail %}
 <div class="col-12">
-  <div class="alert alert-danger">{{ error }}</div>
+  <div class="alert alert-danger" role="alert">
+    <div class="d-flex align-items-start gap-2">
+      <i class="fa-solid fa-circle-exclamation mt-1"></i>
+      <div class="flex-fill">
+        <h4 class="alert-title mb-1">
+          {{ error_detail.title }}
+          {% if error_detail.upstream_status %}
+          <span class="badge bg-red-lt ms-2 font-monospace">
+            HTTP {{ error_detail.upstream_status }}
+          </span>
+          {% endif %}
+        </h4>
+        <div class="text-muted small">
+          Re-submit after fixing, or scroll down for the prompt + brief
+          you just typed (preserved across this error).
+        </div>
+        <pre class="mt-2 mb-0 p-2 bg-red-lt rounded small"
+             style="white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto;"
+        >{{ error_detail.message }}</pre>
+
+        {% if error_detail.trpc_data %}
+        <details class="mt-2">
+          <summary class="small text-muted" style="cursor: pointer;">
+            tRPC error data (path / code / httpStatus / stack)
+          </summary>
+          <pre class="mt-1 mb-0 p-2 bg-red-lt rounded small"
+               style="white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto;"
+          >{{ error_detail.trpc_data | tojson(indent=2) }}</pre>
+        </details>
+        {% endif %}
+
+        {% if error_detail.debug_hint %}
+        <details class="mt-2">
+          <summary class="small text-muted" style="cursor: pointer;">
+            How to dig deeper (server-side logs)
+          </summary>
+          <pre class="mt-1 mb-0 p-2 bg-muted-lt rounded small"
+               style="white-space: pre-wrap; word-break: break-word;"
+          >{{ error_detail.debug_hint }}</pre>
+        </details>
+        {% endif %}
+      </div>
+    </div>
+  </div>
 </div>
 {% endif %}
 
@@ -34,7 +80,7 @@
             minlength="15"
             maxlength="4000"
             required
-            placeholder="e.g., {{ examples[0] }}"></textarea>
+            placeholder="e.g., {{ examples[0] }}">{{ prompt or '' }}</textarea>
           <small class="form-hint">
             One concrete, falsifiable question. The PromptValidator rejects
             anything too vague, too narrow, or already an existing vision.
@@ -52,7 +98,7 @@
             class="form-control"
             rows="4"
             maxlength="20000"
-            placeholder="Optional context the decomposer can lean on (existing research, market notes, etc.). Skip unless you have something specific."></textarea>
+            placeholder="Optional context the decomposer can lean on (existing research, market notes, etc.). Skip unless you have something specific.">{{ research_brief or '' }}</textarea>
         </div>
 
         <div class="d-flex justify-content-between align-items-center">
