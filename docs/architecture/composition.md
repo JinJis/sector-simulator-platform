@@ -36,12 +36,12 @@ footprint but every change to a fed surface ripples through them
 ```
 [External]            [Fetcher]                  [Extractor]              [Updater]                  [Aggregator]
 arXiv API     →   arxiv_fetcher       →    SignalExtractor      →    ScoreUpdater          →    FeasibilityAggregator
-USPTO API     →   uspto_fetcher       →    (haiku, per signal)       (sonnet, per cap)          (cron, per vision)
+USPTO API     →   uspto_fetcher       →    (fast, per signal)        (balanced, per cap)        (cron, per vision)
 NewsAPI       →   news_fetcher        →                                                          
 SEC EDGAR     →   edgar_fetcher       →                              ↑                          ↑
 Gov sources   →   gov_fetcher         →                                                          
 Gemini DRA    →   deep_research       →    EntityDetector       →    CommunityProposal       
-                  (per surface)             (sonnet)                  (bot author)             
+                  (per surface)             (balanced)                (bot author)             
                                             ↓                                                  
                                        new Actor / Capability / Risk / SignalSource
                                             ↓
@@ -51,12 +51,12 @@ Gemini DRA    →   deep_research       →    EntityDetector       →    Commu
 Three loops, intentionally separated:
 
 1. **Ingest loop** (fetcher → SignalExtractor → `Signal`) — high-volume,
-   haiku-tier, ~$0.001 per signal. Runs hourly.
+   fast-tier, ~$0.001 per signal. Runs hourly.
 2. **Score loop** (`Signal` → ScoreUpdater → `CapabilityScore` →
-   FeasibilityAggregator → `VisionFeasibility`) — sonnet-tier on
+   FeasibilityAggregator → `VisionFeasibility`) — balanced-tier on
    capability batches, cron every 6h or on-demand.
 3. **Discovery loop** (Deep Research → EntityDetector → bot
-   `CommunityProposal`) — opus/sonnet-tier, runs weekly per binding
+   `CommunityProposal`) — deep/balanced-tier, runs weekly per binding
    capability or on admin trigger.
 
 Splitting Ingest from Discovery is the key cost lever: keyword sweeps
@@ -84,10 +84,10 @@ re-pay the LLM bill). `WriteSummary` is what the admin cockpit displays.
 
 | Fetcher | Tier | Cadence | Writes |
 |---|---|---|---|
-| `CapabilityFetcher` | Deep Research (opus-equivalent) | weekly per binding cap | `Signal` (per-dim delta) → ripples to `CapabilityScore` |
+| `CapabilityFetcher` | Deep Research (deep-tier) | weekly per binding cap | `Signal` (per-dim delta) → ripples to `CapabilityScore` |
 | `ActorFetcher` | Deep Research + news scrape | daily for top-N relevance | `Signal` (actor_id-tagged), draft proposals for new actors |
-| `SignalFetcher` | haiku (extends M39 arXiv/USPTO/News) | hourly | `Signal` |
-| `RiskFetcher` | sonnet (regulatory keyword + safety event watch) | daily | `Signal` (risk_id-tagged), draft proposals for new risk categories |
+| `SignalFetcher` | fast (extends M39 arXiv/USPTO/News) | hourly | `Signal` |
+| `RiskFetcher` | balanced (regulatory keyword + safety event watch) | daily | `Signal` (risk_id-tagged), draft proposals for new risk categories |
 | `EconomicsFetcher` | Deep Research (analyst reports + benchmark papers) | weekly | `EconomicsDatapoint` row (cost / $ / unit / source_url / as_of) |
 
 ### Why Deep Research vs direct crawling

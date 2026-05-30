@@ -101,8 +101,8 @@ Phase 4 layer on top: a continuous **Crawler** service pushes new
 Actor / Capability / Risk / signal source shows up. See
 [docs/architecture/composition.md](./docs/architecture/composition.md).
 
-Signal → ExtractorAgent (haiku tier) → per-dim deltas + actor tags →
-ScoreUpdaterAgent (sonnet) → CapabilityScore time series → VisionAggregator
+Signal → ExtractorAgent (fast tier) → per-dim deltas + actor tags →
+ScoreUpdaterAgent (balanced) → CapabilityScore time series → VisionAggregator
 (Liebig binding) → VisionFeasibility snapshot.
 
 ---
@@ -124,8 +124,8 @@ remains deferred.
   PatentsView · NewsAPI · government RSS
 - Synthesis: Gemini Deep Research Agent for state-of-X paragraphs no
   single API can produce
-- Each signal → SignalExtractor (haiku) → per-dim deltas + actor tags +
-  confidence → ScoreUpdater (sonnet) → CapabilityScore time series →
+- Each signal → SignalExtractor (fast) → per-dim deltas + actor tags +
+  confidence → ScoreUpdater (balanced) → CapabilityScore time series →
   daily `recompute_feasibility` cron
 
 ### F3. The Hero
@@ -197,21 +197,23 @@ for model routing + auth. Conductor orchestrates the workflows below.
 
 | Workflow | Tier | Triggered by |
 |---|---|---|
-| VisionResearch | sonnet | new vision proposal |
-| VisionDecomposition | opus | post-Research |
-| CapabilityToDriver | sonnet | post-Decomposition |
-| CapabilityDependencies | opus | post-CapabilityToDriver |
-| CapabilityScoringCode | opus | post-Dependencies |
-| CodeReview | opus | post-CodeGen |
-| SignalExtractor | haiku | each new signal (~100–1000/day) |
-| ScoreUpdater | sonnet | new signal arrives for a capability |
-| DeepResearch | deep-research-preview-04-2026 | per-surface fetcher (Phase 4) |
-| EntityDetector | sonnet | post-signal-batch; diffs vs known entities |
-| ProposalDrafter | sonnet | detected entity passes confidence + recurrence |
+| VisionResearch | balanced | new vision proposal |
+| VisionDecomposition | deep | post-Research |
+| CapabilityToDriver | balanced | post-Decomposition |
+| CapabilityDependencies | deep | post-CapabilityToDriver |
+| CapabilityScoringCode | deep | post-Dependencies |
+| CodeReview | deep | post-CodeGen |
+| SignalExtractor | fast | each new signal (~100–1000/day) |
+| ScoreUpdater | balanced | new signal arrives for a capability |
+| DeepResearch | gemini-3.1-pro-preview (deep tier, grounded) | per-surface fetcher (Phase 4) |
+| EntityDetector | balanced | post-signal-batch; diffs vs known entities |
+| ProposalDrafter | balanced | detected entity passes confidence + recurrence |
 
-All output goes through Pydantic schema validation. Tool-use trick on
-Claude side (force `tool_choice` for structured output). Cost meter
-tracks per-workflow $$.
+All output goes through Pydantic schema validation via Gemini's native
+`response_schema`; when the FST constraint overflows (~5888 states) the
+client falls back to prompt-injection + post-parse, with a corrective
+re-prompt on validation failure (see `packages/agent-tools/agent_tools/
+llm_client.py`). Cost meter tracks per-workflow $$.
 
 ---
 
@@ -260,10 +262,10 @@ Unit economics — Pro tier (TBD pricing M44+):
 - Gross margin target: > 80%
 
 Strategies (active):
-1. Prompt caching (Anthropic + Gemini both support)
+1. Prompt caching (Gemini `cache_control: ephemeral` on system blocks)
 2. Result caching (`hash(sector_id, code_version, drivers_dict)`)
-3. Model routing (haiku for extraction / classification; sonnet for
-   reasoning; opus only for critical decomposition / code review)
+3. Model routing (fast for extraction / classification; balanced for
+   reasoning; deep only for critical decomposition / code review)
 4. Batch API for non-realtime (backtest, signal extractor batching)
 
 ### 7.3 Security

@@ -101,8 +101,8 @@ Browser
       ├─ → simulation-service:8000 (Python, sim + feasibility engine)
       ├─ → data-pipeline:8003 (Python, signal ingest + crons)
       └─ → agent-orchestration:8002 (Python, Vision Builder + extractor/updater)
-                  └─ Anthropic Claude (opus) + Google Gemini (sonnet/haiku)
-                      via Vertex AI (same SA JSON)
+                  └─ Google Gemini (deep / balanced / fast tiers)
+                      via Vertex AI single SA JSON (F9 — Gemini-only)
 ```
 
 Services + packages — see [CLAUDE.md "Repository Structure"](./CLAUDE.md#repository-structure).
@@ -123,7 +123,7 @@ shows feasibility score · ETA window · capability bands · actor band.
 VisionFeasibility / Actor / CapabilityActor. 4-dim aggregation per
 capability + Liebig binding rollup + ETA inference; daily recompute
 cron. Signal ingest covers arXiv + USPTO + NewsAPI, fed through a
-SignalExtractor (haiku) and ScoreUpdater (sonnet); Signals tab + admin
+SignalExtractor (fast) and ScoreUpdater (balanced); Signals tab + admin
 health card included.
 
 **Vision Builder agent** — admin types a one-line question →
@@ -186,10 +186,10 @@ Builder**. Submit a one-line question. The Vision Builder Conductor
 runs:
 
 ```
-PromptValidator (haiku)
-  → VisionResearch (sonnet)
-  → VisionDecomposition (opus)
-  → DataSourceSelector (sonnet)
+PromptValidator (fast)
+  → VisionResearch (balanced)
+  → VisionDecomposition (deep)
+  → DataSourceSelector (balanced)
   → ValidationGate (DAG + FK + weight-sum checks)
   → admin checkpoint
   → tRPC commit (single Prisma transaction)

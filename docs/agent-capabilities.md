@@ -2,20 +2,23 @@
 
 플랫폼이 가진 모든 에이전트(LLM 기반 워크플로) 능력을 한 곳에 정리한
 문서입니다. Vision Builder + signal pipeline + legacy sim-builder
-3개 트랙으로 나뉘어 있어요. **Last updated**: 2026-05-25 (post-M41).
+3개 트랙으로 나뉘어 있어요. **Last updated**: 2026-05-30 (post-F9b
++ workflows/schemas 패키지 분리).
 
 소스 진실:
-- 워크플로 구현 — `services/agent-orchestration/agent_orchestration/workflows.py`
+- 워크플로 구현 — `services/agent-orchestration/agent_orchestration/workflows/`
+  (vision_builder.py / scoring.py / legacy.py — slice 6b로 분리)
 - Conductor + 체이닝 — `services/agent-orchestration/agent_orchestration/conductor.py`
 - 검증 게이트 — `services/agent-orchestration/agent_orchestration/validation_gate.py`
-- Pydantic 스키마 — `services/agent-orchestration/agent_orchestration/schemas.py`
+- Pydantic 스키마 — `services/agent-orchestration/agent_orchestration/schemas/`
+  (common.py / vision_builder.py / scoring.py / legacy.py — slice 7로 분리)
 - 프롬프트 — `prompts/*.md` (versioned)
 - LLM 클라이언트 + 라우팅 — `packages/agent-tools/agent_tools/llm_client.py`
 
-LLM 호출은 모두 `LLMClient`를 통과합니다. Vertex AI 한 SA가 Claude
-(opus 4.7)와 Gemini (3.5-flash / -flash-lite)를 동시에 인증해요.
-Prompt cache + Pydantic structured output + cost meter가 client-side에
-빌트인. 자세한 라우팅은 [CLAUDE.md "LLM auth + tier routing"](../CLAUDE.md#llm-auth--tier-routing-m35) 참조.
+LLM 호출은 모두 `LLMClient`를 통과합니다. F9 이후 Gemini-only —
+Vertex AI 단일 SA(`infra/secrets/vertex-ai-sa.json`)가 모든 tier를
+인증해요. Prompt cache + Pydantic structured output + cost meter가
+client-side에 빌트인. 자세한 라우팅은 [CLAUDE.md "LLM auth + tier routing"](../CLAUDE.md#llm-auth--tier-routing-f9--gemini-only) 참조.
 
 ---
 
@@ -26,10 +29,10 @@ Prompt cache + Pydantic structured output + cost meter가 client-side에
 드래프트로 보여줍니다.
 
 ```
-PromptValidator (haiku)
-  → VisionResearch (sonnet)
-  → VisionDecomposition (opus)
-  → DataSourceSelector (sonnet)
+PromptValidator (fast)
+  → VisionResearch (balanced)
+  → VisionDecomposition (deep)
+  → DataSourceSelector (balanced)
   → ValidationGate (DAG + FK + weight-sum)
   → admin checkpoint
   → tRPC commit (single Prisma transaction)
@@ -39,7 +42,7 @@ PromptValidator (haiku)
 
 | | |
 |---|---|
-| **tier** | haiku (gemini-3.5-flash-lite) |
+| **tier** | fast (gemini-3.5-flash-lite) |
 | **input** | 자연어 prompt (10–800자) |
 | **output** | `PromptValidation` — verdict (`accept` / `reject`) + reason + (선택) suggested rewrite |
 | **prompt** | [`prompts/prompt_validator.md`](../prompts/prompt_validator.md) |
@@ -49,7 +52,7 @@ PromptValidator (haiku)
 
 | | |
 |---|---|
-| **tier** | sonnet (gemini-3.5-flash) |
+| **tier** | balanced (gemini-3.5-flash) |
 | **input** | 검증된 vision prompt |
 | **output** | `ResearchBrief` — numeric anchors + citations + key references |
 | **prompt** | [`prompts/research.md`](../prompts/research.md) |
@@ -59,7 +62,7 @@ PromptValidator (haiku)
 
 | | |
 |---|---|
-| **tier** | opus (claude-opus-4-7), adaptive thinking |
+| **tier** | deep (gemini-3.1-pro-preview), adaptive thinking |
 | **input** | `ResearchBrief` + 원본 prompt |
 | **output** | `VisionDecomposition` — 8-12개의 `CapabilityDraft` + `RiskDraft[]` + `ActorDraft[]` + 메타데이터 |
 | **prompt** | [`prompts/vision_decomposition.md`](../prompts/vision_decomposition.md) |
@@ -69,7 +72,7 @@ PromptValidator (haiku)
 
 | | |
 |---|---|
-| **tier** | sonnet |
+| **tier** | balanced |
 | **input** | `VisionDecomposition` |
 | **output** | `DataSourceSelection` — 각 capability별 추적 키워드 (arXiv / USPTO / NewsAPI) |
 | **prompt** | [`prompts/data_source_selector.md`](../prompts/data_source_selector.md) |
@@ -119,7 +122,7 @@ SDC / Fusion / Quantum / Humanoid / mRNA. Offline (canned response)이
 
 | | |
 |---|---|
-| **tier** | haiku |
+| **tier** | fast |
 | **input** | raw signal payload (title / abstract / source URL / source kind) + 후보 capabilities + keywords |
 | **output** | `SignalScoring` — `capability_id` + 4-dim deltas + confidence + (선택) `actor_id` (M45b) |
 | **prompt** | [`prompts/signal_extractor.md`](../prompts/signal_extractor.md) |
@@ -130,7 +133,7 @@ SDC / Fusion / Quantum / Humanoid / mRNA. Offline (canned response)이
 
 | | |
 |---|---|
-| **tier** | sonnet |
+| **tier** | balanced |
 | **input** | capability current state + 새로 들어온 `SignalScoring[]` |
 | **output** | `CapabilityScoreUpdate` — 새 4-dim score + rationale + source refs |
 | **prompt** | [`prompts/score_updater.md`](../prompts/score_updater.md) |
@@ -165,7 +168,7 @@ Playground에서 돌리는 인프라는 유지됩니다.
 
 | | |
 |---|---|
-| **tier** | opus (adaptive thinking) |
+| **tier** | deep (adaptive thinking) |
 | **input** | 자연어 산업 설명 (10–4000자) + 선택 reference_data |
 | **output** | `Decomposition` — drivers / intermediates / outputs + horizon + slug |
 | **prompt** | [`prompts/decomposition.md`](../prompts/decomposition.md) |
@@ -174,7 +177,7 @@ Playground에서 돌리는 인프라는 유지됩니다.
 
 | | |
 |---|---|
-| **tier** | opus |
+| **tier** | deep |
 | **input** | `Decomposition` |
 | **output** | `EdgeInferenceResult` — edges + intermediate formulas + output formulas + assumptions |
 | **prompt** | [`prompts/edge-inference.md`](../prompts/edge-inference.md) |
@@ -208,10 +211,10 @@ simpleeval 기반 formula 평가로 우회.
 
 | | |
 |---|---|
-| **모델 routing** | `agent_tools/llm_client.py` — `haiku` / `sonnet` / `opus` tier를 Claude opus 4.7 / Gemini 3.5-flash / -flash-lite로 매핑. Vertex AI 한 SA가 양쪽 인증 |
+| **모델 routing** | `agent_tools/llm_client.py` — `fast` / `balanced` / `deep` tier를 gemini-3.5-flash-lite / gemini-3.5-flash / gemini-3.1-pro-preview로 매핑. Vertex AI 단일 SA 인증 (F9 — Gemini-only). 각 tier는 `LLM_{FAST,BALANCED,DEEP}_MODEL` env로 오버라이드 가능 |
 | **Prompt caching** | 모든 호출에 `cache_control: ephemeral`. system block만 캐시 |
 | **Adaptive thinking** | 명시적 opt-in. VisionDecomposition / VisionResearch가 사용 |
-| **Structured output** | Gemini는 native `response_schema`, Claude는 forced `tool_choice` 트릭. 양쪽 Pydantic으로 validate |
+| **Structured output** | Gemini의 native `response_schema` + Pydantic post-validate. 스키마가 Vertex의 FST 제약 한계(~5888 states)를 넘으면 prompt-injection retry로 fall back; retry가 validation 실패시 1회 corrective re-prompt (9ac7a03) |
 | **Cost meter** | 호출당 토큰 + USD가 `CostMeter`에 기록 → workflow record의 `cost_usd` 컬럼에 roll-up |
 | **Persistence** | `agent_workflows` Prisma 테이블에 모든 워크플로 입력 / 출력 / cost / status 영구 저장 |
 | **Dangling sweep** | 프로세스 재시작 시 `pending` / `running` 상태로 5분 이상 stale → 자동 `failed` 마킹 |
@@ -267,4 +270,4 @@ CTA가 실제 Stripe 결제로 연결되도록 전환 예정. 베타 동안은 �
 5. **Pricing & quota wiring**: `user.tier` 기반 hard gate +
    monthly budget + rate limit. Stripe 활성화는 M44 이후.
 6. **모델 router 자동 최적화**: 비용 / latency / 정확도 trade-off에
-   따라 haiku ↔ sonnet ↔ opus 동적 선택.
+   따라 fast ↔ balanced ↔ deep 동적 선택.

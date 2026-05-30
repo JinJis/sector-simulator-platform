@@ -57,7 +57,7 @@ Concrete reframe:
   destruction — rows retained, UI hidden.
 - **Signals replace stock quotes** as the daily ingest: arXiv,
   USPTO/KIPO, NewsAPI, govt feeds drive capability score updates
-  through an extractor agent (haiku tier).
+  through an extractor agent (fast tier; renamed from "haiku" in F9b).
 - **Universal**: the same template (Vision → Capabilities → Signals →
   Risks → Feasibility) must work for any technology vision the user
   phrases. M41 Vision Builder agent generates the capability tree
