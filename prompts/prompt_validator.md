@@ -62,11 +62,13 @@ When you reject:
 - STILL populate `refined_question` + `suggested_name` + `suggested_slug`
   + `domain_label` etc., with the closest valid reframing you can come
   up with — the admin UI uses this to show the user "did you mean…?"
+- If `rejection_kind` is `too_vague`, you MUST populate `reframing_options` with 3 to 5 highly concrete, detailed, and distinct alternative vision prompts that could work as high-quality vision questions (neither too vague nor too narrow). Make sure they represent specific, well-formed, falsifiable technology vision questions with capability/timeline anchors. For other rejection kinds or on successful validation, set `reframing_options` to `null`.
 
 When you accept:
 - Set `is_valid = true`
 - Set `rejection_kind = null`
 - Leave `rejection_reason = null`
+- Set `reframing_options = null`
 
 ---
 

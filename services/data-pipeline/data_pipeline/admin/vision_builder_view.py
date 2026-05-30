@@ -289,6 +289,7 @@ class VisionBuilderView(BaseView):
         prompt: str = "",
         research_brief: str = "",
         error_detail: dict[str, Any] | None = None,
+        auto_submit: bool = False,
     ) -> Response:
         """Render the Stage 1 form. Used by both the GET landing and the
         POST error path so the operator stays on the same surface with
@@ -308,6 +309,7 @@ class VisionBuilderView(BaseView):
                 "prompt": prompt,
                 "research_brief": research_brief,
                 "error_detail": error_detail,
+                "auto_submit": auto_submit,
                 "stage_models": _vision_builder_stage_models(),
             },
         )
@@ -317,7 +319,15 @@ class VisionBuilderView(BaseView):
         """Stage 1 form (GET landing). No error context — the propose
         POST handler renders this template directly with `error_detail`
         when a submission fails."""
-        return await self._render_prompt(request)
+        prompt = request.query_params.get("prompt", "").strip()
+        research_brief = request.query_params.get("research_brief", "").strip()
+        auto_submit = request.query_params.get("auto_submit", "").lower() == "true"
+        return await self._render_prompt(
+            request,
+            prompt=prompt,
+            research_brief=research_brief,
+            auto_submit=auto_submit,
+        )
 
     @expose("/vision-builder/propose", methods=["POST"])
     async def propose(self, request: Request) -> Response:

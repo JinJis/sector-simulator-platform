@@ -81,6 +81,30 @@ class TestPromptValidatorWorkflow:
         assert out.suggested_slug
 
     @pytest.mark.asyncio
+    async def test_too_vague_rejection_with_reframing_options(self, fake_llm, fake_anthropic) -> None:
+        options = [
+            "Will commercial fusion grid power exceed 1GW output by 2038?",
+            "Will magnetic confinement fusion achieve Q>10 net energy gain by 2032?",
+            "Can field-reversed configuration fusion hit $40/MWh by 2035?"
+        ]
+        fake_anthropic.models.parsed_factory = lambda **_: _valid_result(
+            is_valid=False,
+            rejection_kind="too_vague",
+            rejection_reason="Asks about fusion in general without target grid/energy parameters or timeline.",
+            reframing_options=options,
+            confidence=0.90,
+        )
+        wf = PromptValidatorWorkflow(llm=fake_llm)
+        out = await wf.run(
+            VisionBuilderPromptRequest(prompt="Will fusion power happen?"),
+            cost_meter=CostMeter(),
+        )
+        assert out.is_valid is False
+        assert out.rejection_kind == "too_vague"
+        assert out.reframing_options == options
+
+
+    @pytest.mark.asyncio
     async def test_uses_haiku_tier(self, fake_llm, fake_anthropic) -> None:
         """Calls the fast tier (gemini-3.1-flash-lite). Test name
         preserved for `pytest -k` continuity through the F9b rename."""

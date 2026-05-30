@@ -124,6 +124,13 @@ class PromptValidationResult(BaseModel):
     # Things the admin should double-check at the review step.
     review_notes: list[str] = Field(default_factory=list, max_length=10)
 
+    # Suggested concrete reframed prompts to choose from if the prompt was too vague.
+    reframing_options: list[str] | None = Field(
+        default=None,
+        max_length=5,
+        description="List of concrete, detailed alternative prompts when the input is too vague.",
+    )
+
     # Confidence in the validation itself. <0.5 → admin should pay
     # extra attention to review_notes before approving.
     confidence: float = Field(..., ge=0.0, le=1.0)

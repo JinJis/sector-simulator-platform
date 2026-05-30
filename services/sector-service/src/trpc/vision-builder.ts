@@ -204,6 +204,7 @@ const PromptValidationResult = z.object({
   suggested_capability_count: z.number().int(),
   suggested_actor_count: z.number().int(),
   review_notes: z.array(z.string()),
+  reframing_options: z.array(z.string()).nullable().optional(),
   confidence: z.number(),
 });
 

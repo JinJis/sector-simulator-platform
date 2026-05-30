@@ -288,6 +288,13 @@
             pollOnce();
             pollHandle = setInterval(pollOnce, 1500);
           });
+
+          {% if auto_submit %}
+          // Auto-submit the form on load
+          window.addEventListener("DOMContentLoaded", function () {
+            btn.click();
+          });
+          {% endif %}
         })();
       </script>
     </div>
