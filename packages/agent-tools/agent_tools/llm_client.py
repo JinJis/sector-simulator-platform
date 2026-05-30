@@ -47,7 +47,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, TypeVar
 
@@ -86,15 +86,42 @@ _MODEL_ENV_BY_TIER: dict[ModelTier, str] = {
 }
 
 
+# Optional resolver hook injected by services that read tier overrides
+# from a runtime store (slice 12 JobConfig). Set via
+# `set_model_resolver`; cleared by passing None. The resolver returns
+# the model id for a tier, or None to fall through to env / default.
+# Keeping this in a sync hook (not async) so the caller doesn't need to
+# await — services pre-warm their store and inject a sync wrapper.
+_MODEL_RESOLVER: Callable[[ModelTier], str | None] | None = None
+
+
+def set_model_resolver(
+    resolver: Callable[[ModelTier], str | None] | None,
+) -> None:
+    """Plug in a tier → model resolver. data-pipeline + agent-
+    orchestration lifespan wire this to a JobConfigStore so admin
+    edits to `LLM_*_MODEL` take effect across services without a
+    container restart. Pass None to clear (tests use this in
+    `addfinalizer`)."""
+    global _MODEL_RESOLVER
+    _MODEL_RESOLVER = resolver
+
+
 def model_for_tier(tier: ModelTier) -> str:
     """Resolve the active model id for `tier`. Order of precedence:
-    env (`LLM_{DEEP,BALANCED,FAST}_MODEL`) → built-in default."""
+    runtime resolver (DB) → env (`LLM_{DEEP,BALANCED,FAST}_MODEL`) →
+    built-in default."""
+    if _MODEL_RESOLVER is not None:
+        override = _MODEL_RESOLVER(tier)
+        if override:
+            return override
     env_key = _MODEL_ENV_BY_TIER[tier]
     return os.environ.get(env_key) or _DEFAULT_MODEL_BY_TIER[tier]
 
 
 def available_models() -> Mapping[ModelTier, str]:
-    """Return the currently-active tier → model-id mapping (env-resolved)."""
+    """Return the currently-active tier → model-id mapping (resolver +
+    env + default)."""
     return {tier: model_for_tier(tier) for tier in _DEFAULT_MODEL_BY_TIER}
 
 

@@ -23,11 +23,25 @@ from agent_tools.grounded_research import (
     GroundedResearchTier,
     grounded_model_for,
 )
+from agent_tools.job_config import (
+    EnvSeedKey,
+    InMemoryJobConfigStore,
+    JobConfigEntry,
+    JobConfigKind,
+    JobConfigStore,
+    PostgresJobConfigStore,
+    coerce_typed,
+    parse_bool,
+    parse_float,
+    parse_int,
+    seed_from_env,
+)
 from agent_tools.llm_client import (
     LLMCallResult,
     LLMClient,
     ModelTier,
     available_models,
+    set_model_resolver,
 )
 from agent_tools.tools import ToolDef, tool_defs
 
@@ -47,20 +61,32 @@ __all__ = [
     "DeepResearchResult",  # legacy alias
     "DeepResearchSurface",  # legacy alias
     "DeepResearchTier",  # legacy alias
+    "EnvSeedKey",
     "GroundedCitation",
     "GroundedResearchClient",
     "GroundedResearchResult",
     "GroundedResearchSurface",
     "GroundedResearchTier",
+    "InMemoryJobConfigStore",
+    "JobConfigEntry",
+    "JobConfigKind",
+    "JobConfigStore",
     "LLMCallResult",
     "LLMClient",
     "ModelTier",
+    "PostgresJobConfigStore",
     "PricedUsage",
     "ToolDef",
     "available_models",
+    "coerce_typed",
     "deep_research_model_for",  # legacy alias
     "deep_research_price_usd",  # deprecated shim, see cost.py
     "grounded_model_for",
     "model_price",
+    "parse_bool",
+    "parse_float",
+    "parse_int",
+    "seed_from_env",
+    "set_model_resolver",
     "tool_defs",
 ]

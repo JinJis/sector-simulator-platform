@@ -935,9 +935,9 @@ model VisionFeasibility {
 model InvestmentThesis {
   // 1:1 with Sector. A vision either has a thesis (admin or LLM
   // authored) or it doesn't — the panel hides cleanly when absent.
-  id            String   @id @default(cuid())
-  sector_slug   String   @unique @map("sector_slug")
-  sector        Sector   @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+  id          String @id @default(cuid())
+  sector_slug String @unique @map("sector_slug")
+  sector      Sector @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
 
   // The one-sentence "what's the bet" framing rendered at the top of
   // the panel.
@@ -955,7 +955,7 @@ model InvestmentThesis {
   last_reviewed DateTime @default(now()) @map("last_reviewed") @db.Timestamptz(3)
 
   created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updated_at DateTime @updatedAt        @map("updated_at") @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("investment_theses")
 }
@@ -964,9 +964,9 @@ model Catalyst {
   // Many catalysts per vision — upcoming events likely to move the
   // composite within ~6-18 months (capability launches, regulatory
   // decisions, milestone tape-outs, funding windows).
-  id          String   @id @default(cuid())
-  sector_slug String   @map("sector_slug")
-  sector      Sector   @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
+  id          String @id @default(cuid())
+  sector_slug String @map("sector_slug")
+  sector      Sector @relation(fields: [sector_slug], references: [slug], onDelete: Cascade)
 
   // Expected date the event is scheduled / projected for. Timeline
   // sorts ASC; past dates dim in the UI.
@@ -986,7 +986,7 @@ model Catalyst {
   display_order  Int      @default(100) @map("display_order")
 
   created_at DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updated_at DateTime @updatedAt        @map("updated_at") @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@index([sector_slug, expected_at])
   @@map("catalysts")
@@ -1521,4 +1521,40 @@ model CrawlRun {
   // Live-jobs pane — `WHERE status IN ('queued','running')`.
   @@index([status, started_at(sort: Desc)])
   @@map("crawl_runs")
+}
+
+/// Runtime-editable operational config for the data-pipeline service.
+///
+/// Replaces the previous "every operator knob lives in .env, container
+/// restart on edit" workflow (slice 12). One row per env-var-shaped
+/// setting (key = the canonical env-var name like
+/// "INGEST_CRON_QUOTES"); admin edits hit this table, services read
+/// from here at boot + on TTL cache invalidation. The DB row is
+/// authoritative when present — .env still seeds on first boot when
+/// the table is empty.
+///
+/// `kind` drives the admin form widget + the server-side parser:
+///   - "cron"         — APScheduler cron expression ("30 8 * * *")
+///   - "interval_min" — minutes between fires (float)
+///   - "bool"         — "on" / "off" (some configs accept 1/0/true/false too)
+///   - "int"          — integer threshold (lookback days, throttle ms)
+///   - "string"       — free-form, optionally constrained by `description`
+///   - "string_enum"  — comma-separated allowed values in description
+///   - "schedule_toggle" — "on" / "off" gating an entire scheduled job
+///
+/// `group` is the cockpit display grouping ("quotes", "news_ingest",
+/// "research_ingest", "feasibility", "orchestrator", "digest",
+/// "predictions_v2", "llm_tier", "misc"). Frees the UI from caring
+/// about model classes — sort by group, render fields.
+model JobConfig {
+  key         String   @id @db.VarChar(128)
+  value       String   @db.VarChar(2048)
+  kind        String   @db.VarChar(32)
+  group       String   @db.VarChar(64)
+  description String?  @db.VarChar(512)
+  updated_at  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updated_by  String?  @map("updated_by") @db.VarChar(128)
+
+  @@index([group])
+  @@map("job_configs")
 }
