@@ -48,11 +48,28 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from agent_tools import available_models
 from sqladmin import BaseView, expose
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 
 log = logging.getLogger(__name__)
+
+
+def _vision_builder_stage_models() -> dict[str, str]:
+    """Resolve the actual Gemini model id used by each Vision Builder
+    stage (post-F9b semantic tier names: fast / balanced / deep).
+    Reads from `LLM_{FAST,BALANCED,DEEP}_MODEL` env vars → falls back
+    to llm_client built-in defaults. Surfaced into the propose-form
+    progress UI so the operator sees the real model that's running,
+    not the tier-name alias."""
+    models = available_models()
+    return {
+        "prompt_validator": models["fast"],
+        "vision_decomposition": models["deep"],
+        "data_source_selector": models["balanced"],
+        "thesis_drafter": models["balanced"],
+    }
 
 
 # Mirror of `apps/admin/.../builder-form.tsx :: STAGE_LABELS`. Kept in
@@ -98,8 +115,8 @@ async def _trpc_mutation(
 
     Raises RuntimeError on tRPC error responses — the caller catches +
     flashes the message to the operator. Timeout is deliberately long
-    because propose chains 4 LLM stages including a synchronous opus
-    call (15-60s wall time)."""
+    because propose chains 4 LLM stages including a synchronous deep-
+    tier call (15-60s wall time)."""
     url = f"{_sector_service_url()}/trpc/{procedure}"
     async with httpx.AsyncClient(timeout=timeout_sec) as client:
         resp = await client.post(url, json=payload)
@@ -188,6 +205,7 @@ class VisionBuilderView(BaseView):
                 ),
                 "examples": EXAMPLES,
                 "error": request.query_params.get("error", ""),
+                "stage_models": _vision_builder_stage_models(),
             },
         )
 
