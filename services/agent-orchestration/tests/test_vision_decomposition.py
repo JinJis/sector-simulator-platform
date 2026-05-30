@@ -256,35 +256,58 @@ class TestVisionDecompositionWorkflow:
 
 
 class TestDecompositionSchema:
-    def test_rejects_bad_iso_country(self) -> None:
-        with pytest.raises(ValidationError):
-            ActorDraft(
-                key="bad_actor",
-                name="Bad Actor",
-                iso_country="USA",  # alpha-3 — should reject
-                category="public_corp",
-                blurb="ten chars+",
-                stage="commercial",
-                signal_keywords=["x"],
-                relevance=50,
-                rationale="long enough",
-                display_order=10,
-            )
+    def test_normalizes_alpha3_iso_country_to_first_two(self) -> None:
+        """Slice 16 — alpha-3 codes get coerced to the first 2 letters
+        instead of rejected. ``USA`` → ``US``; admin sees the right
+        country tag instead of a 502."""
+        actor = ActorDraft(
+            key="bad_actor",
+            name="Bad Actor",
+            iso_country="USA",
+            category="public_corp",
+            blurb="ten chars+",
+            stage="commercial",
+            signal_keywords=["x"],
+            relevance=50,
+            rationale="long enough",
+            display_order=10,
+        )
+        assert actor.iso_country == "US"
 
-    def test_rejects_lowercase_iso_country(self) -> None:
-        with pytest.raises(ValidationError):
-            ActorDraft(
-                key="bad_actor",
-                name="Bad Actor",
-                iso_country="us",
-                category="public_corp",
-                blurb="ten chars+",
-                stage="commercial",
-                signal_keywords=["x"],
-                relevance=50,
-                rationale="long enough",
-                display_order=10,
-            )
+    def test_normalizes_lowercase_iso_country(self) -> None:
+        """Slice 16 — Gemini occasionally emits lowercase. Normalize
+        before the regex check; ``us`` → ``US``."""
+        actor = ActorDraft(
+            key="bad_actor",
+            name="Bad Actor",
+            iso_country="us",
+            category="public_corp",
+            blurb="ten chars+",
+            stage="commercial",
+            signal_keywords=["x"],
+            relevance=50,
+            rationale="long enough",
+            display_order=10,
+        )
+        assert actor.iso_country == "US"
+
+    def test_normalizes_hyphenated_key_to_snake(self) -> None:
+        """Slice 16 — the most common failure mode pre-fix: a hyphen
+        in the key. Normalize before the snake_case regex check so
+        the pipeline never sees the violation."""
+        actor = ActorDraft(
+            key="High-Throughput Inc",
+            name="High Throughput Inc",
+            iso_country="US",
+            category="public_corp",
+            blurb="ten chars+",
+            stage="commercial",
+            signal_keywords=["x"],
+            relevance=50,
+            rationale="long enough",
+            display_order=10,
+        )
+        assert actor.key == "high_throughput_inc"
 
     def test_rejects_capability_weight_above_max(self) -> None:
         with pytest.raises(ValidationError):

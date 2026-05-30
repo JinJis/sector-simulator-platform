@@ -226,3 +226,220 @@ Match `target_capability_count` and `target_actor_count` ± 1.
 
 Return ONLY the `VisionDecompositionResult` schema. No prose outside
 it. Slug + name come pre-pinned in the request — use them verbatim.
+
+---
+
+## Worked example (illustrative — shape only)
+
+A 4-capability, 5-actor, 2-risk minimal valid output. Match this SHAPE.
+Adjust counts to your sizing budget and fill in the actual vision's
+content; do **not** copy this content verbatim into a different vision.
+
+```json
+{
+  "slug": "fusion-grid-parity",
+  "name": "Fusion grid parity by 2040",
+  "vision_question": "Will commercial fusion power reach grid parity by 2040?",
+  "description": "Commercial fusion plants reaching LCOE parity with combined-cycle gas in a fielded utility-scale deployment by 2040, validated by a multi-year purchase agreement at market rates.",
+  "domain_label": "energy",
+  "capabilities": [
+    {
+      "key": "net_energy_gain",
+      "name": "Net energy gain (Q > 10)",
+      "description": "Sustained fusion reaction that produces more energy out than the heating power put in, at Q > 10 across multi-minute pulses.",
+      "rationale": "Without engineering Q > 10 the device is a science experiment, not a power plant — this is the binding gate to any commercial path.",
+      "weight": 0.35,
+      "display_order": 10,
+      "primary_driver_name": "fusion_q_value",
+      "initial_technical": 55,
+      "initial_economic": 25,
+      "initial_regulatory": 70,
+      "initial_supply": 60,
+      "confidence": 0.7
+    },
+    {
+      "key": "tritium_supply",
+      "name": "Tritium fuel cycle",
+      "description": "Closed tritium breeding + recovery cycle producing at least the reactor's burn rate; current global civilian inventory is ~25kg.",
+      "rationale": "First-of-a-kind plants drain global supply in months without on-site breeding. Supply concentration is a hard ceiling.",
+      "weight": 0.25,
+      "display_order": 20,
+      "initial_technical": 30,
+      "initial_economic": 20,
+      "initial_regulatory": 60,
+      "initial_supply": 15,
+      "confidence": 0.6
+    },
+    {
+      "key": "first_wall_materials",
+      "name": "First-wall + divertor materials",
+      "description": "Plasma-facing materials surviving 14 MeV neutron flux at ~10 dpa/year while maintaining structural integrity.",
+      "rationale": "Material failure stops the plant — irradiation-resistant alloys (eg. EUROFER, RAFM) are still under qualification.",
+      "weight": 0.20,
+      "display_order": 30,
+      "initial_technical": 45,
+      "initial_economic": 50,
+      "initial_regulatory": 65,
+      "initial_supply": 55,
+      "confidence": 0.65
+    },
+    {
+      "key": "grid_lcoe_competitiveness",
+      "name": "Levelized cost of electricity competitiveness",
+      "description": "Delivered $/MWh at the bus-bar competitive with combined-cycle gas + carbon adder, including capex amortization.",
+      "rationale": "Even a working fusion plant fails the vision if its LCOE doesn't beat the alternative. This is the commercial gate after the engineering one.",
+      "weight": 0.20,
+      "display_order": 40,
+      "initial_technical": 60,
+      "initial_economic": 15,
+      "initial_regulatory": 75,
+      "initial_supply": 70,
+      "confidence": 0.55
+    }
+  ],
+  "dependencies": [
+    {
+      "source_key": "net_energy_gain",
+      "target_key": "grid_lcoe_competitiveness",
+      "rationale": "Without engineering Q > 10 the plant has no electricity to sell."
+    },
+    {
+      "source_key": "tritium_supply",
+      "target_key": "net_energy_gain",
+      "rationale": "Sustained operation needs continuous tritium feed."
+    },
+    {
+      "source_key": "first_wall_materials",
+      "target_key": "net_energy_gain",
+      "rationale": "Material failure caps reactor availability and gain."
+    }
+  ],
+  "risks": [
+    {
+      "key": "tritium_supply_concentration",
+      "category": "supply",
+      "name": "Global tritium supply concentration",
+      "description": "Civilian tritium today comes mainly from CANDU reactor by-product; a small shock to that supply gates the entire fusion buildout.",
+      "severity": "high",
+      "likelihood": "medium",
+      "time_horizon": "5y",
+      "mitigations": "On-site breeding blankets; multi-supplier sourcing from CANDU + military stockpile releases.",
+      "affected_capability_keys": ["tritium_supply"],
+      "display_order": 10
+    },
+    {
+      "key": "permitting_timeline",
+      "category": "legal",
+      "name": "First-of-a-kind nuclear permitting",
+      "description": "NRC + equivalent regulators have no fusion-specific licensing path — every first-of-kind triggers bespoke review.",
+      "severity": "medium",
+      "likelihood": "high",
+      "time_horizon": "10y",
+      "mitigations": "Pre-application engagement; demonstration plant on a federal site under DOE umbrella.",
+      "affected_capability_keys": [],
+      "display_order": 20
+    }
+  ],
+  "actors": [
+    {
+      "key": "commonwealth_fusion_systems",
+      "name": "Commonwealth Fusion Systems",
+      "short_name": "CFS",
+      "iso_country": "US",
+      "category": "private_startup",
+      "stage": "pilot",
+      "ticker": null,
+      "exchange": null,
+      "blurb": "MIT-spinout building the SPARC tokamak; HTS-magnet bet.",
+      "signal_keywords": ["Commonwealth Fusion", "SPARC", "ARC tokamak"],
+      "relevance": 90,
+      "rationale": "Leading high-temperature-superconductor tokamak path with the largest private fusion raise to date.",
+      "display_order": 10
+    },
+    {
+      "key": "iter",
+      "name": "ITER Organization",
+      "iso_country": "FR",
+      "category": "government_lab",
+      "stage": "pilot",
+      "blurb": "35-country international fusion experiment in Cadarache.",
+      "signal_keywords": ["ITER", "Cadarache"],
+      "relevance": 80,
+      "rationale": "The reference data point for plasma physics + engineering scale-up.",
+      "display_order": 20
+    },
+    {
+      "key": "tae_technologies",
+      "name": "TAE Technologies",
+      "iso_country": "US",
+      "category": "private_startup",
+      "stage": "research",
+      "blurb": "Field-reversed configuration approach using hydrogen-boron fuel.",
+      "signal_keywords": ["TAE Technologies", "Tri Alpha"],
+      "relevance": 60,
+      "rationale": "Alt-fuel challenger reducing the tritium-supply bottleneck if it works.",
+      "display_order": 30
+    },
+    {
+      "key": "us_nrc",
+      "name": "U.S. Nuclear Regulatory Commission",
+      "short_name": "NRC",
+      "iso_country": "US",
+      "category": "standards_body",
+      "stage": "commercial",
+      "blurb": "Federal regulator that will license commercial fusion plants in the US.",
+      "signal_keywords": ["NRC", "Nuclear Regulatory Commission"],
+      "relevance": 70,
+      "rationale": "Holds the keys to US deployment; their licensing-pathway decisions gate commercial timelines.",
+      "display_order": 40
+    },
+    {
+      "key": "kaeri",
+      "name": "Korea Atomic Energy Research Institute",
+      "short_name": "KAERI",
+      "iso_country": "KR",
+      "category": "national_lab",
+      "stage": "research",
+      "blurb": "Operates KSTAR; first-tier tokamak research with multi-minute pulse records.",
+      "signal_keywords": ["KAERI", "KSTAR", "Korean Superconducting Tokamak"],
+      "relevance": 65,
+      "rationale": "Public-sector materials + plasma-physics anchor in Asia-Pacific.",
+      "display_order": 50
+    }
+  ],
+  "capability_actors": [
+    {"capability_key": "net_energy_gain", "actor_key": "commonwealth_fusion_systems", "role": "lead"},
+    {"capability_key": "net_energy_gain", "actor_key": "iter", "role": "lead"},
+    {"capability_key": "net_energy_gain", "actor_key": "tae_technologies", "role": "competitor"},
+    {"capability_key": "net_energy_gain", "actor_key": "kaeri", "role": "competitor"},
+    {"capability_key": "tritium_supply", "actor_key": "iter", "role": "lead"},
+    {"capability_key": "first_wall_materials", "actor_key": "iter", "role": "lead"},
+    {"capability_key": "first_wall_materials", "actor_key": "kaeri", "role": "competitor"},
+    {"capability_key": "grid_lcoe_competitiveness", "actor_key": "commonwealth_fusion_systems", "role": "lead"},
+    {"capability_key": "grid_lcoe_competitiveness", "actor_key": "us_nrc", "role": "regulator"}
+  ],
+  "initial_feasibility": {
+    "initial_composite": 35,
+    "initial_p10": 20,
+    "initial_p90": 55,
+    "binding_capability_key": "tritium_supply",
+    "eta_median_years": 18,
+    "eta_p10_years": 12,
+    "eta_p90_years": 30,
+    "rationale": "Bound by tritium supply: even optimistic engineering Q paths stall without a closed breeding cycle."
+  },
+  "rationale": "Decomposition splits the vision into the engineering gate (net energy gain), the supply gate (tritium), the materials gate (first wall), and the commercial gate (LCOE). Tritium is binding today (supply=15) so it drives the binding_capability_key and the ETA P10. Considered + rejected splitting Q-gain into 'plasma physics' vs 'magnet' sub-capabilities — too granular for first-of-a-kind tracking.",
+  "confidence": 0.7
+}
+```
+
+Things to internalize from the example:
+- All `key` fields are `snake_case` only (no hyphens, no capitals).
+- `iso_country` is ALWAYS uppercase 2-letter; no 3-letter codes.
+- Capability weights sum to 1.0 (0.35 + 0.25 + 0.20 + 0.20).
+- `display_order` steps by 10 within each list.
+- Each `capability_actors[].capability_key` matches a declared
+  capability; each `actor_key` matches a declared actor.
+- Initial scores vary (15 for supply, 90s elsewhere) — calibration.
+- `binding_capability_key` is the weakest dimension's capability.
+- `dependencies` form a DAG (no cycles).

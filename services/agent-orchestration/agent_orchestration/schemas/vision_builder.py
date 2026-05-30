@@ -3,14 +3,62 @@
 Extracted from the monolithic ``schemas.py`` in slice 7. Imports the
 union of Pydantic + stdlib helpers; ruff --fix --select F401 strips
 per-file orphans after extraction.
+
+Slice 16 — normalize key fields before regex check. Gemini occasionally
+emits ``"high-throughput-encoding"`` (one hyphen) or ``"Photo_Voltaic"``
+(one uppercase) when it should produce snake_case; without normalization
+the whole pipeline crashed. The normalizers below catch the common
+miss-cases server-side so the operator never sees the failure.
 """
 
 from __future__ import annotations
 
+import re
 from datetime import date
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, Field, field_validator
+
+
+def _normalize_snake_key(value: object) -> object:
+    """Coerce a near-miss key into the canonical snake_case shape:
+    lowercase, hyphens/spaces → underscores, drop everything that
+    isn't ``[a-z0-9_]``. Pydantic's regex validator runs AFTER this,
+    so a truly unrecoverable value still fails — we just stop
+    crashing on the common LLM near-misses (hyphens, capitals,
+    incidental spaces / dots).
+
+    Returns the input unchanged when it isn't a string so Pydantic's
+    type validator surfaces the real error."""
+    if not isinstance(value, str):
+        return value
+    s = value.strip().lower()
+    s = re.sub(r"[\s\-./]+", "_", s)        # hyphen, space, dot, slash → _
+    s = re.sub(r"[^a-z0-9_]+", "", s)        # strip everything else
+    s = re.sub(r"_+", "_", s).strip("_")     # collapse + trim _
+    # If the first char is a digit (e.g., "5g_network" → "5g_network"
+    # but starts with digit — invalid), prefix with `k` so the regex
+    # passes. Better than rejecting outright; the operator can rename.
+    if s and s[0].isdigit():
+        s = "k" + s
+    return s
+
+
+def _normalize_iso_country(value: object) -> object:
+    """Uppercase a 2-letter country code, take the first 2 alpha chars.
+    Catches ``"us"`` / ``"USA"`` / ``"u.s."`` → ``"US"``. Truly invalid
+    values still fail the ``^[A-Z]{2}$`` regex."""
+    if not isinstance(value, str):
+        return value
+    s = re.sub(r"[^A-Za-z]", "", value).upper()
+    return s[:2]
+
+
+# Reusable annotated types — applied to every ``key`` field in this
+# module so the normalization is one-stop and the schema stays
+# DRY-ish.
+SnakeKey = Annotated[str, BeforeValidator(_normalize_snake_key)]
+IsoCountry = Annotated[str, BeforeValidator(_normalize_iso_country)]
 
 
 class VisionBuilderPromptRequest(BaseModel):
@@ -93,9 +141,11 @@ class PromptValidatorRunResult(BaseModel):
 class CapabilityDraft(BaseModel):
     """One capability proposal. Pydantic enforces every field's bounds
     so the validation gate has less to do. `key` follows the DB layer's
-    snake_case rule."""
+    snake_case rule — normalized via :data:`SnakeKey` before the regex
+    check so Gemini's "high-throughput" → "high_throughput"
+    automatically (slice 16)."""
 
-    key: str = Field(..., pattern=r"^[a-z][a-z0-9_]*$", max_length=64)
+    key: SnakeKey = Field(..., pattern=r"^[a-z][a-z0-9_]*$", max_length=64)
     name: str = Field(..., min_length=2, max_length=120)
     short_name: str | None = Field(default=None, max_length=40)
     description: str = Field(..., min_length=20, max_length=600)
@@ -112,12 +162,12 @@ class CapabilityDraft(BaseModel):
 class CapabilityDependencyDraft(BaseModel):
     """One DAG edge between capabilities."""
 
-    source_key: str = Field(..., max_length=64)
-    target_key: str = Field(..., max_length=64)
+    source_key: SnakeKey = Field(..., max_length=64)
+    target_key: SnakeKey = Field(..., max_length=64)
     rationale: str = Field(..., min_length=10, max_length=400)
 
 class RiskDraft(BaseModel):
-    key: str = Field(..., pattern=r"^[a-z][a-z0-9_]*$", max_length=64)
+    key: SnakeKey = Field(..., pattern=r"^[a-z][a-z0-9_]*$", max_length=64)
     category: Literal[
         "political",
         "legal",
@@ -133,18 +183,18 @@ class RiskDraft(BaseModel):
     likelihood: Literal["low", "medium", "high"]
     time_horizon: Literal["immediate", "1y", "3y", "5y", "10y"]
     mitigations: str | None = Field(default=None, max_length=600)
-    affected_capability_keys: list[str] = Field(default_factory=list, max_length=10)
+    affected_capability_keys: list[SnakeKey] = Field(default_factory=list, max_length=10)
     display_order: int = Field(..., ge=10, le=10_000)
 
 class ActorDraft(BaseModel):
     """Global actor — company / lab / govt body. Fresh keys go to the
     Actor table; matches by `key` on existing rows."""
 
-    key: str = Field(..., pattern=r"^[a-z][a-z0-9_]*$", max_length=64)
+    key: SnakeKey = Field(..., pattern=r"^[a-z][a-z0-9_]*$", max_length=64)
     name: str = Field(..., min_length=2, max_length=160)
     short_name: str | None = Field(default=None, max_length=80)
     name_local: str | None = Field(default=None, max_length=160)
-    iso_country: str = Field(..., pattern=r"^[A-Z]{2}$")
+    iso_country: IsoCountry = Field(..., pattern=r"^[A-Z]{2}$")
     category: Literal[
         "public_corp",
         "private_startup",
@@ -168,8 +218,8 @@ class ActorDraft(BaseModel):
 class CapabilityActorAssignmentDraft(BaseModel):
     """Wiring between one capability and one actor with a role."""
 
-    capability_key: str = Field(..., max_length=64)
-    actor_key: str = Field(..., max_length=64)
+    capability_key: SnakeKey = Field(..., max_length=64)
+    actor_key: SnakeKey = Field(..., max_length=64)
     role: Literal["lead", "competitor", "supplier", "customer", "regulator"]
     rationale: str | None = Field(default=None, max_length=400)
 
@@ -182,7 +232,7 @@ class VisionFeasibilityDraft(BaseModel):
     initial_composite: float = Field(..., ge=0, le=100)
     initial_p10: float | None = Field(default=None, ge=0, le=100)
     initial_p90: float | None = Field(default=None, ge=0, le=100)
-    binding_capability_key: str = Field(..., max_length=64)
+    binding_capability_key: SnakeKey = Field(..., max_length=64)
     eta_median_years: float | None = Field(default=None, ge=0, le=50)
     eta_p10_years: float | None = Field(default=None, ge=0, le=50)
     eta_p90_years: float | None = Field(default=None, ge=0, le=50)

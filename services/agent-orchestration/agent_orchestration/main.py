@@ -452,14 +452,33 @@ def create_app() -> FastAPI:
                 research_brief=req.research_brief,
             )
         except Exception as e:
-            log.exception("vision-builder conductor failed: %s", e)
-            # Slice 15 — flip the in-process progress slot to failed
-            # so the admin UI's polling loop stops trying instead of
-            # waiting forever for a stage that's never coming.
+            # Surface the exception class + message + the snapshot of
+            # which stages got far enough to emit completion events.
+            # Without this, the 502 body is just "vision-builder
+            # failed: <repr>" — operator can't tell whether it died
+            # in stage 2 or stage 5. The full traceback still goes
+            # to stderr via log.exception.
+            progress_snap = progress.snapshot()
+            completed = ", ".join(
+                f"{s['name']}({s['duration_ms']}ms)"
+                for s in progress_snap.get("stages", [])
+            ) or "<none>"
+            log.exception(
+                "vision-builder conductor failed at stage=%r after [%s]: %s",
+                progress_snap.get("current_stage"),
+                completed,
+                e,
+            )
+            # Flip the progress slot to failed so the admin UI's
+            # polling loop stops trying instead of waiting forever.
             progress.pipeline_complete(status="failed", error=str(e))
-            raise HTTPException(
-                status_code=502, detail=f"vision-builder failed: {e}"
-            ) from e
+            detail = (
+                f"vision-builder failed at stage="
+                f"{progress_snap.get('current_stage')!r} "
+                f"after stages=[{completed}]: "
+                f"{type(e).__name__}: {e}"
+            )
+            raise HTTPException(status_code=502, detail=detail) from e
         return VisionBuilderRunResult(
             success=result.success,
             validation=result.validation,
