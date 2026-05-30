@@ -652,9 +652,10 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
 
 def _build_grounded_research_client() -> GroundedResearchClient | None:
     """Construct a GroundedResearchClient backed by google-genai with
-    the google_search grounding tool. Models default to gemini-2.5-flash
-    (fast tier) and gemini-3.1-pro-preview (deep tier); both are
-    env-overridable via GROUNDED_MODEL_FAST / GROUNDED_MODEL_DEEP.
+    the google_search grounding tool. Models resolve through the same
+    ``LLM_FAST_MODEL`` / ``LLM_DEEP_MODEL`` env vars the agent
+    LLMClient uses (defaults: gemini-3.1-flash-lite / gemini-3.1-pro-
+    preview); grounded research and agent tiers stay in lockstep.
 
     Vertex AI auth is preferred (SA JSON). AI Studio (GEMINI_API_KEY)
     also works for the gemini-* family — we'll fall back to it when

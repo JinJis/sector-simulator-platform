@@ -5,7 +5,7 @@ Replaces the legacy `DeepResearchClient` (which targeted the Vertex
 
   - The `deep-research-max-preview-04-2026` model returned 404 from
     Vertex (the preview slug is gone). Drop the whole preview lineage
-    and use the supported `gemini-3.1-pro-preview` / `gemini-2.5-flash`
+    and use the supported `gemini-3.1-pro-preview` / `gemini-3.1-flash-lite`
     families instead.
   - Grounded gemini returns in one round-trip (no `interactions.get`
     polling loop), so latency drops from minutes to seconds and the
@@ -15,17 +15,22 @@ Replaces the legacy `DeepResearchClient` (which targeted the Vertex
     downstream consumers (signal writer, digest) can render source
     chips with real URLs.
 
-Two tiers, both selectable via env:
+Tier → model resolution is shared with the agent ``LLMClient`` via
+``llm_client.model_for_tier``. The two tier names grounded research
+exposes (``fast`` / ``deep``, plus ``max`` as a back-compat alias for
+``deep``) map onto the agent ``ModelTier`` of the same name; the env
+vars are the same ``LLM_FAST_MODEL`` / ``LLM_DEEP_MODEL``. One source
+of truth → no drift between what the agents see and what the digest
+sees. ``GROUNDED_MODEL_FAST`` / ``GROUNDED_MODEL_DEEP`` env vars from
+before this unification are no longer honored; a deprecation warning
+fires at import time when they're set.
 
-  - `fast` → `GROUNDED_MODEL_FAST` (default `gemini-2.5-flash`):
-    grounded search, low thinking budget. Used by capability / actor /
-    risk / signal fetchers.
-  - `deep` / `max` → `GROUNDED_MODEL_DEEP` (default
-    `gemini-3.1-pro-preview`): grounded search on a heavier model
-    that thinks more by default. Used by the daily digest. `max`
-    is accepted as a synonym for `deep` so the old `tier="max"`
-    call sites keep working. Explicit ThinkingConfig is NOT set
-    (Vertex rejects it for some preview models).
+Tiers:
+  - ``fast``: grounded search, low thinking budget. Used by capability
+    / actor / risk / signal fetchers.
+  - ``deep`` / ``max``: grounded search on a heavier model that thinks
+    more by default. Used by the daily digest. Explicit ThinkingConfig
+    is NOT set (Vertex rejects it for some preview models).
 
 Cost is metered from `usage_metadata.prompt_token_count` +
 `candidates_token_count` via the same `price_call()` helper the agent
@@ -72,20 +77,41 @@ GroundedResearchSurface = Literal[
 ]
 
 
-_DEFAULT_FAST_MODEL = "gemini-2.5-flash"
-_DEFAULT_DEEP_MODEL = "gemini-3.1-pro-preview"
 _DEFAULT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60
 
 
-def grounded_model_for(tier: GroundedResearchTier) -> str:
-    """Resolve the configured model id for `tier`. Env overrides:
+# Warn loudly at import time when a pre-unification env var is still
+# set — those values are now silently ignored and the operator would
+# otherwise wonder why their model override has no effect. Same class
+# of foot-gun as the legacy LLM_{OPUS,SONNET,HAIKU}_MODEL warning.
+for _legacy_env in ("GROUNDED_MODEL_FAST", "GROUNDED_MODEL_DEEP"):
+    if os.environ.get(_legacy_env):
+        log.warning(
+            "grounded_research: %s is set but no longer honored — grounded "
+            "research now shares LLM_FAST_MODEL / LLM_DEEP_MODEL with the "
+            "agent LLMClient. Move the override there and remove the legacy "
+            "var from your .env.",
+            _legacy_env,
+        )
 
-      - GROUNDED_MODEL_DEEP  (deep / max tier)
-      - GROUNDED_MODEL_FAST  (fast tier — also the fallback)
+
+def grounded_model_for(tier: GroundedResearchTier) -> str:
+    """Resolve the configured model id for `tier`. Delegates to the
+    agent ``LLMClient`` so grounded research and agent tiers stay in
+    lockstep. Env overrides:
+
+      - ``LLM_DEEP_MODEL`` (deep / max tier)
+      - ``LLM_FAST_MODEL`` (fast tier)
+
+    The legacy ``GROUNDED_MODEL_FAST`` / ``GROUNDED_MODEL_DEEP`` env
+    vars are no longer read; a deprecation warning fires above when
+    they're still set.
     """
+    from agent_tools.llm_client import model_for_tier  # noqa: PLC0415
+
     if tier in ("deep", "max"):
-        return os.environ.get("GROUNDED_MODEL_DEEP", _DEFAULT_DEEP_MODEL)
-    return os.environ.get("GROUNDED_MODEL_FAST", _DEFAULT_FAST_MODEL)
+        return model_for_tier("deep")
+    return model_for_tier("fast")
 
 
 # --------------------------------------------------------------------------
@@ -362,13 +388,13 @@ def _build_generate_config(*, tier: GroundedResearchTier) -> Any:
     google_search grounding tool. Imported lazily so the module can
     be imported in environments without the SDK.
 
-    ThinkingConfig intentionally omitted — `gemini-2.5-flash` (FAST
-    tier) returns INVALID_ARGUMENT "thinking_level is not supported by
-    this model" when it's set, and the SDK's parameter shape varies
-    across Vertex preview models. Letting each model use its default
-    thinking behavior is safer than feature-detecting at runtime.
-    Tier still drives model selection via `grounded_model_for(tier)` —
-    DEEP routes to a heavier model that thinks more by default.
+    ThinkingConfig intentionally omitted — several flash / lite models
+    return INVALID_ARGUMENT "thinking_level is not supported by this
+    model" when it's set, and the SDK's parameter shape varies across
+    Vertex preview models. Letting each model use its default thinking
+    behavior is safer than feature-detecting at runtime. Tier still
+    drives model selection via ``grounded_model_for(tier)`` — DEEP
+    routes to a heavier model that thinks more by default.
     """
     from google.genai import types as gtypes  # noqa: PLC0415
 

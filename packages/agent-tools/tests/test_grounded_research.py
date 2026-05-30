@@ -94,14 +94,18 @@ class _FakeClient:
 
 
 def test_default_fast_model() -> None:
+    """Grounded research shares LLM_FAST_MODEL with the agent LLMClient;
+    default falls through to llm_client._DEFAULT_MODEL_BY_TIER['fast']."""
     with mock.patch.dict(os.environ, {}, clear=False):
-        os.environ.pop("GROUNDED_MODEL_FAST", None)
-        assert grounded_model_for("fast") == "gemini-2.5-flash"
+        for k in ("LLM_FAST_MODEL", "GROUNDED_MODEL_FAST"):
+            os.environ.pop(k, None)
+        assert grounded_model_for("fast") == "gemini-3.1-flash-lite"
 
 
 def test_default_deep_model() -> None:
     with mock.patch.dict(os.environ, {}, clear=False):
-        os.environ.pop("GROUNDED_MODEL_DEEP", None)
+        for k in ("LLM_DEEP_MODEL", "GROUNDED_MODEL_DEEP"):
+            os.environ.pop(k, None)
         assert grounded_model_for("deep") == "gemini-3.1-pro-preview"
 
 
@@ -109,19 +113,35 @@ def test_max_is_alias_for_deep() -> None:
     """`tier='max'` is accepted as a back-compat alias for `deep` —
     same model gets picked."""
     with mock.patch.dict(os.environ, {}, clear=False):
-        os.environ.pop("GROUNDED_MODEL_DEEP", None)
+        os.environ.pop("LLM_DEEP_MODEL", None)
         assert grounded_model_for("max") == grounded_model_for("deep")
 
 
 def test_env_overrides_fast_model() -> None:
-    with mock.patch.dict(os.environ, {"GROUNDED_MODEL_FAST": "gemini-3-flash"}):
+    with mock.patch.dict(os.environ, {"LLM_FAST_MODEL": "gemini-3-flash"}):
         assert grounded_model_for("fast") == "gemini-3-flash"
 
 
 def test_env_overrides_deep_model() -> None:
-    with mock.patch.dict(os.environ, {"GROUNDED_MODEL_DEEP": "gemini-3-pro-ga"}):
+    with mock.patch.dict(os.environ, {"LLM_DEEP_MODEL": "gemini-3-pro-ga"}):
         assert grounded_model_for("deep") == "gemini-3-pro-ga"
         assert grounded_model_for("max") == "gemini-3-pro-ga"
+
+
+def test_legacy_grounded_model_env_is_ignored() -> None:
+    """Pre-unification GROUNDED_MODEL_FAST / GROUNDED_MODEL_DEEP are no
+    longer read — the operator's override flows through LLM_*_MODEL."""
+    with mock.patch.dict(
+        os.environ,
+        {
+            "GROUNDED_MODEL_FAST": "should-be-ignored",
+            "GROUNDED_MODEL_DEEP": "should-be-ignored",
+        },
+    ):
+        os.environ.pop("LLM_FAST_MODEL", None)
+        os.environ.pop("LLM_DEEP_MODEL", None)
+        assert grounded_model_for("fast") == "gemini-3.1-flash-lite"
+        assert grounded_model_for("deep") == "gemini-3.1-pro-preview"
 
 
 # --------------------------------------------------------------------------

@@ -82,6 +82,8 @@ class TestPromptValidatorWorkflow:
 
     @pytest.mark.asyncio
     async def test_uses_haiku_tier(self, fake_llm, fake_anthropic) -> None:
+        """Calls the fast tier (gemini-3.1-flash-lite). Test name
+        preserved for `pytest -k` continuity through the F9b rename."""
         fake_anthropic.models.parsed_factory = lambda **_: _valid_result()
         wf = PromptValidatorWorkflow(llm=fake_llm)
         await wf.run(
@@ -89,7 +91,7 @@ class TestPromptValidatorWorkflow:
             cost_meter=CostMeter(),
         )
         sent = fake_anthropic.models.requests[-1]
-        assert sent["model"] == "gemini-3.5-flash-lite"
+        assert sent["model"] == "gemini-3.1-flash-lite"
 
     @pytest.mark.asyncio
     async def test_user_turn_includes_existing_slugs(

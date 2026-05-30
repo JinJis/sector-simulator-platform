@@ -70,16 +70,17 @@ class TestSignalExtractorWorkflowDirect:
     @pytest.mark.asyncio
     async def test_uses_haiku_tier(self, fake_llm, fake_anthropic) -> None:
         """SignalExtractor must call the fast tier
-        (gemini-3.5-flash-lite). The fake shares the requests list
+        (gemini-3.1-flash-lite). The fake shares the requests list
         across both provider faces so we assert on the recorded
-        model id."""
+        model id. Test name preserved for `pytest -k` continuity
+        through the F9b rename."""
         fake_anthropic.models.parsed_factory = lambda **_: SignalScoring(
             confidence=0.5, delta_technical=0
         )
         wf = SignalExtractorWorkflow(llm=fake_llm)
         await wf.run(_make_request(), cost_meter=CostMeter())
         sent = fake_anthropic.models.requests[-1]
-        assert sent["model"] == "gemini-3.5-flash-lite"
+        assert sent["model"] == "gemini-3.1-flash-lite"
 
     @pytest.mark.asyncio
     async def test_drops_hallucinated_actor_key(self, fake_llm, fake_anthropic) -> None:

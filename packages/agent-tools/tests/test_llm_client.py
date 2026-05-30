@@ -108,7 +108,7 @@ class _FakeGenAI:
 
 def test_available_models_returns_expected_tier_mapping() -> None:
     models = available_models()
-    assert models["fast"] == "gemini-3.5-flash-lite"
+    assert models["fast"] == "gemini-3.1-flash-lite"
     assert models["balanced"] == "gemini-3.5-flash"
     assert models["deep"] == "gemini-3.1-pro-preview"
 
@@ -138,7 +138,7 @@ def test_call_routes_fast_to_correct_gemini_model_id() -> None:
     client = LLMClient(genai_client=fake)
     client.call(tier="fast", system="sys", user="hi")
     sent = fake.models.requests[-1]
-    assert sent["model"] == "gemini-3.5-flash-lite"
+    assert sent["model"] == "gemini-3.1-flash-lite"
 
 
 def test_call_routes_deep_to_gemini_pro_preview() -> None:

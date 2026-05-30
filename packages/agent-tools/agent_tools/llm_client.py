@@ -71,7 +71,7 @@ ModelTier = Literal["fast", "balanced", "deep"]
 #   balanced  — middle, used for the bulk of agent reasoning
 #   deep      — most capable, used for synthesis (decomposition, review)
 _DEFAULT_MODEL_BY_TIER: dict[ModelTier, str] = {
-    "fast": "gemini-3.5-flash-lite",
+    "fast": "gemini-3.1-flash-lite",
     "balanced": "gemini-3.5-flash",
     "deep": "gemini-3.1-pro-preview",
 }

@@ -158,15 +158,17 @@ Phase 3 context lives in
     CapabilityDependencies / CapabilityScoringCode / CodeReview)
   - `balanced` → `gemini-3.5-flash` (VisionResearch /
     DataSourceSelector / ThesisDrafter / ScoreUpdater / prediction.analyzeRationale)
-  - `fast` → `gemini-3.5-flash-lite` (extraction / routing /
+  - `fast` → `gemini-3.1-flash-lite` (extraction / routing /
     SignalExtractor / PromptValidator / ProposalPayloadDrafter)
 - **Grounded research tier map**
   (`packages/agent-tools/grounded_research.py`) — `models.generate_content`
-  + `Tool(google_search=GoogleSearch())` for grounding + citations. Env
-  override via `GROUNDED_MODEL_{FAST,DEEP}`:
-  - `fast` → `gemini-2.5-flash` (capability / actor / risk / signal
-    fetchers — low ThinkingConfig)
-  - `deep` → `gemini-3.1-pro-preview` (daily digest — HIGH ThinkingConfig)
+  + `Tool(google_search=GoogleSearch())` for grounding + citations.
+  Shares the agent tier env vars (`LLM_FAST_MODEL` /
+  `LLM_DEEP_MODEL`) — no separate `GROUNDED_MODEL_*` to drift; a
+  startup warning fires if the legacy vars are still set:
+  - `fast` → `gemini-3.1-flash-lite` (capability / actor / risk /
+    signal fetchers)
+  - `deep` → `gemini-3.1-pro-preview` (daily digest)
   - `max` is accepted as a back-compat alias for `deep`.
 - **Structured output**: all calls use Gemini's native `response_schema`.
   When a schema is too complex for Vertex's FST constraint compiler
