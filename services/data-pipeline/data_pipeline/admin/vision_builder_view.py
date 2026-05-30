@@ -89,6 +89,17 @@ EXAMPLES: list[str] = [
 ]
 
 
+def _agent_orchestration_url() -> str:
+    """Direct address for the agent-orchestration progress endpoint.
+    Defaults to the compose internal hostname; falls back to localhost
+    for outside-compose dev. Resolved per-request so an env change
+    picks up after container restart without rebuild."""
+    return (
+        os.environ.get("AGENT_ORCHESTRATION_URL", "").strip()
+        or "http://agent-orchestration:8002"
+    )
+
+
 def _sector_service_url() -> str:
     """Where to send tRPC calls. Compose default
     `http://sector-service:8001`; falls back to localhost for outside-
@@ -401,6 +412,40 @@ class VisionBuilderView(BaseView):
                 "signal_config_json": json.dumps(result.get("signal_config")),
                 "stage_labels": STAGE_LABELS,
             },
+        )
+
+    @expose("/vision-builder/progress/latest", methods=["GET"])
+    async def progress_latest(self, request: Request) -> Response:
+        """Slice 15 — proxy to agent-orchestration's single-tenant
+        progress slot. The propose JS polls this endpoint every 1.5s
+        during the in-flight overlay; returns the same JSON shape
+        agent-orchestration produces (no envelope translation) so the
+        client can mirror the slot directly into UI state.
+
+        Returns 503 + a small JSON body when agent-orchestration is
+        unreachable — the polling JS treats that as "keep waiting,
+        backend hiccup" rather than fatal."""
+        url = f"{_agent_orchestration_url()}/vision-builder/progress/latest"
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                resp = await client.get(url)
+        except Exception as exc:  # noqa: BLE001
+            return Response(
+                content=json.dumps(
+                    {
+                        "available": False,
+                        "error": f"agent-orchestration unreachable: {exc}",
+                    }
+                ),
+                status_code=503,
+                media_type="application/json",
+            )
+        # Pass the upstream body through unchanged — agent-orchestration
+        # owns the shape, we don't re-serialise.
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            media_type="application/json",
         )
 
     @expose("/vision-builder/commit", methods=["POST"])

@@ -23,6 +23,7 @@
         <thead>
           <tr>
             <th>Stage</th>
+            <th>Output summary</th>
             <th class="text-end">Duration</th>
             <th class="text-end">Cost (USD)</th>
           </tr>
@@ -30,12 +31,26 @@
         <tbody>
           {% for s in result.stages %}
           <tr>
-            <td>{{ stage_labels.get(s.name, s.name) }}</td>
+            <td>
+              <div class="fw-bold">{{ stage_labels.get(s.name, s.name) }}</div>
+              <div class="text-muted small font-monospace">{{ s.name }}</div>
+            </td>
+            <td class="text-muted small">
+              {% if s.output_summary %}
+              {{ s.output_summary }}
+              {% else %}
+              <span class="text-muted">—</span>
+              {% endif %}
+            </td>
             <td class="text-end font-monospace small">
               {{ '%.2f'|format(s.duration_ms / 1000) }}s
             </td>
             <td class="text-end font-monospace small">
+              {% if s.cost_usd and s.cost_usd > 0 %}
               ${{ '%.4f'|format(s.cost_usd) }}
+              {% else %}
+              <span class="text-muted">free</span>
+              {% endif %}
             </td>
           </tr>
           {% endfor %}

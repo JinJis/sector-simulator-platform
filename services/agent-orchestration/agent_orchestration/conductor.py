@@ -22,10 +22,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from time import perf_counter
 
 from agent_tools import CostMeter, LLMClient
 
+from agent_orchestration import progress
 from agent_orchestration.schemas import (
     DataSourceConfigDraft,
     DataSourceSelectorRequest,
@@ -55,6 +57,63 @@ class StageMetric:
     name: str
     cost_usd: float
     duration_ms: int
+    # Slice 15 — one-line summary of what the stage produced. Surfaced
+    # in the admin real-time progress panel + the post-completion
+    # review timeline. Optional so legacy code paths still construct
+    # StageMetric(name=..., cost_usd=..., duration_ms=...).
+    output_summary: str | None = None
+
+
+# Stage display names — used by the real-time progress emit calls so
+# the UI label matches what the operator already sees in the existing
+# stage-completion log lines.
+_STAGE_DISPLAY: dict[str, str] = {
+    "prompt_validator": "PromptValidator",
+    "vision_decomposition": "VisionDecomposition",
+    "data_source_selector": "DataSourceSelector",
+    "validation_gate": "ValidationGate",
+    "thesis_drafter": "ThesisDrafter",
+}
+
+
+def _summarize_validation(v: PromptValidationResult) -> str:
+    if v.is_valid:
+        return "prompt accepted"
+    return f"prompt rejected: {v.rejection_kind or 'unspecified'}"
+
+
+def _summarize_decomposition(d: VisionDecompositionResult) -> str:
+    return (
+        f"{len(d.capabilities)} capabilities · "
+        f"{len(d.risks)} risks · "
+        f"{len(d.actors)} actors · "
+        f"{len(d.dependencies)} edges"
+    )
+
+
+def _summarize_selector(c: DataSourceConfigDraft) -> str:
+    keyword_count = len(getattr(c, "capability_keywords", []))
+    return f"{keyword_count} capability keyword sets"
+
+
+def _summarize_gate(g: ValidationGateResult) -> str:
+    if g.ok:
+        normalized = (
+            len(g.normalized_draft.capabilities)
+            if g.normalized_draft is not None
+            else 0
+        )
+        return f"gate passed · {normalized} capabilities normalized"
+    if g.errors:
+        return f"gate rejected: {g.errors[0]} ({len(g.errors)} total)"
+    return "gate rejected (no error message)"
+
+
+def _summarize_thesis(t: ThesisCatalystsDraft) -> str:
+    thesis = t.thesis
+    bull = len(thesis.bull_case) if thesis is not None else 0
+    bear = len(thesis.bear_case) if thesis is not None else 0
+    return f"{bull} bull bullets · {bear} bear bullets · {len(t.catalysts)} catalysts"
 
 
 @dataclass
@@ -115,10 +174,27 @@ class VisionBuilderConductor:
         existing_vision_slugs = existing_vision_slugs or []
         existing_actor_keys = existing_actor_keys or []
 
+        # Slice 15 — wipe the in-process progress slot so the admin UI
+        # gets a fresh view from t=0 for THIS pipeline. The conductor
+        # owns the slot lifecycle (no external coordination); the HTTP
+        # layer just hits pipeline_complete(status="failed") on
+        # exception bubbling.
+        progress.reset(prompt=prompt)
+
         # ---- Stage 1: PromptValidator (fast) -------------------------
+        progress.stage_started(_STAGE_DISPLAY["prompt_validator"])
+        stage_started_at = datetime.now(UTC)
         validation, m1 = await self._run_validator(
             prompt=prompt,
             existing_vision_slugs=existing_vision_slugs,
+        )
+        m1.output_summary = _summarize_validation(validation)
+        progress.stage_completed(
+            name=_STAGE_DISPLAY["prompt_validator"],
+            started_at=stage_started_at,
+            duration_ms=m1.duration_ms,
+            cost_usd=m1.cost_usd,
+            output_summary=m1.output_summary,
         )
         stages.append(m1)
         if not validation.is_valid:
@@ -126,6 +202,7 @@ class VisionBuilderConductor:
                 "conductor: prompt rejected at stage 1 (kind=%s)",
                 validation.rejection_kind,
             )
+            progress.pipeline_complete(status="succeeded")
             return VisionBuilderResult(
                 success=False,
                 validation=validation,
@@ -139,18 +216,40 @@ class VisionBuilderConductor:
             )
 
         # ---- Stage 2: VisionDecomposition (deep) ----------------------
+        progress.stage_started(_STAGE_DISPLAY["vision_decomposition"])
+        stage_started_at = datetime.now(UTC)
         draft, m2 = await self._run_decomposition(
             validation=validation,
             existing_actor_keys=existing_actor_keys,
             research_brief=research_brief,
         )
+        m2.output_summary = _summarize_decomposition(draft)
+        progress.stage_completed(
+            name=_STAGE_DISPLAY["vision_decomposition"],
+            started_at=stage_started_at,
+            duration_ms=m2.duration_ms,
+            cost_usd=m2.cost_usd,
+            output_summary=m2.output_summary,
+        )
         stages.append(m2)
 
         # ---- Stage 3: DataSourceSelector (balanced) ---------------------
+        progress.stage_started(_STAGE_DISPLAY["data_source_selector"])
+        stage_started_at = datetime.now(UTC)
         signal_config, m3 = await self._run_selector(draft=draft)
+        m3.output_summary = _summarize_selector(signal_config)
+        progress.stage_completed(
+            name=_STAGE_DISPLAY["data_source_selector"],
+            started_at=stage_started_at,
+            duration_ms=m3.duration_ms,
+            cost_usd=m3.cost_usd,
+            output_summary=m3.output_summary,
+        )
         stages.append(m3)
 
         # ---- Stage 4: ValidationGate (pure Python) --------------------
+        progress.stage_started(_STAGE_DISPLAY["validation_gate"])
+        gate_stage_started_at = datetime.now(UTC)
         gate_start = perf_counter()
         gate = run_validation_gate(
             draft=draft,
@@ -158,12 +257,22 @@ class VisionBuilderConductor:
             existing_vision_slugs=existing_vision_slugs,
             existing_actor_keys=existing_actor_keys,
         )
+        gate_duration_ms = int((perf_counter() - gate_start) * 1000)
+        gate_summary = _summarize_gate(gate)
         stages.append(
             StageMetric(
                 name="validation_gate",
                 cost_usd=0.0,
-                duration_ms=int((perf_counter() - gate_start) * 1000),
+                duration_ms=gate_duration_ms,
+                output_summary=gate_summary,
             )
+        )
+        progress.stage_completed(
+            name=_STAGE_DISPLAY["validation_gate"],
+            started_at=gate_stage_started_at,
+            duration_ms=gate_duration_ms,
+            cost_usd=0.0,
+            output_summary=gate_summary,
         )
 
         # Prefer the normalized draft (weights adjusted) when the gate
@@ -179,9 +288,19 @@ class VisionBuilderConductor:
         thesis_catalysts: ThesisCatalystsDraft | None = None
         m5: StageMetric | None = None
         if gate.ok:
+            progress.stage_started(_STAGE_DISPLAY["thesis_drafter"])
+            thesis_stage_started_at = datetime.now(UTC)
             try:
                 thesis_catalysts, m5 = await self._run_thesis_drafter(
                     draft=final_draft
+                )
+                m5.output_summary = _summarize_thesis(thesis_catalysts)
+                progress.stage_completed(
+                    name=_STAGE_DISPLAY["thesis_drafter"],
+                    started_at=thesis_stage_started_at,
+                    duration_ms=m5.duration_ms,
+                    cost_usd=m5.cost_usd,
+                    output_summary=m5.output_summary,
                 )
                 stages.append(m5)
             except Exception as exc:  # noqa: BLE001
@@ -196,7 +315,15 @@ class VisionBuilderConductor:
                         name="thesis_drafter",
                         cost_usd=0.0,
                         duration_ms=0,
+                        output_summary=f"skipped: {exc}",
                     )
+                )
+                progress.stage_completed(
+                    name=_STAGE_DISPLAY["thesis_drafter"],
+                    started_at=thesis_stage_started_at,
+                    duration_ms=0,
+                    cost_usd=0.0,
+                    output_summary=f"skipped: {exc}",
                 )
 
         total_cost = m1.cost_usd + m2.cost_usd + m3.cost_usd
@@ -204,6 +331,7 @@ class VisionBuilderConductor:
             total_cost += m5.cost_usd
         total_duration_ms = int((perf_counter() - total_start) * 1000)
 
+        progress.pipeline_complete(status="succeeded")
         return VisionBuilderResult(
             success=gate.ok,
             validation=validation,

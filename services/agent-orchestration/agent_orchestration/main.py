@@ -21,10 +21,10 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from datetime import timedelta
-
-import time
+from typing import Any
 
 from agent_tools import CostMeter, LLMClient
 from fastapi import FastAPI, HTTPException, Query
@@ -61,6 +61,7 @@ from agent_orchestration.schemas import (
     VisionDecompositionRunResult,
     WorkflowRecord,
 )
+from agent_orchestration import progress
 from agent_orchestration.conductor import VisionBuilderConductor
 from agent_orchestration.workflows import (
     CapabilityScoreUpdaterWorkflow,
@@ -452,6 +453,10 @@ def create_app() -> FastAPI:
             )
         except Exception as e:
             log.exception("vision-builder conductor failed: %s", e)
+            # Slice 15 — flip the in-process progress slot to failed
+            # so the admin UI's polling loop stops trying instead of
+            # waiting forever for a stage that's never coming.
+            progress.pipeline_complete(status="failed", error=str(e))
             raise HTTPException(
                 status_code=502, detail=f"vision-builder failed: {e}"
             ) from e
@@ -468,13 +473,25 @@ def create_app() -> FastAPI:
             thesis_catalysts=result.thesis_catalysts,
             stages=[
                 StageMetricDto(
-                    name=s.name, cost_usd=s.cost_usd, duration_ms=s.duration_ms
+                    name=s.name,
+                    cost_usd=s.cost_usd,
+                    duration_ms=s.duration_ms,
+                    output_summary=s.output_summary,
                 )
                 for s in result.stages
             ],
             total_cost_usd=result.total_cost_usd,
             total_duration_ms=result.total_duration_ms,
         )
+
+    @app.get("/vision-builder/progress/latest")
+    async def vision_builder_progress_latest() -> dict[str, Any]:
+        """Slice 15 — single-tenant progress slot. Returns the latest
+        Vision Builder pipeline's per-stage state for the admin's
+        polling UI. Single global slot (last-writer-wins) — fine for
+        the single-operator dev environment; multi-tenant would need
+        a submission-id keyed registry."""
+        return progress.snapshot()
 
     @app.post(
         "/vision-builder/select-data-sources",

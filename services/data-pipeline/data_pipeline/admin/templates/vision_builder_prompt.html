@@ -114,29 +114,41 @@
         </div>
       </form>
 
-      {# In-flight overlay — appears after submit. The form POSTs
-         synchronously and the page won't navigate until propose
-         returns (success → review.html; failure → redirect back here
-         with ?error=…). The overlay's the ONLY signal during the
-         30-90s wait, so make it impossible to miss. #}
+      {# In-flight overlay — appears after submit. Slice 15: JS polls
+         /admin/vision-builder/progress/latest every 1.5s so the
+         current stage label, completed-stage cards, and running cost
+         track real backend state (no more time-elapsed guessing).
+         Polling stops as soon as either the pipeline reports a
+         terminal status OR the page navigates because the POST
+         returned. #}
       <div id="propose-running" class="alert alert-info mt-4 d-none">
         <div class="d-flex align-items-center gap-3">
           <div class="spinner-border spinner-border-sm" role="status">
             <span class="visually-hidden">Running…</span>
           </div>
-          <div>
+          <div class="flex-fill">
             <strong>Running the Vision Builder pipeline…</strong>
             <div class="text-muted small">
-              <span id="propose-stage-label">Stage 1 — PromptValidator ({{ stage_models.prompt_validator }}, ~2s)</span>
+              <span id="propose-stage-label">connecting to agent-orchestration…</span>
               <span class="ms-2 font-monospace" id="propose-elapsed">0s</span>
+              <span class="ms-3 font-monospace" id="propose-cost"></span>
             </div>
             <div class="text-muted small mt-1">
               Don't close this tab — the page will refresh when the
-              pipeline finishes. Typical run is 30-90s; {{ stage_models.vision_decomposition }} calls in
-              the decomposition stage can occasionally take 2-3 min on
+              pipeline finishes. Typical run is 30-90s; the deep-tier
+              decomposition can occasionally take 2-3 min on
               broad-scope visions.
             </div>
           </div>
+        </div>
+        {# Completed stages accumulate here as the polling response
+           reports them. Each card shows the stage name, duration,
+           cost, and the conductor's one-line output summary
+           ("12 capabilities · 8 risks · 15 actors"). #}
+        <div id="propose-stages-list" class="mt-3 d-none">
+          <div class="text-muted small mb-1">Completed stages</div>
+          <ul id="propose-stages-ul" class="list-group list-group-flush bg-transparent">
+          </ul>
         </div>
       </div>
 
@@ -149,32 +161,132 @@
           const overlay = document.getElementById("propose-running");
           const stageLabel = document.getElementById("propose-stage-label");
           const elapsed = document.getElementById("propose-elapsed");
-          // Rough stage timing model — drives the "Stage N of 5"
-          // label so the operator sees progress instead of a static
-          // string. Each entry is [label, lower-bound-seconds].
-          const stages = [
-            ["Stage 1 — PromptValidator ({{ stage_models.prompt_validator }})", 0],
-            ["Stage 2 — VisionDecomposition ({{ stage_models.vision_decomposition }})", 3],
-            ["Stage 3 — DataSourceSelector ({{ stage_models.data_source_selector }})", 35],
-            ["Stage 4 — ValidationGate (pure-Python)", 50],
-            ["Stage 5 — ThesisDrafter ({{ stage_models.thesis_drafter }})", 52],
-          ];
+          const costEl = document.getElementById("propose-cost");
+          const stagesList = document.getElementById("propose-stages-list");
+          const stagesUl = document.getElementById("propose-stages-ul");
+
+          // Render-on-change — only touch the DOM when the polled
+          // snapshot actually differs from what we last drew. Avoids
+          // input focus loss + paint churn under fast polling.
+          let renderedStages = 0;
+          let lastLabel = "";
+          let pollHandle = null;
+          let elapsedHandle = null;
+          let formSubmittedAt = null;
+
+          function renderSnapshot(snap) {
+            if (!snap || typeof snap !== "object") return;
+            // Current-stage label: prefer the live `current_stage`,
+            // fall back to "waiting for next stage…" between stages,
+            // or the count when terminal.
+            let nextLabel = lastLabel;
+            if (snap.current_stage) {
+              nextLabel = "Running: " + snap.current_stage;
+            } else if (snap.status === "running") {
+              nextLabel = "waiting for next stage…";
+            } else if (snap.status === "succeeded") {
+              nextLabel = "all stages complete — finalizing draft…";
+            } else if (snap.status === "failed") {
+              nextLabel = "pipeline failed: " + (snap.error || "see logs");
+            }
+            if (nextLabel !== lastLabel) {
+              stageLabel.textContent = nextLabel;
+              lastLabel = nextLabel;
+            }
+            // Cost accumulator — only render when populated.
+            if (typeof snap.total_cost_usd === "number" && snap.total_cost_usd > 0) {
+              costEl.textContent = "·  $" + snap.total_cost_usd.toFixed(4);
+            }
+            // Append any newly-completed stage cards.
+            const newStages = Array.isArray(snap.stages) ? snap.stages : [];
+            if (newStages.length > renderedStages) {
+              stagesList.classList.remove("d-none");
+              for (let i = renderedStages; i < newStages.length; i++) {
+                const s = newStages[i];
+                const li = document.createElement("li");
+                li.className =
+                  "list-group-item bg-transparent d-flex justify-content-between align-items-start";
+                const left = document.createElement("div");
+                left.innerHTML =
+                  '<div class="fw-bold">' + escapeHtml(s.name || "?") + "</div>" +
+                  (s.output_summary
+                    ? '<div class="text-muted small">' + escapeHtml(s.output_summary) + "</div>"
+                    : "");
+                const right = document.createElement("div");
+                right.className = "text-end font-monospace small text-muted";
+                const dur = typeof s.duration_ms === "number"
+                  ? Math.round(s.duration_ms / 100) / 10 + "s"
+                  : "—";
+                const cost = typeof s.cost_usd === "number" && s.cost_usd > 0
+                  ? "$" + s.cost_usd.toFixed(4)
+                  : "free";
+                right.textContent = dur + " · " + cost;
+                li.appendChild(left);
+                li.appendChild(right);
+                stagesUl.appendChild(li);
+              }
+              renderedStages = newStages.length;
+            }
+            // Terminal — stop polling. The POST will finish on its
+            // own and navigate away (success → review.html, failure
+            // → renders this page with structured error_detail).
+            if (snap.status !== "running" && pollHandle !== null) {
+              clearInterval(pollHandle);
+              pollHandle = null;
+            }
+          }
+
+          function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, function (c) {
+              return ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;",
+              })[c];
+            });
+          }
+
+          async function pollOnce() {
+            try {
+              const r = await fetch(
+                "{{ url_for('admin:progress_latest') }}",
+                { headers: { "accept": "application/json" } }
+              );
+              // 503 from the proxy means agent-orchestration is
+              // briefly unreachable — keep polling, the next request
+              // usually succeeds.
+              if (!r.ok) return;
+              const snap = await r.json();
+              // Only render snapshots that started AT OR AFTER our
+              // submit — a stale snapshot from a previous run would
+              // otherwise show "all stages complete" the instant the
+              // overlay appears.
+              if (formSubmittedAt && snap.started_at) {
+                const snapStart = new Date(snap.started_at).getTime();
+                if (snapStart < formSubmittedAt - 2000) return;
+              }
+              renderSnapshot(snap);
+            } catch (_e) {
+              // Network blip — keep polling.
+            }
+          }
+
           form.addEventListener("submit", function () {
             btn.disabled = true;
             btnIcon.className = "spinner-border spinner-border-sm me-2";
             btnLabel.textContent = "Running…";
             overlay.classList.remove("d-none");
             const t0 = Date.now();
-            setInterval(function () {
-              const dt = Math.round((Date.now() - t0) / 1000);
-              elapsed.textContent = dt + "s";
-              for (let i = stages.length - 1; i >= 0; i--) {
-                if (dt >= stages[i][1]) {
-                  stageLabel.textContent = stages[i][0];
-                  break;
-                }
-              }
+            formSubmittedAt = t0;
+            elapsedHandle = setInterval(function () {
+              elapsed.textContent = Math.round((Date.now() - t0) / 1000) + "s";
             }, 500);
+            // Kick off the first poll immediately so the "connecting…"
+            // label is replaced within ~100ms by real backend state.
+            pollOnce();
+            pollHandle = setInterval(pollOnce, 1500);
           });
         })();
       </script>

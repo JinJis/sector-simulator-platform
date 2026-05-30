@@ -371,11 +371,17 @@ class VisionBuilderRequest(BaseModel):
     research_brief: str | None = Field(default=None, max_length=20_000)
 
 class StageMetricDto(BaseModel):
-    """One row in the per-stage cost / latency table."""
+    """One row in the per-stage cost / latency table. ``output_summary``
+    is a short one-line description of what the stage produced — used
+    by the admin real-time progress panel + the post-completion review
+    timeline ("validator accepted prompt", "12 capabilities · 8 risks
+    · 15 actors", "gate passed: 14 capabilities normalized"). Optional
+    so legacy callers still parse."""
 
     name: str
     cost_usd: float
     duration_ms: int
+    output_summary: str | None = None
 
 class ValidationGateDto(BaseModel):
     """Serialized ValidationGateResult for HTTP wire."""
