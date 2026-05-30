@@ -123,6 +123,8 @@ class SignalRepository(Protocol):
         self, sector_slug: str
     ) -> list[CapabilityHandle]: ...
 
+    async def list_all_vision_slugs(self) -> list[str]: ...
+
     async def list_vision_actors(self, sector_slug: str) -> list[ActorHandle]: ...
 
     async def list_vision_tickers(
@@ -168,6 +170,9 @@ class InMemorySignalRepository:
         self, sector_slug: str
     ) -> list[CapabilityHandle]:
         return self._capabilities.get(sector_slug, [])
+
+    async def list_all_vision_slugs(self) -> list[str]:
+        return list(self._capabilities.keys())
 
     async def list_vision_actors(self, sector_slug: str) -> list[ActorHandle]:
         return self._actors.get(sector_slug, [])
@@ -225,6 +230,13 @@ class InMemorySignalRepository:
 
     async def close(self) -> None:
         pass
+
+
+_LIST_ALL_VISION_SLUGS_SQL = """
+SELECT slug FROM sectors
+WHERE is_vision_eligible = TRUE
+ORDER BY slug ASC
+"""
 
 
 _LIST_CAPS_SQL = """
@@ -353,6 +365,11 @@ class PostgresSignalRepository:
             )
             for r in rows
         ]
+
+    async def list_all_vision_slugs(self) -> list[str]:
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(_LIST_ALL_VISION_SLUGS_SQL)
+        return [r["slug"] for r in rows]
 
     async def list_vision_actors(self, sector_slug: str) -> list[ActorHandle]:
         async with self._pool.acquire() as conn:

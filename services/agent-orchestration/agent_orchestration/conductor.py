@@ -92,7 +92,7 @@ def _summarize_decomposition(d: VisionDecompositionResult) -> str:
 
 
 def _summarize_selector(c: DataSourceConfigDraft) -> str:
-    keyword_count = len(getattr(c, "capability_keywords", []))
+    keyword_count = len(getattr(c, "keywords_by_capability", []))
     return f"{keyword_count} capability keyword sets"
 
 

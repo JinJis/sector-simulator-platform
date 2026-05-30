@@ -73,6 +73,21 @@ async def run_resolve_predictions_v2_job(
     return result
 
 
+async def get_active_visions(app: FastAPI) -> list[str]:
+    """Resolve the list of active visions dynamically from the repository.
+    Falls back to the static startup array on any failure or if empty.
+    """
+    repo = getattr(app.state, "signal_repo", None)
+    if repo is not None:
+        try:
+            slugs = await repo.list_all_vision_slugs()
+            if slugs:
+                return slugs
+        except Exception as e:
+            log.warning("[get_active_visions] Failed to fetch active visions from DB: %s", e)
+    return getattr(app.state, "signal_ingest_visions", [])
+
+
 async def run_signal_ingest_job(*, app: FastAPI):  # noqa: ANN201
     """Manual / full-sweep signal ingest. All 3 M39 sources across every
     vision. POST /jobs/signal-ingest invokes this; the tiered crons
@@ -82,7 +97,7 @@ async def run_signal_ingest_job(*, app: FastAPI):  # noqa: ANN201
     if repo is None:
         log.warning("signal-ingest: repo not configured — skipping")
         return None
-    visions: list[str] = app.state.signal_ingest_visions
+    visions = await get_active_visions(app)
     stats = await run_signal_ingest(sector_slugs=visions, repo=repo)
     app.state.last_signal_ingest_result = stats
     return stats
@@ -98,7 +113,7 @@ async def run_news_ingest_5min(*, app: FastAPI):  # noqa: ANN201
     if repo is None:
         log.warning("[cron news_ingest_5min] signal_repo unset — skipping")
         return None
-    visions: list[str] = app.state.signal_ingest_visions
+    visions = await get_active_visions(app)
 
     use_crawl4ai = os.environ.get("NEWS_INGEST_USE_CRAWL4AI", "").lower() in {
         "1", "true", "yes", "on",
@@ -144,7 +159,7 @@ async def run_research_ingest_hourly(*, app: FastAPI):  # noqa: ANN201
     if repo is None:
         log.warning("[cron research_ingest_hourly] signal_repo unset — skipping")
         return None
-    visions: list[str] = app.state.signal_ingest_visions
+    visions = await get_active_visions(app)
     # USPTO disabled by default (M56-4) — operator auth not configured.
     # Set ENABLE_USPTO=1 to re-arm; otherwise arxiv-only.
     sources = [ArxivSource()]
@@ -189,7 +204,7 @@ async def run_digest_daily_job(*, app: FastAPI):  # noqa: ANN201
             *[("on" if x is not None else "off") for x in (repo, sig_repo, writer, dr, agent)],
         )
         return None
-    visions: list[str] = app.state.signal_ingest_visions
+    visions = await get_active_visions(app)
     # Pre-filter to visions that actually have capabilities — the digest
     # anchors itself on one capability per vision, and on an empty
     # vision the inner check fails + writes an error crawl_run. Without
@@ -254,7 +269,7 @@ async def run_recompute_feasibility_job(*, app: FastAPI):  # noqa: ANN201
     if repo is None:
         log.warning("[cron recompute_feasibility] repo not configured — skipping")
         return None
-    visions: list[str] = app.state.signal_ingest_visions
+    visions = await get_active_visions(app)
     log.info(
         "[cron recompute_feasibility] START visions=%s",
         ",".join(visions) or "<none>",
