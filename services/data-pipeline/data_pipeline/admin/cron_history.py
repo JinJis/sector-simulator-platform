@@ -35,6 +35,7 @@ class CronExecution:
     duration_ms: int | None
     error: str | None
     output_summary: str | None  # short string distilled from the job's return value
+    output_data: dict[str, Any] | None = None
 
 
 class CronHistoryBuffer:
@@ -63,6 +64,20 @@ class CronHistoryBuffer:
     def on_executed(self, job_id: str, retval: Any) -> None:
         started = self._inflight.pop(job_id, datetime.now(UTC))
         ended = datetime.now(UTC)
+        
+        output_data = None
+        if retval is not None:
+            try:
+                import dataclasses
+                if dataclasses.is_dataclass(retval):
+                    output_data = dataclasses.asdict(retval)
+                elif hasattr(retval, "model_dump"):
+                    output_data = retval.model_dump()
+                elif isinstance(retval, dict):
+                    output_data = retval
+            except Exception as exc:
+                log.warning("Failed to extract output_data in cron_history: %s", exc)
+
         self._by_job[job_id].append(
             CronExecution(
                 job_id=job_id,
@@ -72,6 +87,7 @@ class CronHistoryBuffer:
                 duration_ms=_duration_ms(started, ended),
                 error=None,
                 output_summary=_summarize(retval),
+                output_data=output_data,
             )
         )
 

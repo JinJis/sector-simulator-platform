@@ -62,6 +62,9 @@ JOB_INFO: dict[str, dict[str, str]] = {
         "cadence": spec.cadence,
         "note": spec.note,
         "schedule_kind": spec.schedule_kind,
+        "purpose": spec.purpose,
+        "inputs": spec.inputs,
+        "outputs": spec.outputs,
     }
     for spec in CRON_SPECS
 }
@@ -88,6 +91,9 @@ class _SchedulerRowVM:
     # (e.g. "30 8 * * *" for cron, "5" for interval_min).
     schedule_kind: str
     current_schedule: str
+    purpose: str
+    inputs: str
+    outputs: str
     # Execution history from the in-memory CronHistoryBuffer. `last`
     # drives the per-row badge; `recent` is shown in a per-row
     # disclosure so the operator can scan recent outcomes without
@@ -166,6 +172,9 @@ async def _scheduler_rows(app: FastAPI) -> tuple[list[_SchedulerRowVM], bool]:
                 "cadence": "—",
                 "note": "",
                 "schedule_kind": "cron",
+                "purpose": "—",
+                "inputs": "—",
+                "outputs": "—",
             },
         )
         spec = SPEC_BY_ID.get(job.id)
@@ -193,6 +202,9 @@ async def _scheduler_rows(app: FastAPI) -> tuple[list[_SchedulerRowVM], bool]:
                 ),
                 schedule_kind=info["schedule_kind"],
                 current_schedule=current_sched,
+                purpose=info.get("purpose", "—"),
+                inputs=info.get("inputs", "—"),
+                outputs=info.get("outputs", "—"),
                 last=last,
                 recent=recent,
             )

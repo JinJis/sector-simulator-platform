@@ -69,6 +69,15 @@ class CronSpec:
     as a string (kept stringly typed because that's how the JobConfig
     table stores everything)."""
 
+    purpose: str
+    """Operational purpose of the cron job, displayed in the Admin UI."""
+
+    inputs: str
+    """Description of external sources, APIs, or database tables called or queried."""
+
+    outputs: str
+    """Description of target tables, channels, or rollups modified by the job."""
+
 
 # Order matches the legacy admin queue display order. New crons append
 # at the end unless they belong to an existing thematic group.
@@ -84,6 +93,9 @@ CRON_SPECS: list[CronSpec] = [
         default_enabled=True,
         schedule_kind="interval_min",
         default_schedule_value="5",
+        purpose="Crawls fast-paced external news sources to search for recent capability keywords and tags matched stock actors.",
+        inputs="Dynamic capability keyword sets, stock tickers of sector actors.",
+        outputs="signals table (news article records with AI-extracted dimension delta scores).",
     ),
     CronSpec(
         id="orchestrator_tick_15min",
@@ -93,6 +105,9 @@ CRON_SPECS: list[CronSpec] = [
         default_enabled=False,  # cost-gated; operator turns on
         schedule_kind="interval_min",
         default_schedule_value="15",
+        purpose="Orchestrates daily budget-gated deep research agent dispatches for stale or unscored capabilities, actors, or risks.",
+        inputs="Stale capabilities, actors, and risks; historical crawl_runs costs vs the daily dollar cap.",
+        outputs="crawl_runs table logs (spawns active async deep research worker dispatcher runs).",
     ),
     CronSpec(
         id="resolve_predictions_v2_hourly",
@@ -102,6 +117,9 @@ CRON_SPECS: list[CronSpec] = [
         default_enabled=True,
         schedule_kind="cron",
         default_schedule_value="5 * * * *",
+        purpose="Resolves active user bets (price bands) dynamically against recently ingested equity price snapshots.",
+        inputs="equity_quotes table (historical price snap data), active user predictions.",
+        outputs="Resolved prediction results, payouts, and status flags on user profiles.",
     ),
     CronSpec(
         id="research_ingest_hourly",
@@ -111,6 +129,9 @@ CRON_SPECS: list[CronSpec] = [
         default_enabled=True,
         schedule_kind="cron",
         default_schedule_value="7 * * * *",
+        purpose="Fetches external academic research papers from the arXiv API and patents from the USPTO PatentsView API matching capability keywords.",
+        inputs="Dynamic capability keyword sets, USPTO_API_KEY (when ENABLE_USPTO=1).",
+        outputs="signals table (academic papers & patent applications tagged with AI-extracted deltas).",
     ),
     CronSpec(
         id="recompute_feasibility_hourly",
@@ -120,6 +141,9 @@ CRON_SPECS: list[CronSpec] = [
         default_enabled=True,
         schedule_kind="cron",
         default_schedule_value="25 * * * *",
+        purpose="Aggregates all recently ingested signal deltas and runs the ScoreUpdater agent (Gemini 1.5 Pro) to update feasibility indices.",
+        inputs="signals table (last 30 days of deltas), current capability scores.",
+        outputs="capability_scores table, vision_feasibility rollup via POST to simulation-service.",
     ),
     CronSpec(
         id="refresh_quotes_daily",
@@ -129,6 +153,9 @@ CRON_SPECS: list[CronSpec] = [
         default_enabled=True,
         schedule_kind="cron",
         default_schedule_value="30 8 * * *",  # 08:30 UTC = 17:30 KST
+        purpose="Queries external yfinance (Yahoo Finance) to capture historical stock quote snaps for live vision actors.",
+        inputs="Ticker symbols of actors mapped to active visions.",
+        outputs="equity_quotes and equity_prices tables.",
     ),
     CronSpec(
         id="digest_daily",
@@ -138,6 +165,9 @@ CRON_SPECS: list[CronSpec] = [
         default_enabled=False,  # cost-gated; operator turns on
         schedule_kind="cron",
         default_schedule_value="0 6 * * *",  # 06:00 UTC = 15:00 KST
+        purpose="Generates grounded sector synthesis briefs using Vertex AI Grounded Search (Gemini 3.1 Pro) across all active signals.",
+        inputs="Vector-crawled signals, external Google Web Search API.",
+        outputs="Daily grounded research digest, crawl_runs table log.",
     ),
 ]
 

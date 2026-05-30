@@ -4,14 +4,13 @@
    leave it open as a status board without manually reloading. #}
 
 {% block content_header %}
-<meta http-equiv="refresh" content="5">
 <div class="row align-items-center">
   <div class="col">
     <h2 class="page-title">{{ title }}</h2>
     <div class="page-pretitle">{{ subtitle }}</div>
   </div>
   <div class="col-auto">
-    <span class="text-muted small">checked {{ now_utc | kst('%H:%M:%S', true) }} · auto-refresh 5s</span>
+    <span class="text-muted small">checked {{ now_utc | kst('%H:%M:%S', true) }}</span>
   </div>
 </div>
 {% endblock %}
@@ -125,11 +124,16 @@
               {% endif %}
             </td>
             <td>
-              <div class="fw-bold">{{ row.label }}</div>
-              <div class="text-muted small font-monospace">{{ row.id }}</div>
+              <div class="fw-bold text-primary" style="font-size: 0.95rem;">{{ row.label }}</div>
+              <div class="text-muted small font-monospace mb-1">{{ row.id }}</div>
               {% if row.note %}
-              <div class="text-muted small">{{ row.note }}</div>
+              <div class="text-muted small mb-2"><i class="fa-solid fa-info-circle me-1 text-info"></i>{{ row.note }}</div>
               {% endif %}
+              <div class="mt-2 border-top pt-2" style="font-size: 0.78rem; line-height: 1.45;">
+                <div><strong>Purpose:</strong> <span class="text-secondary">{{ row.purpose }}</span></div>
+                <div class="mt-1"><strong>Input:</strong> <span class="text-secondary">{{ row.inputs }}</span></div>
+                <div class="mt-1"><strong>Output:</strong> <span class="text-secondary">{{ row.outputs }}</span></div>
+              </div>
             </td>
             <td>
               {# Inline edit form. Submitting calls
@@ -254,11 +258,49 @@
                       </td>
                       <td class="small">
                         {% if ex.error %}
-                        <code class="text-danger">{{ ex.error }}</code>
+                          <code class="text-danger d-block" style="white-space: pre-wrap;">{{ ex.error }}</code>
+                        {% elif ex.output_data %}
+                          <details>
+                            <summary class="text-blue font-monospace" style="cursor: pointer; font-size: 0.8rem;">
+                              {{ ex.output_summary or 'View Details' }}
+                            </summary>
+                            <div class="mt-2 p-2 bg-light border rounded" style="max-width: 100%;">
+                              <div class="row g-2">
+                                {% for key, val in ex.output_data.items() %}
+                                  {% if key not in ['errors', 'finished_at', 'started_at'] %}
+                                    <div class="col-6 col-md-4">
+                                      <div class="p-1 bg-white border rounded text-center" style="box-shadow: 0 1px 2px rgba(0,0,0,0.04);">
+                                        <div class="text-muted text-uppercase" style="font-size: 0.58rem; font-weight: 600; letter-spacing: 0.2px;">
+                                          {{ key | replace('_', ' ') }}
+                                        </div>
+                                        <div class="font-monospace fw-bold text-dark" style="font-size: 0.8rem;">
+                                          {% if 'cost' in key or 'usd' in key %}
+                                            ${{ "%.4f" | format(val) }}
+                                          {% else %}
+                                            {{ val }}
+                                          {% endif %}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  {% endif %}
+                                {% endfor %}
+                              </div>
+                              {% if ex.output_data.errors %}
+                                <div class="mt-2 border-top pt-2">
+                                  <div class="text-danger fw-bold mb-1" style="font-size: 0.7rem;">Errors ({{ ex.output_data.errors | length }}):</div>
+                                  <ul class="text-danger ps-3 mb-0" style="font-size: 0.7rem; list-style-type: decimal;">
+                                    {% for err in ex.output_data.errors %}
+                                      <li><code>{{ err }}</code></li>
+                                    {% endfor %}
+                                  </ul>
+                                </div>
+                              {% endif %}
+                            </div>
+                          </details>
                         {% elif ex.output_summary %}
-                        <code class="text-muted">{{ ex.output_summary }}</code>
+                          <code class="text-muted">{{ ex.output_summary }}</code>
                         {% else %}
-                        —
+                          —
                         {% endif %}
                       </td>
                     </tr>
