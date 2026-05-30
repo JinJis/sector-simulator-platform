@@ -273,19 +273,28 @@ class DataSourceSelectorWorkflow:
         llm = self._llm.clone(cost_meter=cost_meter)
         system = load_prompt("data_source_selector")
         user = self._format_user_turn(request)
+        # Slice 16 follow-up: was 4096, truncating mid-JSON on
+        # 8+-capability visions (each capability emits 3 keyword
+        # arrays × ~10 strings = ~150-200 tokens; JSON overhead +
+        # capability_key + commas pushes a 10-cap vision past 6k
+        # tokens of OUTPUT alone, and the retry path's schema-
+        # injection inflates the THINKING budget too). 16384 gives
+        # headroom for a 15-cap broad vision without forcing the
+        # caller to bump per-tier limits.
         result = await asyncio.to_thread(
             llm.call,
             tier="balanced",
             system=system,
             user=user,
-            max_tokens=4096,
+            max_tokens=16_384,
             adaptive_thinking=False,
             response_model=DataSourceConfigDraft,
         )
         if result.parsed is None:
             raise RuntimeError(
                 "data-source-selector returned unparseable output "
-                f"(stop_reason={result.stop_reason})"
+                f"(stop_reason={result.stop_reason}, "
+                f"text_len={len(result.text or '')})"
             )
         assert isinstance(result.parsed, DataSourceConfigDraft)
         config = result.parsed
@@ -364,12 +373,17 @@ class ThesisDrafterWorkflow:
         llm = self._llm.clone(cost_meter=cost_meter)
         system = load_prompt("thesis_drafter")
         user = self._format_user_turn(request)
+        # Slice 16 follow-up: was 4096. ThesisCatalystsDraft has
+        # variable-length bull/bear bullet lists + catalyst array;
+        # 4k truncated on broad visions with many capabilities. 8192
+        # is comfortable headroom without bloating the per-tier limit
+        # for the (best-effort) editorial overlay.
         result = await asyncio.to_thread(
             llm.call,
             tier="balanced",
             system=system,
             user=user,
-            max_tokens=4096,
+            max_tokens=8_192,
             adaptive_thinking=False,
             response_model=ThesisCatalystsDraft,
         )

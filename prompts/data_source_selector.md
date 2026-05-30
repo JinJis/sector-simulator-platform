@@ -138,3 +138,97 @@ capability.
 Return ONLY the `DataSourceConfigDraft` schema. Brief `rationale`
 explaining your overall keyword philosophy is optional but useful for
 admin review.
+
+---
+
+## Worked example (illustrative — shape only)
+
+For a 4-capability fusion-grid-parity vision. Match the SHAPE; fill
+in real per-vision content. Notice the per-source vocab differences
+and the empty news_keywords for the deeply-technical capabilities.
+
+```json
+{
+  "keywords_by_capability": [
+    {
+      "capability_key": "net_energy_gain",
+      "arxiv_keywords": [
+        "tokamak Q factor",
+        "inertial confinement fusion ignition",
+        "stellarator plasma confinement",
+        "high temperature superconductor magnet",
+        "deuterium tritium burning plasma",
+        "fusion energy gain factor"
+      ],
+      "uspto_keywords": [
+        "fusion reactor magnetic confinement",
+        "high temperature superconducting magnet",
+        "inertial confinement target chamber"
+      ],
+      "news_keywords": [
+        "ITER first plasma",
+        "Commonwealth Fusion SPARC",
+        "National Ignition Facility ignition"
+      ]
+    },
+    {
+      "capability_key": "tritium_supply",
+      "arxiv_keywords": [
+        "lithium blanket tritium breeding",
+        "tritium fuel cycle fusion",
+        "tritium permeation barrier",
+        "tritium extraction pebble bed"
+      ],
+      "uspto_keywords": [
+        "tritium breeding blanket",
+        "tritium recovery system"
+      ],
+      "news_keywords": []
+    },
+    {
+      "capability_key": "first_wall_materials",
+      "arxiv_keywords": [
+        "EUROFER steel neutron irradiation",
+        "tungsten divertor erosion",
+        "reduced activation ferritic martensitic steel",
+        "plasma facing component lifetime"
+      ],
+      "uspto_keywords": [
+        "fusion reactor first wall material",
+        "tungsten divertor target"
+      ],
+      "news_keywords": []
+    },
+    {
+      "capability_key": "grid_lcoe_competitiveness",
+      "arxiv_keywords": [
+        "fusion power plant economics LCOE",
+        "fusion levelized cost electricity",
+        "fusion capacity factor reliability"
+      ],
+      "uspto_keywords": [],
+      "news_keywords": [
+        "fusion power purchase agreement",
+        "fusion plant LCOE grid parity",
+        "Commonwealth Fusion utility deal"
+      ]
+    }
+  ],
+  "rationale": "arXiv keywords prioritize the academic vocab around plasma physics + materials (EUROFER, divertor, Q factor). USPTO is light because fusion has thin patent activity outside the magnet vendors. News is targeted at named-plant + LCOE-deal coverage; tritium + first-wall get no news because press cycle doesn't cover them."
+}
+```
+
+Things to internalize:
+- Total `keywords_by_capability` entries = input capability count
+  (here: 4 in, 4 out).
+- Each `capability_key` matches an input capability's key VERBATIM.
+- Empty `news_keywords: []` on the deeply-technical capabilities is
+  fine — don't pad with vague placeholder terms.
+- arXiv uses noun-phrase compounds (`tokamak Q factor`, NOT just
+  `fusion`).
+- USPTO uses patent-formal phrasing (`tritium recovery system`).
+- News uses named-entity phrasing (`Commonwealth Fusion SPARC`,
+  `ITER first plasma`).
+- Keep TOTAL keywords across all capabilities ≤ ~150 for a 10-cap
+  vision; ≤ ~80 for a 5-cap vision. Overly-rich lists truncate the
+  JSON response.

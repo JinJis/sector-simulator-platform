@@ -174,11 +174,31 @@ def _parse_text_as_pydantic(
     try:
         data = json.loads(raw)
     except (json.JSONDecodeError, ValueError) as exc:
-        msg = f"JSON parse failed: {exc}"
+        # Truncation detector — if the raw text ends without a
+        # matching closing brace, the response was almost certainly
+        # cut off at max_output_tokens (Gemini's `stop_reason` may
+        # still report STOP because the SDK occasionally reports
+        # natural-stop for token-cap-truncations). Surfacing the
+        # distinction tells the operator "bump max_tokens" instead
+        # of "fix the model's JSON skill."
+        stripped = raw.rstrip()
+        looks_truncated = (
+            len(stripped) > 100
+            and stripped[0] in "{["
+            and stripped[-1] not in "}]"
+        )
+        truncation_hint = " — output appears truncated (no closing brace); bump max_tokens" if looks_truncated else ""
+        msg = f"JSON parse failed: {exc}{truncation_hint}"
+        # Include both the prefix AND suffix of the text so the
+        # operator can tell at a glance whether the JSON terminated
+        # naturally or was cut off mid-stream.
         sys.stderr.write(
             f"llm_client: post-retry JSON parse failed "
             f"(model={response_model.__name__}, err={exc}, "
-            f"text_prefix={text[:200]!r})\n"
+            f"text_len={len(text)}, "
+            f"text_prefix={text[:200]!r}, "
+            f"text_suffix={text[-200:]!r}"
+            f"{truncation_hint})\n"
         )
         return None, msg
     try:
