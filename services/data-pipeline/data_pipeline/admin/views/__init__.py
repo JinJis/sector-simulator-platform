@@ -11,11 +11,7 @@ from __future__ import annotations
 
 from sqladmin import ModelView
 
-from data_pipeline.admin.views.actor import (
-    ActorView,
-    CapabilityActorView,
-    VisionActorView,
-)
+from data_pipeline.admin.views.actor import ActorView
 from data_pipeline.admin.views.audit_log import AuditLogView
 from data_pipeline.admin.views.capability import (
     CapabilityScoreView,
@@ -23,8 +19,6 @@ from data_pipeline.admin.views.capability import (
 )
 from data_pipeline.admin.views.community_proposal import CommunityProposalView
 from data_pipeline.admin.views.crawl_run import CrawlRunView
-from data_pipeline.admin.views.economics import EconomicsDatapointView
-from data_pipeline.admin.views.feasibility import VisionFeasibilityView
 from data_pipeline.admin.views.risk import RiskView
 from data_pipeline.admin.views.sector import SectorView
 from data_pipeline.admin.views.signal import SignalView
@@ -40,10 +34,6 @@ ALL_VIEWS: list[type[ModelView]] = [
     SignalView,
     RiskView,
     ActorView,
-    VisionActorView,
-    CapabilityActorView,
-    EconomicsDatapointView,
-    VisionFeasibilityView,
     CrawlRunView,
     CommunityProposalView,
     UserView,

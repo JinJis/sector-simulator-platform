@@ -1,0 +1,362 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content_header %}
+<div class="row align-items-center">
+  <div class="col">
+    <h2 class="page-title">System Operations Cockpit</h2>
+    <div class="page-pretitle">Dynamic database tables, crawler executions, and active queue workers</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Live Summary Header Cards -->
+<div class="col-12 mb-4">
+  <div class="row row-cards">
+    <div class="col-sm-6 col-lg-3">
+      <div class="card card-sm shadow-sm">
+        <div class="card-body">
+          <div class="subheader text-primary fw-bold">Visions Live</div>
+          <div class="h1 m-0" id="stat-sectors">
+            <span class="spinner-border spinner-border-sm text-muted" role="status"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card card-sm shadow-sm">
+        <div class="card-body">
+          <div class="subheader text-green fw-bold">Extracted Signals</div>
+          <div class="h1 m-0" id="stat-signals">
+            <span class="spinner-border spinner-border-sm text-muted" role="status"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card card-sm shadow-sm">
+        <div class="card-body">
+          <div class="subheader text-azure fw-bold">Queue Workers</div>
+          <div class="h1 m-0" id="stat-workers">
+            <span class="spinner-border spinner-border-sm text-muted" role="status"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card card-sm shadow-sm">
+        <div class="card-body">
+          <div class="subheader text-orange fw-bold">Queued Tasks</div>
+          <div class="h1 m-0" id="stat-queued">
+            <span class="spinner-border spinner-border-sm text-muted" role="status"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="col-12 col-lg-8">
+  <!-- Operations & Crawlers Panel -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header bg-light d-flex align-items-center">
+      <h3 class="card-title text-dark fw-bold"><i class="fa-solid fa-gears me-2 text-secondary"></i>Operations Command
+        Center</h3>
+      <div class="ms-auto text-muted small" id="queue-status-badge">
+        checking Queue status...
+      </div>
+    </div>
+    <div class="card-body">
+      <p class="text-muted" style="font-size: 0.9rem;">
+        Control background pipeline jobs, monitor direct execution runs, and launch new LLM-guided Sector
+        decompositions.
+      </p>
+      <div class="row g-3 mb-4">
+        <div class="col-md-4">
+          <a href="{{ url_for('admin:queue_page') }}"
+            class="card card-link shadow-none border p-3 text-center text-decoration-none bg-hover-light d-block"
+            style="transition: all 0.2s;">
+            <div class="h3 mb-1 text-primary"><i class="fa-solid fa-bolt me-1"></i> Queue & Crons</div>
+            <div class="small text-muted">Pause/resume jobs and schedules</div>
+          </a>
+        </div>
+        <div class="col-md-4">
+          <a href="{{ url_for('admin:list', identity='crawlrun') }}"
+            class="card card-link shadow-none border p-3 text-center text-decoration-none bg-hover-light d-block"
+            style="transition: all 0.2s;">
+            <div class="h3 mb-1 text-success"><i class="fa-solid fa-spinner me-1"></i> Crawl Runs</div>
+            <div class="small text-muted">Check full historical crawler runs</div>
+          </a>
+        </div>
+        <div class="col-md-4">
+          <a href="{{ url_for('admin:prompt_page') }}"
+            class="card card-link shadow-none border p-3 text-center text-decoration-none bg-hover-light d-block"
+            style="transition: all 0.2s;">
+            <div class="h3 mb-1 text-purple"><i class="fa-solid fa-wand-magic-sparkles me-1"></i> Vision Builder</div>
+            <div class="small text-muted">Draft capabilities via Gemini prompt</div>
+          </a>
+        </div>
+      </div>
+
+      <!-- Recent Crawl Runs Embedded Section -->
+      <div class="border-top pt-3">
+        <h4 class="mb-3 fw-bold text-secondary" style="font-size: 0.95rem;">Active & Recent Crawl Runs</h4>
+        <div class="table-responsive" style="min-height: 180px;">
+          <table class="table table-vcenter card-table table-sm" id="crawl-runs-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Vision Slug</th>
+                <th>Fetcher Type</th>
+                <th>Status</th>
+                <th>Cost</th>
+                <th>Signals</th>
+                <th class="text-end">Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td colspan="7" class="text-center py-4 text-muted">
+                  <span class="spinner-border spinner-border-sm text-secondary me-2" role="status"></span> Loading crawl
+                  runs...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="col-12 col-lg-4">
+  <!-- Dynamic Database Tables Section -->
+  <div class="card shadow-sm">
+    <div class="card-header bg-light">
+      <h3 class="card-title text-dark fw-bold"><i class="fa-solid fa-database me-2 text-secondary"></i>Database Tables
+      </h3>
+    </div>
+    <div class="list-group list-group-flush list-group-hoverable" id="table-list-group"
+      style="max-height: 600px; overflow-y: auto;">
+      <!-- Sector / Vision -->
+      <div class="list-group-item p-3 d-flex align-items-center justify-content-between">
+        <div>
+          <h4 class="mb-1 fw-bold"><a href="{{ url_for('admin:list', identity='sector') }}" class="text-dark">Sectors
+              (Visions)</a></h4>
+          <div class="small text-muted">Global capability scope parameters</div>
+        </div>
+        <span class="badge bg-primary-lt fs-5" id="badge-sectors"><span class="spinner-border spinner-border-sm"
+            role="status"></span></span>
+      </div>
+      <!-- Capability -->
+      <div class="list-group-item p-3 d-flex align-items-center justify-content-between">
+        <div>
+          <h4 class="mb-1 fw-bold"><a href="{{ url_for('admin:list', identity='capability') }}"
+              class="text-dark">Capabilities</a></h4>
+          <div class="small text-muted">Vision requirements & keyword sets</div>
+        </div>
+        <span class="badge bg-teal-lt fs-5" id="badge-capabilities"><span class="spinner-border spinner-border-sm"
+            role="status"></span></span>
+      </div>
+      <!-- Capability Score -->
+      <div class="list-group-item p-3 d-flex align-items-center justify-content-between">
+        <div>
+          <h4 class="mb-1 fw-bold"><a href="{{ url_for('admin:list', identity='capabilityscore') }}"
+              class="text-dark">Capability Scores</a></h4>
+          <div class="small text-muted">Historical feasibility indices & rollups</div>
+        </div>
+        <span class="badge bg-green-lt fs-5" id="badge-capability_scores"><span class="spinner-border spinner-border-sm"
+            role="status"></span></span>
+      </div>
+      <!-- Signal -->
+      <div class="list-group-item p-3 d-flex align-items-center justify-content-between">
+        <div>
+          <h4 class="mb-1 fw-bold"><a href="{{ url_for('admin:list', identity='signal') }}"
+              class="text-dark">Signals</a></h4>
+          <div class="small text-muted">Ingested Google News, arXiv & patents</div>
+        </div>
+        <span class="badge bg-azure-lt fs-5" id="badge-signals"><span class="spinner-border spinner-border-sm"
+            role="status"></span></span>
+      </div>
+      <!-- Risk -->
+      <div class="list-group-item p-3 d-flex align-items-center justify-content-between">
+        <div>
+          <h4 class="mb-1 fw-bold"><a href="{{ url_for('admin:list', identity='risk') }}" class="text-dark">Risks</a>
+          </h4>
+          <div class="small text-muted">Identified sector risk categories & mitigation</div>
+        </div>
+        <span class="badge bg-red-lt fs-5" id="badge-risks"><span class="spinner-border spinner-border-sm"
+            role="status"></span></span>
+      </div>
+      <!-- Actor -->
+      <div class="list-group-item p-3 d-flex align-items-center justify-content-between">
+        <div>
+          <h4 class="mb-1 fw-bold"><a href="{{ url_for('admin:list', identity='actor') }}" class="text-dark">Actors</a>
+          </h4>
+          <div class="small text-muted">Industry corporations, startups & tickers</div>
+        </div>
+        <span class="badge bg-purple-lt fs-5" id="badge-actors"><span class="spinner-border spinner-border-sm"
+            role="status"></span></span>
+      </div>
+      <!-- Community Proposal -->
+      <div class="list-group-item p-3 d-flex align-items-center justify-content-between">
+        <div>
+          <h4 class="mb-1 fw-bold"><a href="{{ url_for('admin:list', identity='communityproposal') }}"
+              class="text-dark">Community Proposals</a></h4>
+          <div class="small text-muted">User proposal submissions and votes</div>
+        </div>
+        <span class="badge bg-warning-lt fs-5" id="badge-community_proposals"><span
+            class="spinner-border spinner-border-sm" role="status"></span></span>
+      </div>
+      <!-- Users -->
+      <div class="list-group-item p-3 d-flex align-items-center justify-content-between">
+        <div>
+          <h4 class="mb-1 fw-bold"><a href="{{ url_for('admin:list', identity='user') }}" class="text-dark">Users</a>
+          </h4>
+          <div class="small text-muted">Authorized operators & profiles</div>
+        </div>
+        <span class="badge bg-info-lt fs-5" id="badge-users"><span class="spinner-border spinner-border-sm"
+            role="status"></span></span>
+      </div>
+      <!-- Audit Logs -->
+      <div class="list-group-item p-3 d-flex align-items-center justify-content-between">
+        <div>
+          <h4 class="mb-1 fw-bold"><a href="{{ url_for('admin:list', identity='auditlog') }}" class="text-dark">Audit
+              Logs</a></h4>
+          <div class="small text-muted">Immutable record of system changes</div>
+        </div>
+        <span class="badge bg-secondary-lt fs-5" id="badge-audit_logs"><span class="spinner-border spinner-border-sm"
+            role="status"></span></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Custom Styles & Client-Side JS for dynamic fetching -->
+<style>
+  .bg-hover-light:hover {
+    background-color: rgba(0, 0, 0, 0.02) !important;
+    transform: translateY(-2px);
+  }
+
+  .list-group-hoverable .list-group-item:hover {
+    background-color: rgba(0, 0, 0, 0.015) !important;
+  }
+
+  .badge-status-azure {
+    background-color: #f0f7ff;
+    color: #0066cc;
+  }
+
+  .badge-status-blue {
+    background-color: #ebf3fe;
+    color: #1d6cf0;
+  }
+
+  .badge-status-green {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+  }
+
+  .badge-status-red {
+    background-color: #ffebee;
+    color: #c62828;
+  }
+
+  .badge-status-secondary {
+    background-color: #f5f5f5;
+    color: #616161;
+  }
+</style>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    fetch("/admin/api/dashboard-data")
+      .then(response => {
+        if (!response.ok) {
+          throw new Error("Failed to load dashboard data");
+        }
+        return response.json();
+      })
+      .then(data => {
+        // Update Counts
+        const tables = [
+          "sectors", "capabilities", "capability_scores", "signals", "risks",
+          "actors", "community_proposals", "users", "audit_logs"
+        ];
+        tables.forEach(t => {
+          const count = data.counts[t] !== undefined ? data.counts[t] : 0;
+          const badge = document.getElementById("badge-" + t);
+          if (badge) badge.innerText = count;
+        });
+
+        // Update stats
+        document.getElementById("stat-sectors").innerText = data.counts.sectors || 0;
+        document.getElementById("stat-signals").innerText = data.counts.signals || 0;
+        document.getElementById("stat-workers").innerText = data.queue.workers || 0;
+        document.getElementById("stat-queued").innerText = data.queue.queued || 0;
+
+        // Update queue badge
+        const qBadge = document.getElementById("queue-status-badge");
+        if (data.queue.available) {
+          qBadge.innerHTML = '<span class="badge bg-green-lt">online</span> <code class="ms-1">' + data.queue.queue_name + '</code>';
+        } else {
+          qBadge.innerHTML = '<span class="badge bg-red-lt">offline</span> <span class="text-danger ms-1">Redis unreachable</span>';
+        }
+
+        // Render Recent Crawl Runs Table
+        const tableBody = document.querySelector("#crawl-runs-table tbody");
+        if (data.crawl_runs && data.crawl_runs.length > 0) {
+          tableBody.innerHTML = "";
+          data.crawl_runs.forEach(run => {
+            const date = new Date(run.started_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const cost = run.cost_usd !== null ? '$' + run.cost_usd.toFixed(4) : '—';
+            let badgeTone = "secondary";
+            const status = (run.status || "").toLowerCase();
+            if (["succeeded", "ok"].includes(status)) badgeTone = "green";
+            else if (["failed", "error"].includes(status)) badgeTone = "red";
+            else if (["running"].includes(status)) badgeTone = "blue";
+            else if (["pending", "queued"].includes(status)) badgeTone = "azure";
+
+            tableBody.innerHTML += `
+            <tr>
+              <td class="font-monospace small text-muted">${run.id.substring(0, 8)}...</td>
+              <td class="fw-bold">${run.vision_slug}</td>
+              <td class="font-monospace small">${run.fetcher_kind}</td>
+              <td><span class="badge badge-status-${badgeTone}">${run.status}</span></td>
+              <td class="font-monospace small">${cost}</td>
+              <td class="font-monospace small">${run.signals_written}</td>
+              <td class="text-end">
+                <a href="/admin/crawlrun/details/${run.id}" class="btn btn-xs btn-outline-secondary py-0 px-1" style="font-size: 0.75rem;">details</a>
+              </td>
+            </tr>
+          `;
+          });
+        } else {
+          tableBody.innerHTML = `
+          <tr>
+            <td colspan="7" class="text-center py-4 text-muted">
+              No crawl runs found in the database.
+            </td>
+          </tr>
+        `;
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        // Show error tags
+        document.querySelectorAll("[id^='stat-'], [id^='badge-']").forEach(el => {
+          el.innerHTML = '<span class="text-danger" title="Load failed">!</span>';
+        });
+        const tableBody = document.querySelector("#crawl-runs-table tbody");
+        tableBody.innerHTML = `
+        <tr>
+          <td colspan="7" class="text-center py-4 text-danger">
+            Failed to load live dashboard data from API. Verify session status.
+          </td>
+        </tr>
+      `;
+      });
+  });
+</script>
+{% endblock %}

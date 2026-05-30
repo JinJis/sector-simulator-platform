@@ -279,7 +279,7 @@ class VisionBuilderView(BaseView):
 
     name = "Vision Builder"
     icon = "fa-solid fa-wand-magic-sparkles"
-    category = "Vision"
+    category = "Operations"
     identity = "vision-builder"
 
     async def _render_prompt(

@@ -185,6 +185,10 @@ def mount_admin(app: FastAPI) -> Admin | None:
     # sector-service tRPC for the heavy commit transaction.
     admin.add_base_view(VisionBuilderView)
 
+    # Register the secure dashboard endpoints on the main FastAPI app
+    from data_pipeline.admin.dashboard_api import router as dashboard_api_router
+    app.include_router(dashboard_api_router)
+
     app.state.admin = admin
     app.state._sqladmin_mounted = True  # noqa: SLF001
     log.info(

@@ -234,7 +234,7 @@ class InMemorySignalRepository:
 
 _LIST_ALL_VISION_SLUGS_SQL = """
 SELECT slug FROM sectors
-WHERE is_vision_eligible = TRUE
+WHERE is_vision_eligible = TRUE AND status = 'live'
 ORDER BY slug ASC
 """
 

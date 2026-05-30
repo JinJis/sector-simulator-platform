@@ -2,8 +2,34 @@
 
 from __future__ import annotations
 
+from typing import Any
+from markupsafe import Markup, escape
+
 from data_pipeline.admin import models as m
 from data_pipeline.admin.views._base import _BaseModelView
+
+
+from sqladmin.filters import StaticValuesFilter
+
+def triggering_job_formatter(obj: Any, prop: Any) -> Markup | str:
+    val = getattr(obj, prop, None)
+    if not val:
+        return ""
+    val_str = str(val).lower()
+    if val_str == "news":
+        cron_name = "News Ingest"
+        badge_class = "bg-primary-lt"
+    elif val_str in ("paper", "patent"):
+        cron_name = "Research Ingest"
+        badge_class = "bg-teal-lt"
+    elif val_str == "research_brief":
+        cron_name = "DR Digest / Orchestrator"
+        badge_class = "bg-purple-lt"
+    else:
+        cron_name = val_str.title()
+        badge_class = "bg-secondary-lt"
+        
+    return Markup(f'<span class="badge {badge_class}" title="Source: {escape(val_str)}">{escape(cron_name)}</span>')
 
 
 class SignalView(_BaseModelView, model=m.Signal):
@@ -34,6 +60,29 @@ class SignalView(_BaseModelView, model=m.Signal):
         m.Signal.is_highlight,
     ]
     column_default_sort = ("ingested_at", True)
+    
+    column_labels = {
+        "source_kind": "Triggering Ingest Job",
+    }
+    column_filters = [
+        StaticValuesFilter(
+            m.Signal.source_kind,
+            values=[
+                ("news", "News Ingest"),
+                ("paper", "Research Ingest (arXiv)"),
+                ("patent", "Research Ingest (USPTO)"),
+                ("research_brief", "DR Digest / Orchestrator"),
+            ],
+            title="Triggering Ingest Job",
+        ),
+    ]
+    column_formatters = {
+        m.Signal.source_kind: triggering_job_formatter,
+    }
+    column_formatters_detail = {
+        m.Signal.source_kind: triggering_job_formatter,
+    }
+    
     can_create = False
     can_edit = False
     can_delete = False
