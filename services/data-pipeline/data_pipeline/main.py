@@ -61,8 +61,6 @@ from apscheduler.events import (
     EVENT_JOB_SUBMITTED,
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -83,7 +81,12 @@ from data_pipeline.api import (
     refresh as api_refresh,
     signals as api_signals,
 )
-from data_pipeline.cron_specs import CRON_SPECS, enabled_key
+from data_pipeline.cron_specs import (
+    CRON_SPECS,
+    build_trigger,
+    enabled_key,
+    schedule_key,
+)
 from data_pipeline.crawl_run_repo import (
     PostgresCrawlRunRepository,
 )
@@ -113,12 +116,33 @@ from data_pipeline.repo import build_repository
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 log = logging.getLogger("data_pipeline")
 
-_DEFAULT_CRON = "30 8 * * *"  # 08:30 UTC = 17:30 KST
-# M46b — PredictionV2 resolver runs hourly so a 1-day prediction placed
-# at 10:00 UTC resolves the morning after the next-day close lands in
-# equity_quotes.
-_DEFAULT_RESOLVE_PREDICTIONS_V2_CRON = "5 * * * *"
 
+# Per-cron runtime prereqs. None means "always register"; the string
+# values name app.state attrs that must be not-None for the runner to
+# function. The boot loop in `lifespan` skips registration when the
+# prereq slot is None (e.g. DATABASE_URL unset → no signal_repo).
+_cron_prereq_attr: dict[str, str | None] = {
+    "refresh_quotes_daily": None,
+    "resolve_predictions_v2_hourly": "resolver_v2_repo",
+    "news_ingest_5min": "signal_repo",
+    "research_ingest_hourly": "signal_repo",
+    "recompute_feasibility_hourly": "signal_repo",
+    "digest_daily": "signal_repo",
+    "orchestrator_tick_15min": "crawl_runs_repo",
+}
+
+# id → runner function. Module-level so the boot loop doesn't have to
+# rebuild the dict per process and ruff stops flagging it as a
+# constant inside a function.
+_cron_runner: dict[str, Any] = {
+    "refresh_quotes_daily": run_refresh_job,
+    "resolve_predictions_v2_hourly": run_resolve_predictions_v2_job,
+    "news_ingest_5min": run_news_ingest_5min,
+    "research_ingest_hourly": run_research_ingest_hourly,
+    "recompute_feasibility_hourly": run_recompute_feasibility_job,
+    "digest_daily": run_digest_daily_job,
+    "orchestrator_tick_15min": run_orchestrator_tick_job,
+}
 
 def _build_source() -> DataSource:
     name = os.environ.get("INGEST_SOURCE", "yfinance").lower()
@@ -128,21 +152,13 @@ def _build_source() -> DataSource:
     return YFinanceSource()
 
 
-# Schedule on/off (`*_SCHEDULE`) env vars were removed in slice 13 —
-# every cron is always registered at boot, enabled state lives in the
-# job_configs table, admin UI is the toggle surface. Cron expressions
-# and interval values are still env-overridable until slice 12b moves
-# them to job_config too.
+# Schedule on/off + cron expressions / intervals all live in
+# `job_configs` after slice 14. The remaining env vars are operational
+# knobs that still drive runner behavior (USPTO toggle, signal source,
+# throttle) — those are slice 12c+ scope.
 _KNOWN_PIPELINE_ENVS = {
     "INGEST_SOURCE",
-    "INGEST_CRON_QUOTES",
     "INGEST_THROTTLE_MS",
-    "NEWS_INGEST_INTERVAL_MIN",
-    "RESEARCH_INGEST_CRON",
-    "RECOMPUTE_FEASIBILITY_CRON",
-    "ORCHESTRATOR_INTERVAL_MIN",
-    "DIGEST_CRON",
-    "RESOLVE_PREDICTIONS_V2_CRON",
     "ENABLE_USPTO",
 }
 
@@ -386,12 +402,12 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
             app.state.job_config = InMemoryJobConfigStore()
             app.state._job_config_pool = None
 
-    # Seed the per-cron `{id}.enabled` rows on first boot from the spec
-    # defaults. Idempotent — existing rows (operator's prior admin
-    # toggles) are preserved.
-    await seed_from_env(
-        app.state.job_config,
-        [
+    # Seed the per-cron `{id}.enabled` AND `{id}.schedule` rows on
+    # first boot from the spec defaults. Idempotent — existing rows
+    # (operator's prior admin toggles + reschedules) are preserved.
+    seed_keys: list[EnvSeedKey] = []
+    for spec in CRON_SPECS:
+        seed_keys.append(
             EnvSeedKey(
                 key=enabled_key(spec.id),
                 kind="schedule_toggle",
@@ -402,150 +418,91 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
                 ),
                 default_when_unset="on" if spec.default_enabled else "off",
             )
-            for spec in CRON_SPECS
-        ],
-    )
+        )
+        seed_keys.append(
+            EnvSeedKey(
+                key=schedule_key(spec.id),
+                kind=spec.schedule_kind,
+                group="cron_schedule",
+                description=(
+                    f"Schedule for {spec.label} — "
+                    + (
+                        "5-field crontab expression (UTC)."
+                        if spec.schedule_kind == "cron"
+                        else "interval in minutes (float allowed)."
+                    )
+                    + " Edited via the admin Queue + Crons page."
+                ),
+                default_when_unset=spec.default_schedule_value,
+            )
+        )
+    await seed_from_env(app.state.job_config, seed_keys)
 
-    # Build the scheduler unconditionally. Per-cron registrations below
-    # always add_job() and then pause_job() when the JobConfig flag says
-    # off — single source of truth is the DB, the .env *_SCHEDULE gates
-    # are gone (slice 13).
+    # Build the scheduler unconditionally. Schedule values + enabled
+    # state both come from `job_configs` (slice 14) — env vars for cron
+    # expressions / intervals are gone. The .env `*_SCHEDULE` toggles
+    # were already retired in slice 13.
     scheduler = AsyncIOScheduler(timezone="UTC")
     job_config = app.state.job_config
 
-    async def _register_with_enabled(
-        *, spec_id: str, runner: Any, trigger: Any, max_instances: int = 1
-    ) -> None:
-        """add_job() unconditionally, then pause_job() when the DB row
-        says off. Keeps the cron visible in the admin list either way —
-        operators can flip the toggle without rebuilding the scheduler.
-        """
+    for spec in CRON_SPECS:
+        # Prereq gate: when the runner needs an asyncpg-backed slot on
+        # app.state and that slot is None (e.g. DATABASE_URL unset),
+        # skip registration entirely — running the cron would only
+        # error in the runner.
+        prereq_attr = _cron_prereq_attr[spec.id]
+        if prereq_attr is not None and getattr(app.state, prereq_attr) is None:
+            log.info(
+                "data-pipeline: %s skipped (prereq app.state.%s is None)",
+                spec.id,
+                prereq_attr,
+            )
+            continue
+
+        # Schedule value: DB row (admin edit) → spec default.
+        sched_value = await job_config.get(
+            schedule_key(spec.id), default=spec.default_schedule_value
+        )
+        assert sched_value is not None  # default guarantees non-None
+        try:
+            trigger = build_trigger(spec.schedule_kind, sched_value)
+        except ValueError as exc:
+            log.error(
+                "data-pipeline: bad schedule for %s (kind=%s value=%r): %s "
+                "— falling back to spec default %r",
+                spec.id,
+                spec.schedule_kind,
+                sched_value,
+                exc,
+                spec.default_schedule_value,
+            )
+            trigger = build_trigger(spec.schedule_kind, spec.default_schedule_value)
+
         scheduler.add_job(
-            runner,
+            _cron_runner[spec.id],
             trigger=trigger,
             kwargs={"app": app},
-            id=spec_id,
+            id=spec.id,
             replace_existing=True,
-            max_instances=max_instances,
+            max_instances=1,
             coalesce=True,
         )
         enabled = await job_config.get_typed(
-            enabled_key(spec_id), default=True, kind="bool"
+            enabled_key(spec.id), default=True, kind="bool"
         )
         if not enabled:
-            scheduler.pause_job(spec_id)
+            scheduler.pause_job(spec.id)
             log.info(
-                "data-pipeline: %s registered (paused per job_config)", spec_id
+                "data-pipeline: %s registered schedule=%r (paused per job_config)",
+                spec.id,
+                sched_value,
             )
         else:
-            log.info("data-pipeline: %s registered (armed)", spec_id)
-
-    # Daily quote refresh — always registered. Cron expression still
-    # env-overridable (cron-expression edits are slice 12b scope).
-    quotes_cron = os.environ.get("INGEST_CRON_QUOTES", _DEFAULT_CRON)
-    try:
-        quotes_trigger = CronTrigger.from_crontab(quotes_cron, timezone="UTC")
-    except ValueError as e:
-        log.error("data-pipeline: bad INGEST_CRON_QUOTES=%r (%s)", quotes_cron, e)
-    else:
-        await _register_with_enabled(
-            spec_id="refresh_quotes_daily",
-            runner=run_refresh_job,
-            trigger=quotes_trigger,
-        )
-
-    # M46b — hourly PredictionV2 resolver. Skipped when DATABASE_URL is
-    # absent (resolver_v2_repo is None) so dev compose without a DB
-    # doesn't error-loop.
-    if app.state.resolver_v2_repo is not None:
-        resolve_v2_cron = os.environ.get(
-            "RESOLVE_PREDICTIONS_V2_CRON", _DEFAULT_RESOLVE_PREDICTIONS_V2_CRON
-        )
-        try:
-            resolve_v2_trigger = CronTrigger.from_crontab(
-                resolve_v2_cron, timezone="UTC"
+            log.info(
+                "data-pipeline: %s registered schedule=%r (armed)",
+                spec.id,
+                sched_value,
             )
-        except ValueError as e:
-            log.error(
-                "data-pipeline: bad RESOLVE_PREDICTIONS_V2_CRON=%r (%s)",
-                resolve_v2_cron,
-                e,
-            )
-        else:
-            await _register_with_enabled(
-                spec_id="resolve_predictions_v2_hourly",
-                runner=run_resolve_predictions_v2_job,
-                trigger=resolve_v2_trigger,
-            )
-
-    # Tiered signal ingest — requires signal_repo (asyncpg pool). When
-    # DATABASE_URL is absent these stay un-registered (the runners
-    # would no-op anyway).
-    if app.state.signal_repo is not None:
-        news_interval = float(os.environ.get("NEWS_INGEST_INTERVAL_MIN", "5"))
-        await _register_with_enabled(
-            spec_id="news_ingest_5min",
-            runner=run_news_ingest_5min,
-            trigger=IntervalTrigger(minutes=news_interval),
-        )
-
-        research_cron = os.environ.get("RESEARCH_INGEST_CRON", "7 * * * *")
-        try:
-            research_trigger = CronTrigger.from_crontab(
-                research_cron, timezone="UTC"
-            )
-        except ValueError as e:
-            log.error(
-                "data-pipeline: bad RESEARCH_INGEST_CRON=%r (%s)", research_cron, e
-            )
-        else:
-            await _register_with_enabled(
-                spec_id="research_ingest_hourly",
-                runner=run_research_ingest_hourly,
-                trigger=research_trigger,
-            )
-
-        recompute_cron = os.environ.get(
-            "RECOMPUTE_FEASIBILITY_CRON", "25 * * * *"
-        )
-        try:
-            recompute_trigger = CronTrigger.from_crontab(
-                recompute_cron, timezone="UTC"
-            )
-        except ValueError as e:
-            log.error(
-                "data-pipeline: bad RECOMPUTE_FEASIBILITY_CRON=%r (%s)",
-                recompute_cron,
-                e,
-            )
-        else:
-            await _register_with_enabled(
-                spec_id="recompute_feasibility_hourly",
-                runner=run_recompute_feasibility_job,
-                trigger=recompute_trigger,
-            )
-
-        digest_cron = os.environ.get("DIGEST_CRON", "0 6 * * *")
-        try:
-            digest_trigger = CronTrigger.from_crontab(digest_cron, timezone="UTC")
-        except ValueError as e:
-            log.error("data-pipeline: bad DIGEST_CRON=%r (%s)", digest_cron, e)
-        else:
-            await _register_with_enabled(
-                spec_id="digest_daily",
-                runner=run_digest_daily_job,
-                trigger=digest_trigger,
-            )
-
-    # M49f — orchestrator opportunistic picker. Requires crawl_runs_repo
-    # (asyncpg pool) for run-state persistence.
-    if app.state.crawl_runs_repo is not None:
-        orch_interval = float(os.environ.get("ORCHESTRATOR_INTERVAL_MIN", "15"))
-        await _register_with_enabled(
-            spec_id="orchestrator_tick_15min",
-            runner=run_orchestrator_tick_job,
-            trigger=IntervalTrigger(minutes=orch_interval),
-        )
 
     if scheduler.get_jobs():
         # Wire the cron-history buffer BEFORE start() so the very

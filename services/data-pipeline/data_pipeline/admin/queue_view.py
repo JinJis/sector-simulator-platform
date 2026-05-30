@@ -38,7 +38,14 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 
 from data_pipeline.admin.cron_history import CronExecution, CronHistoryBuffer
-from data_pipeline.cron_specs import CRON_SPECS, DISPLAY_ORDER, enabled_key
+from data_pipeline.cron_specs import (
+    CRON_SPECS,
+    DISPLAY_ORDER,
+    SPEC_BY_ID,
+    build_trigger,
+    enabled_key,
+    schedule_key,
+)
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +57,12 @@ log = logging.getLogger(__name__)
 # (slice 13). Re-derive the legacy dict/order shapes the rest of this
 # module + the template use, so the change is local to one import.
 JOB_INFO: dict[str, dict[str, str]] = {
-    spec.id: {"label": spec.label, "cadence": spec.cadence, "note": spec.note}
+    spec.id: {
+        "label": spec.label,
+        "cadence": spec.cadence,
+        "note": spec.note,
+        "schedule_kind": spec.schedule_kind,
+    }
     for spec in CRON_SPECS
 }
 JOB_ORDER: dict[str, int] = DISPLAY_ORDER
@@ -61,8 +73,8 @@ class _SchedulerRowVM:
     """Per-cron-job view model the Jinja template renders into one
     table row. Carries the bits the operator needs at a glance — label
     / cadence / paused state / next-run wall-clock / latest execution
-    outcome. Slice 13 removed the `env_gate` field — pause/resume is
-    DB-backed via JobConfig, no more env-as-permanent-off-switch."""
+    outcome — plus the slice 14 schedule edit fields (kind +
+    current_value) so the inline form can render the right widget."""
 
     id: str
     label: str
@@ -70,6 +82,12 @@ class _SchedulerRowVM:
     note: str
     paused: bool
     next_run_iso: str | None
+    # Slice 14 — JobConfig-backed schedule, surfaced in the inline
+    # edit form. `schedule_kind` is "cron" or "interval_min";
+    # `current_schedule` is the raw string the operator can edit
+    # (e.g. "30 8 * * *" for cron, "5" for interval_min).
+    schedule_kind: str
+    current_schedule: str
     # Execution history from the in-memory CronHistoryBuffer. `last`
     # drives the per-row badge; `recent` is shown in a per-row
     # disclosure so the operator can scan recent outcomes without
@@ -129,19 +147,34 @@ async def _queue_snapshot(app: FastAPI) -> _QueueVM:
     )
 
 
-def _scheduler_rows(app: FastAPI) -> tuple[list[_SchedulerRowVM], bool]:
+async def _scheduler_rows(app: FastAPI) -> tuple[list[_SchedulerRowVM], bool]:
     """Return (armed-rows, scheduler_present). The rows list is sorted
-    by `JOB_ORDER`; unknown ids fall to the end alpha-sorted."""
+    by `JOB_ORDER`; unknown ids fall to the end alpha-sorted. Reads
+    the current schedule value from `app.state.job_config` so the
+    inline edit form renders what's actually driving the trigger."""
     scheduler: AsyncIOScheduler | None = getattr(app.state, "scheduler", None)
     if scheduler is None:
         return [], False
     history: CronHistoryBuffer | None = getattr(app.state, "cron_history", None)
+    job_config = getattr(app.state, "job_config", None)
     rows: list[_SchedulerRowVM] = []
     for job in scheduler.get_jobs():
         info = JOB_INFO.get(
             job.id,
-            {"label": job.id, "cadence": "—", "note": ""},
+            {
+                "label": job.id,
+                "cadence": "—",
+                "note": "",
+                "schedule_kind": "cron",
+            },
         )
+        spec = SPEC_BY_ID.get(job.id)
+        default_sched = spec.default_schedule_value if spec is not None else ""
+        current_sched = default_sched
+        if job_config is not None:
+            current_sched = await job_config.get(
+                schedule_key(job.id), default=default_sched
+            ) or default_sched
         last = history.last(job.id) if history is not None else None
         recent = history.recent(job.id, limit=8) if history is not None else []
         rows.append(
@@ -158,6 +191,8 @@ def _scheduler_rows(app: FastAPI) -> tuple[list[_SchedulerRowVM], bool]:
                     if job.next_run_time is not None
                     else None
                 ),
+                schedule_kind=info["schedule_kind"],
+                current_schedule=current_sched,
                 last=last,
                 recent=recent,
             )
@@ -183,7 +218,7 @@ class QueueView(BaseView):
     async def queue_page(self, request: Request) -> Response:
         app = _parent_app(request)
         queue_vm = await _queue_snapshot(app)
-        rows, scheduler_present = _scheduler_rows(app)
+        rows, scheduler_present = await _scheduler_rows(app)
         msg = request.query_params.get("msg", "")
         return await self.templates.TemplateResponse(
             request,
@@ -214,6 +249,86 @@ class QueueView(BaseView):
     @expose("/queue/scheduler/run/{job_id}", methods=["POST"])
     async def run_now(self, request: Request) -> Response:
         return await self._toggle(request, action="run")
+
+    @expose("/queue/scheduler/reschedule/{job_id}", methods=["POST"])
+    async def reschedule(self, request: Request) -> Response:
+        """Slice 14 — edit the schedule value for a cron. Validates
+        per-spec (cron expression or float minutes), upserts the
+        ``{id}.schedule`` JobConfig row, then calls
+        ``scheduler.reschedule_job`` for live apply.
+
+        Failure modes — all redirect back with `?msg=...`:
+            - Unknown job id (spec not in SPEC_BY_ID).
+            - Empty schedule value.
+            - Bad cron expression / non-positive interval.
+            - Scheduler not running (DATABASE_URL absent so no jobs
+              registered)."""
+        job_id = request.path_params["job_id"]
+        form = await request.form()
+        schedule_value = str(form.get("schedule", "")).strip()
+
+        spec = SPEC_BY_ID.get(job_id)
+        if spec is None:
+            return _redirect_with_msg(
+                request, f"reschedule failed: unknown cron id {job_id!r}"
+            )
+        if not schedule_value:
+            return _redirect_with_msg(
+                request, f"reschedule {job_id} failed: schedule value is empty"
+            )
+
+        try:
+            trigger = build_trigger(spec.schedule_kind, schedule_value)
+        except ValueError as exc:
+            return _redirect_with_msg(
+                request,
+                f"reschedule {job_id} failed: invalid "
+                f"{spec.schedule_kind} value {schedule_value!r} ({exc})",
+            )
+
+        app = _parent_app(request)
+        scheduler: AsyncIOScheduler | None = getattr(app.state, "scheduler", None)
+        if scheduler is None:
+            return _redirect_with_msg(request, "scheduler not running")
+        try:
+            scheduler.reschedule_job(job_id, trigger=trigger)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "queue view: reschedule on %s failed: %s", job_id, exc
+            )
+            return _redirect_with_msg(
+                request,
+                f"reschedule {job_id} failed: {exc}",
+            )
+        # Persist AFTER reschedule succeeds, so a bad value never
+        # writes to the DB. Same pattern as the enable/disable toggle.
+        store = getattr(app.state, "job_config", None)
+        if store is not None:
+            await store.upsert(
+                key=schedule_key(job_id),
+                value=schedule_value,
+                kind=spec.schedule_kind,
+                group="cron_schedule",
+                description=(
+                    f"Schedule for {spec.label}. "
+                    + (
+                        "5-field crontab expression (UTC)."
+                        if spec.schedule_kind == "cron"
+                        else "interval in minutes (float allowed)."
+                    )
+                ),
+                updated_by="admin:queue",
+            )
+        log.info(
+            "queue view: %s rescheduled to %s=%r",
+            job_id,
+            spec.schedule_kind,
+            schedule_value,
+        )
+        return _redirect_with_msg(
+            request,
+            f"rescheduled {job_id} → {spec.schedule_kind}={schedule_value!r}",
+        )
 
     async def _toggle(self, request: Request, *, action: str) -> Response:
         """Shared body for pause/resume/run. Mutates the running

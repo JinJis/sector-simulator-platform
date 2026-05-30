@@ -108,7 +108,7 @@
           <tr>
             <th>State</th>
             <th>Job</th>
-            <th>Cadence</th>
+            <th>Schedule</th>
             <th>Next run</th>
             <th>Last run</th>
             <th class="text-end">Actions</th>
@@ -131,7 +131,29 @@
               <div class="text-muted small">{{ row.note }}</div>
               {% endif %}
             </td>
-            <td class="text-muted">{{ row.cadence }}</td>
+            <td>
+              {# Inline edit form. Submitting calls
+                 scheduler.reschedule_job() and persists to JobConfig
+                 atomically — invalid values redirect back with an
+                 error banner without ever touching the DB. #}
+              <form method="post"
+                    action="{{ url_for('admin:reschedule', job_id=row.id) }}"
+                    class="d-flex gap-1 align-items-center">
+                <input type="text"
+                       name="schedule"
+                       value="{{ row.current_schedule }}"
+                       class="form-control form-control-sm font-monospace"
+                       style="min-width: 12rem;"
+                       placeholder="{{ '30 8 * * *' if row.schedule_kind == 'cron' else '5' }}"
+                       required>
+                <button type="submit" class="btn btn-sm btn-outline-secondary"
+                        title="Save + live reschedule">save</button>
+              </form>
+              <div class="text-muted small mt-1">
+                {{ row.cadence }} ·
+                <span class="font-monospace">{{ row.schedule_kind }}</span>
+              </div>
+            </td>
             <td class="font-monospace small">
               {% if row.next_run_iso %}
               {{ row.next_run_iso | kst('%H:%M:%S') }} {{ kst_label }}
