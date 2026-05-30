@@ -254,54 +254,15 @@
     {% else %}
     <div class="card-body">
       <p class="text-muted text-center mb-0">
-        No armed cron jobs. Check the data-pipeline container env (e.g.
-        <code>INGEST_SCHEDULE=on</code>) and restart.
+        No cron jobs registered. The data-pipeline lifespan registers
+        every cron at boot — an empty list usually means
+        <code>DATABASE_URL</code> is unset (so <code>signal_repo</code>
+        / <code>crawl_runs_repo</code> are None and the dependent crons
+        skip registration). Check <code>docker compose logs
+        data-pipeline | grep registered</code>.
       </p>
     </div>
     {% endif %}
   </div>
 </div>
-
-{# ─── Env-gated jobs that aren't armed ───────────────────────────── #}
-{% if disabled %}
-<div class="col-12">
-  <div class="card">
-    <div class="card-header">
-      <h3 class="card-title">Disabled (env gate)</h3>
-      <div class="ms-auto text-muted small">
-        Flip the env to <code>on</code> in <code>.env</code> and restart
-        the data-pipeline container.
-      </div>
-    </div>
-    <div class="table-responsive">
-      <table class="table table-vcenter card-table">
-        <thead>
-          <tr>
-            <th>Job</th>
-            <th>Cadence</th>
-            <th>Env var</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for d in disabled %}
-          <tr>
-            <td>
-              <div class="fw-bold text-muted">{{ d.label }}</div>
-              <div class="text-muted small font-monospace">{{ d.id }}</div>
-              {% if d.note %}
-              <div class="text-muted small">{{ d.note }}</div>
-              {% endif %}
-            </td>
-            <td class="text-muted">{{ d.cadence }}</td>
-            <td>
-              <code>{{ d.env_gate }}=on</code>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-{% endif %}
 {% endblock %}

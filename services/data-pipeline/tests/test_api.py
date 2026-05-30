@@ -62,8 +62,12 @@ class TestHealth:
         assert r.status_code == 200
         body = r.json()
         assert body["status"] == "ok"
-        # Scheduler is off in tests.
-        assert body["scheduler_armed"] is False
+        # Slice 13: scheduler is always built at boot — every cron
+        # registers, the JobConfig-backed enabled flag decides
+        # whether it ticks. Even without DATABASE_URL the no-DB-
+        # prereq cron (`refresh_quotes_daily`) still registers.
+        assert body["scheduler_armed"] is True
+        assert "refresh_quotes_daily" in body["next_runs"]
         # No run has happened yet.
         assert body["last_refresh"] is None
 

@@ -38,6 +38,7 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 
 from data_pipeline.admin.cron_history import CronExecution, CronHistoryBuffer
+from data_pipeline.cron_specs import CRON_SPECS, DISPLAY_ORDER, enabled_key
 
 log = logging.getLogger(__name__)
 
@@ -45,65 +46,14 @@ log = logging.getLogger(__name__)
 # Mirror of `apps/admin/.../CronScheduleList.tsx :: JOB_INFO`. Keeping
 # the two in sync is a short-lived problem — apps/admin gets deleted in
 # step 5 of the M55 cockpit migration. After that this is the only copy.
+# Per-cron metadata + display order live in data_pipeline.cron_specs
+# (slice 13). Re-derive the legacy dict/order shapes the rest of this
+# module + the template use, so the change is local to one import.
 JOB_INFO: dict[str, dict[str, str]] = {
-    "news_ingest_5min": {
-        "label": "News ingest",
-        "cadence": "every 5 min",
-        "note": "crawl4ai over Yahoo + Naver + Finviz per vision ticker",
-        "env_gate": "NEWS_INGEST_SCHEDULE",
-    },
-    "research_ingest_hourly": {
-        "label": "Research ingest",
-        "cadence": "hourly · :07",
-        "note": "arXiv + USPTO per capability keyword set",
-        "env_gate": "RESEARCH_INGEST_SCHEDULE",
-    },
-    "recompute_feasibility_hourly": {
-        "label": "Recompute feasibility",
-        "cadence": "hourly · :25",
-        "note": "ScoreUpdater agent per capability → vision rollup",
-        "env_gate": "",
-    },
-    "digest_daily": {
-        # 06:00 UTC = 15:00 KST default. Cadence string shown in
-        # display-tz; operators in other timezones get the conversion
-        # via ADMIN_DISPLAY_TZ.
-        "label": "DR digest (grounded)",
-        "cadence": "daily · 15:00 KST default",
-        "note": "gemini-3.1-pro-preview synthesis per vision · ~$0.30/run",
-        "env_gate": "DIGEST_SCHEDULE",
-    },
-    "orchestrator_tick_15min": {
-        "label": "Orchestrator picker",
-        "cadence": "every 15 min",
-        "note": "M49f opportunistic fetcher dispatch",
-        "env_gate": "ORCHESTRATOR_SCHEDULE",
-    },
-    "refresh_quotes_daily": {
-        # 08:30 UTC = 17:30 KST default.
-        "label": "Refresh quotes",
-        "cadence": "daily · 17:30 KST default",
-        "note": "yfinance equity snapshot for PredictionV2 anchor",
-        "env_gate": "INGEST_SCHEDULE",
-    },
-    "resolve_predictions_v2_hourly": {
-        "label": "Resolve predictions v2",
-        "cadence": "hourly · :05",
-        "note": "M46b band-based prediction resolver",
-        "env_gate": "",
-    },
+    spec.id: {"label": spec.label, "cadence": spec.cadence, "note": spec.note}
+    for spec in CRON_SPECS
 }
-
-# Stable display order; falls back to alpha for unknown ids.
-JOB_ORDER: dict[str, int] = {
-    "news_ingest_5min": 0,
-    "orchestrator_tick_15min": 1,
-    "resolve_predictions_v2_hourly": 2,
-    "research_ingest_hourly": 3,
-    "recompute_feasibility_hourly": 4,
-    "refresh_quotes_daily": 5,
-    "digest_daily": 6,
-}
+JOB_ORDER: dict[str, int] = DISPLAY_ORDER
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,14 +61,13 @@ class _SchedulerRowVM:
     """Per-cron-job view model the Jinja template renders into one
     table row. Carries the bits the operator needs at a glance — label
     / cadence / paused state / next-run wall-clock / latest execution
-    outcome — and the env gate name to point them at the permanent off
-    switch."""
+    outcome. Slice 13 removed the `env_gate` field — pause/resume is
+    DB-backed via JobConfig, no more env-as-permanent-off-switch."""
 
     id: str
     label: str
     cadence: str
     note: str
-    env_gate: str
     paused: bool
     next_run_iso: str | None
     # Execution history from the in-memory CronHistoryBuffer. `last`
@@ -191,7 +140,7 @@ def _scheduler_rows(app: FastAPI) -> tuple[list[_SchedulerRowVM], bool]:
     for job in scheduler.get_jobs():
         info = JOB_INFO.get(
             job.id,
-            {"label": job.id, "cadence": "—", "note": "", "env_gate": ""},
+            {"label": job.id, "cadence": "—", "note": ""},
         )
         last = history.last(job.id) if history is not None else None
         recent = history.recent(job.id, limit=8) if history is not None else []
@@ -201,7 +150,6 @@ def _scheduler_rows(app: FastAPI) -> tuple[list[_SchedulerRowVM], bool]:
                 label=info["label"],
                 cadence=info["cadence"],
                 note=info["note"],
-                env_gate=info["env_gate"],
                 # APScheduler stores `next_run_time=None` while a job is
                 # paused — that's the read we surface as "paused".
                 paused=job.next_run_time is None,
@@ -216,19 +164,6 @@ def _scheduler_rows(app: FastAPI) -> tuple[list[_SchedulerRowVM], bool]:
         )
     rows.sort(key=lambda r: (JOB_ORDER.get(r.id, 99), r.id))
     return rows, True
-
-
-def _disabled_gates(armed_ids: set[str]) -> list[dict[str, str]]:
-    """Known env-gated jobs that the lifespan chose NOT to arm — useful
-    for operators who forgot the env var name. Returned in
-    JOB_ORDER then alpha order."""
-    disabled = [
-        {"id": jid, **info}
-        for jid, info in JOB_INFO.items()
-        if info.get("env_gate") and jid not in armed_ids
-    ]
-    disabled.sort(key=lambda r: (JOB_ORDER.get(r["id"], 99), r["id"]))
-    return disabled
 
 
 class QueueView(BaseView):
@@ -249,8 +184,6 @@ class QueueView(BaseView):
         app = _parent_app(request)
         queue_vm = await _queue_snapshot(app)
         rows, scheduler_present = _scheduler_rows(app)
-        armed_ids = {r.id for r in rows if not r.paused}
-        disabled = _disabled_gates(armed_ids)
         msg = request.query_params.get("msg", "")
         return await self.templates.TemplateResponse(
             request,
@@ -258,14 +191,13 @@ class QueueView(BaseView):
             context={
                 "title": "Queue + Crons",
                 "subtitle": (
-                    "ARQ depth + APScheduler armed jobs. "
-                    "Pause/resume mutates the running scheduler; permanent off "
-                    "is the env gate."
+                    "ARQ depth + every cron's live state. Pause/resume "
+                    "writes to the job_configs table so the toggle "
+                    "survives container restarts."
                 ),
                 "queue": queue_vm,
                 "scheduler_present": scheduler_present,
                 "rows": rows,
-                "disabled": disabled,
                 "now_utc": datetime.now(UTC).isoformat(timespec="seconds"),
                 "msg": msg,
             },
@@ -285,9 +217,9 @@ class QueueView(BaseView):
 
     async def _toggle(self, request: Request, *, action: str) -> Response:
         """Shared body for pause/resume/run. Mutates the running
-        APScheduler. We don't surface raw exceptions to the operator —
-        instead we redirect back with `?msg=...` so the page banner
-        shows the outcome.
+        APScheduler AND (for pause/resume) persists the new enabled
+        state to job_configs so the toggle survives a container
+        restart. `run` is a one-shot kick — no DB write.
         """
         job_id = request.path_params["job_id"]
         app = _parent_app(request)
@@ -297,10 +229,12 @@ class QueueView(BaseView):
         try:
             if action == "pause":
                 scheduler.pause_job(job_id)
-                outcome = f"paused {job_id}"
+                await _persist_enabled(app, job_id=job_id, enabled=False)
+                outcome = f"paused {job_id} (persisted)"
             elif action == "resume":
                 scheduler.resume_job(job_id)
-                outcome = f"resumed {job_id}"
+                await _persist_enabled(app, job_id=job_id, enabled=True)
+                outcome = f"resumed {job_id} (persisted)"
             elif action == "run":
                 # `modify_job(next_run_time=now)` is APScheduler's
                 # idiomatic "run as soon as possible" — works regardless
@@ -314,6 +248,26 @@ class QueueView(BaseView):
             outcome = f"{action} on {job_id} failed: {exc}"
         log.info("queue view: %s", outcome)
         return _redirect_with_msg(request, outcome)
+
+
+async def _persist_enabled(
+    app: FastAPI, *, job_id: str, enabled: bool
+) -> None:
+    """Write the new enabled flag to job_configs. Silent no-op when
+    the JobConfigStore isn't on app.state (e.g., DATABASE_URL unset
+    fell back to the in-memory variant — the boot loop still has the
+    correct state from default_enabled, restart picks the same
+    defaults)."""
+    store = getattr(app.state, "job_config", None)
+    if store is None:
+        return
+    await store.upsert(
+        key=enabled_key(job_id),
+        value="on" if enabled else "off",
+        kind="schedule_toggle",
+        group="cron_enabled",
+        updated_by="admin:queue",
+    )
 
 
 def _redirect_with_msg(request: Request, msg: str) -> RedirectResponse:
