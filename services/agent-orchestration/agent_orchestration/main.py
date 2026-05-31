@@ -26,7 +26,7 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Any
 
-from agent_tools import CostMeter, LLMClient
+from agent_tools import CostMeter, LLMClient, PricedUsage
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -393,12 +393,18 @@ def create_app() -> FastAPI:
         """
         from agent_orchestration.schemas import PromptValidatorRunResult
 
+        runner: WorkflowRunner = app.state.runner
         llm: LLMClient = _require_llm(app)
         workflow = PromptValidatorWorkflow(llm=llm)
-        cost_meter = CostMeter()
         t0 = time.perf_counter()
+
+        async def run_fn(meter: CostMeter):
+            return await workflow.run(req, cost_meter=meter)
+
         try:
-            validation = await workflow.run(req, cost_meter=cost_meter)
+            validation, record = await runner.run_synchronous(
+                kind=workflow.kind, request=req, run_fn=run_fn
+            )
         except Exception as e:
             log.exception("prompt-validator failed: %s", e)
             raise HTTPException(
@@ -407,7 +413,7 @@ def create_app() -> FastAPI:
         duration_ms = int((time.perf_counter() - t0) * 1000)
         return PromptValidatorRunResult(
             validation=validation,
-            cost_usd=cost_meter.total_usd,
+            cost_usd=record.cost_usd,
             duration_ms=duration_ms,
         )
 
@@ -423,12 +429,18 @@ def create_app() -> FastAPI:
         initial feasibility). Deep tier; cost target <$0.50 per call.
         Admin must approve the resulting draft before it's persisted.
         """
+        runner: WorkflowRunner = app.state.runner
         llm: LLMClient = _require_llm(app)
         workflow = VisionDecompositionWorkflow(llm=llm)
-        cost_meter = CostMeter()
         t0 = time.perf_counter()
+
+        async def run_fn(meter: CostMeter):
+            return await workflow.run(req, cost_meter=meter)
+
         try:
-            draft = await workflow.run(req, cost_meter=cost_meter)
+            draft, record = await runner.run_synchronous(
+                kind=workflow.kind, request=req, run_fn=run_fn
+            )
         except Exception as e:
             log.exception("vision-decomposition failed: %s", e)
             raise HTTPException(
@@ -437,7 +449,7 @@ def create_app() -> FastAPI:
         duration_ms = int((time.perf_counter() - t0) * 1000)
         return VisionDecompositionRunResult(
             draft=draft,
-            cost_usd=cost_meter.total_usd,
+            cost_usd=record.cost_usd,
             duration_ms=duration_ms,
         )
 
@@ -455,14 +467,32 @@ def create_app() -> FastAPI:
         prompt rejection; gate failures still return the (un-normalized)
         draft so admin can see what went wrong.
         """
+        runner: WorkflowRunner = app.state.runner
         llm: LLMClient = _require_llm(app)
         conductor = VisionBuilderConductor(llm=llm)
-        try:
-            result = await conductor.run(
+
+        async def run_fn(meter: CostMeter):
+            res = await conductor.run(
                 prompt=req.prompt,
                 existing_vision_slugs=req.existing_vision_slugs,
                 existing_actor_keys=req.existing_actor_keys,
                 research_brief=req.research_brief,
+            )
+            meter.record(
+                PricedUsage(
+                    model="VisionBuilderConductor",
+                    input_tokens=0,
+                    output_tokens=0,
+                    cache_creation_input_tokens=0,
+                    cache_read_input_tokens=0,
+                    cost_usd=res.total_cost_usd,
+                )
+            )
+            return res
+
+        try:
+            result, record = await runner.run_synchronous(
+                kind="VisionBuilderConductor", request=req, run_fn=run_fn
             )
         except Exception as e:
             # Surface the exception class + message + the snapshot of
@@ -538,12 +568,18 @@ def create_app() -> FastAPI:
         Capability.signal_keywords column so the M39 ingest cron
         picks them up on the next run.
         """
+        runner: WorkflowRunner = app.state.runner
         llm: LLMClient = _require_llm(app)
         workflow = DataSourceSelectorWorkflow(llm=llm)
-        cost_meter = CostMeter()
         t0 = time.perf_counter()
+
+        async def run_fn(meter: CostMeter):
+            return await workflow.run(req, cost_meter=meter)
+
         try:
-            config = await workflow.run(req, cost_meter=cost_meter)
+            config, record = await runner.run_synchronous(
+                kind=workflow.kind, request=req, run_fn=run_fn
+            )
         except Exception as e:
             log.exception("data-source-selector failed: %s", e)
             raise HTTPException(
@@ -552,7 +588,7 @@ def create_app() -> FastAPI:
         duration_ms = int((time.perf_counter() - t0) * 1000)
         return DataSourceSelectorRunResult(
             config=config,
-            cost_usd=cost_meter.total_usd,
+            cost_usd=record.cost_usd,
             duration_ms=duration_ms,
         )
 

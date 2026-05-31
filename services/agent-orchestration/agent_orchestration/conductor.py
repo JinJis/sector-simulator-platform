@@ -145,6 +145,24 @@ class VisionBuilderResult:
     total_cost_usd: float
     total_duration_ms: int
 
+    def model_dump(self) -> dict[str, Any]:
+        import dataclasses
+        from pydantic import BaseModel
+        from typing import Any
+
+        def _dump(val: Any) -> Any:
+            if isinstance(val, BaseModel):
+                return val.model_dump()
+            if dataclasses.is_dataclass(val):
+                return {f.name: _dump(getattr(val, f.name)) for f in dataclasses.fields(val)}
+            if isinstance(val, list):
+                return [_dump(x) for x in val]
+            if isinstance(val, dict):
+                return {k: _dump(v) for k, v in val.items()}
+            return val
+
+        return _dump(self)
+
 
 class VisionBuilderConductor:
     """Stitches the four stages together with per-stage cost metering.
