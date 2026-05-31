@@ -274,12 +274,12 @@ def _summarize_draft(draft: dict[str, Any]) -> _DraftSummary:
 class VisionBuilderView(BaseView):
     """Sidebar entry → multi-step LLM wizard for adding a new Vision.
 
-    `category="Vision"` slots it next to the read-only Sector / Capability
+    `category="Jobs"` slots it next to the read-only Sector / Capability
     list. `identity="vision-builder"` keeps URL paths human-readable."""
 
     name = "Vision Builder"
     icon = "fa-solid fa-wand-magic-sparkles"
-    category = "Operations"
+    category = "Jobs"
     identity = "vision-builder"
 
     async def _render_prompt(

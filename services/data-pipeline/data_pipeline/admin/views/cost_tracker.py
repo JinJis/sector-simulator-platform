@@ -33,7 +33,7 @@ def _parent_app(request: Request) -> FastAPI:
 class LLMCostTrackerView(BaseView):
     name = "LLM Costs Tracker"
     icon = "fa-solid fa-coins"
-    category = "Operations"
+    category = "Financial"
     identity = "llm-costs"
 
     @expose("/llm-costs", methods=["GET"])

@@ -25,4 +25,4 @@ class JobConfigView(ModelView, model=JobConfig):
     name = "Job Config"
     plural_name = "Job Configs"
     icon = "fa-solid fa-sliders"
-    category = "Operations"
+    category = "Jobs"

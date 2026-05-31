@@ -102,7 +102,7 @@ class CrawlRunView(_BaseModelView, model=m.CrawlRun):
     name = "Crawl run"
     name_plural = "Crawl runs"
     icon = "fa-solid fa-spinner"
-    category = "Operations"
+    category = "Jobs"
 
     column_list = [
         m.CrawlRun.id,

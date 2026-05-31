@@ -10,7 +10,7 @@ class VisionFeasibilityView(_BaseModelView, model=m.VisionFeasibility):
     name = "Feasibility snapshot"
     name_plural = "Feasibility snapshots"
     icon = "fa-solid fa-gauge-high"
-    category = "Vision"
+    category = "Tables"
 
     column_list = [
         m.VisionFeasibility.sector_slug,

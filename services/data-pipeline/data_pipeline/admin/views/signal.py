@@ -36,7 +36,7 @@ class SignalView(_BaseModelView, model=m.Signal):
     name = "Signal"
     name_plural = "Signals"
     icon = "fa-solid fa-tower-broadcast"
-    category = "Vision"
+    category = "Tables"
 
     column_list = [
         m.Signal.sector_slug,

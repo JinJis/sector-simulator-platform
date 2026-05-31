@@ -10,7 +10,7 @@ class EconomicsDatapointView(_BaseModelView, model=m.EconomicsDatapoint):
     name = "Economics datapoint"
     name_plural = "Economics datapoints"
     icon = "fa-solid fa-coins"
-    category = "Vision"
+    category = "Tables"
 
     column_list = [
         m.EconomicsDatapoint.sector_slug,

@@ -15,7 +15,7 @@ class CapabilityView(_BaseModelView, model=m.Capability):
     name = "Capability"
     name_plural = "Capabilities"
     icon = "fa-solid fa-cubes"
-    category = "Vision"
+    category = "Tables"
 
     column_list = [
         m.Capability.sector_slug,
@@ -76,7 +76,7 @@ class CapabilityScoreView(_BaseModelView, model=m.CapabilityScore):
     name = "Capability score"
     name_plural = "Capability scores"
     icon = "fa-solid fa-chart-line"
-    category = "Vision"
+    category = "Tables"
 
     # `capability` is a SQLAlchemy relationship column — SQLAdmin renders
     # the related Capability's __str__ ("name [sector/key]") so the

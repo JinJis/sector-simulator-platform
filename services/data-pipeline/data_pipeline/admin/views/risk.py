@@ -25,7 +25,7 @@ class RiskView(_BaseModelView, model=m.Risk):
     name = "Risk"
     name_plural = "Risks"
     icon = "fa-solid fa-triangle-exclamation"
-    category = "Vision"
+    category = "Tables"
 
     column_list = [
         m.Risk.sector_slug,

@@ -27,7 +27,7 @@ class ActorView(_BaseModelView, model=m.Actor):
     name = "Actor"
     name_plural = "Actors"
     icon = "fa-solid fa-building"
-    category = "Vision"
+    category = "Tables"
 
     column_list = [
         m.Actor.key,
@@ -64,7 +64,7 @@ class VisionActorView(_BaseModelView, model=m.VisionActor):
     name = "Vision↔Actor"
     name_plural = "Vision↔Actors"
     icon = "fa-solid fa-link"
-    category = "Vision"
+    category = "Tables"
 
     column_list = [
         m.VisionActor.sector_slug,
@@ -113,7 +113,7 @@ class CapabilityActorView(_BaseModelView, model=m.CapabilityActor):
     name = "Capability↔Actor"
     name_plural = "Capability↔Actors"
     icon = "fa-solid fa-link"
-    category = "Vision"
+    category = "Tables"
 
     column_list = [
         m.CapabilityActor.capability_id,

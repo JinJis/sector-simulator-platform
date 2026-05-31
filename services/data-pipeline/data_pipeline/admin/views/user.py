@@ -12,7 +12,7 @@ class UserView(_BaseModelView, model=m.User):
     name = "User"
     name_plural = "Users"
     icon = "fa-solid fa-user"
-    category = "Operations"
+    category = "Audits"
 
     column_list = [
         m.User.email,
