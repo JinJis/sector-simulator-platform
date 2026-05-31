@@ -181,6 +181,18 @@ curl -X POST 'http://localhost:8001/trpc/feasibility.recompute' \
   -d '{"sector_slug":"space-data-center"}'
 ```
 
+### Generate marketing copy (bilingual, product-led)
+
+```bash
+# Builds a source-grounded snapshot per vision (binding constraint +
+# notable signal + lead actor) and calls the marketing-content agent for
+# ready-to-post ko+en Threads + Instagram copy. Does NOT auto-publish —
+# returns the copy for operator review. Same path the (default-off)
+# `marketing_digest_daily` cron uses; arm it from the admin Queue page.
+curl -X POST http://localhost:8003/jobs/marketing-digest
+curl     http://localhost:8003/jobs/marketing-digest/last
+```
+
 ### Create a new vision
 
 Via SQLAdmin: `http://localhost:8003/admin` → sidebar **Vision

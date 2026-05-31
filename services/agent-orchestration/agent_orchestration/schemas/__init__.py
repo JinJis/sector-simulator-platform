@@ -13,6 +13,15 @@ from agent_orchestration.schemas.common import (
     WorkflowRecord,
     WorkflowStatus,
 )
+from agent_orchestration.schemas.marketing import (
+    CapabilitySnapshot,
+    MarketingContentRunResult,
+    MarketingPost,
+    MarketingPostSet,
+    NotableSignal,
+    PostVariant,
+    VisionMarketingSnapshot,
+)
 from agent_orchestration.schemas.legacy import (
     CalibratedDriver,
     CodeGenRequest,
@@ -131,9 +140,15 @@ __all__ = [
     "FullPipelineResult",
     "IntermediateFormula",
     "IntermediateNode",
+    "CapabilitySnapshot",
     "InvestmentThesisDraft",
+    "MarketingContentRunResult",
+    "MarketingPost",
+    "MarketingPostSet",
+    "NotableSignal",
     "OutputFormula",
     "OutputNode",
+    "PostVariant",
     "PromptValidationResult",
     "PromptValidatorRunResult",
     "ProposalPayloadDraftRequest",
@@ -161,6 +176,7 @@ __all__ = [
     "VisionDecompositionResult",
     "VisionDecompositionRunResult",
     "VisionFeasibilityDraft",
+    "VisionMarketingSnapshot",
     "WorkflowRecord",
     "WorkflowStatus",
 ]

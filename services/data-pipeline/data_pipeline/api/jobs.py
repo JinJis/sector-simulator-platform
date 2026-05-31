@@ -28,6 +28,7 @@ from data_pipeline.deep_research.digest import (
     enqueue_deep_research_digest,
 )
 from data_pipeline.deep_research.discovery.runner import run_discovery
+from data_pipeline.jobs.runners import run_marketing_digest_job
 from data_pipeline.queue.client import TASK_DIGEST
 
 log = logging.getLogger("data_pipeline")
@@ -116,6 +117,48 @@ def create_router(app: FastAPI) -> APIRouter:
             fuzzy_threshold=body.fuzzy_threshold,
         )
         return DiscoveryRunOut(summary=summary.to_dict())
+
+    def _marketing_digest_payload(stats: Any) -> dict[str, Any]:
+        return {
+            "started_at": stats.started_at.isoformat(),
+            "finished_at": (
+                stats.finished_at.isoformat() if stats.finished_at else None
+            ),
+            "visions_processed": stats.visions_processed,
+            "visions_skipped_no_capabilities": stats.visions_skipped_no_capabilities,
+            "post_sets_generated": stats.post_sets_generated,
+            "agent_failures": stats.agent_failures,
+            "total_cost_usd": stats.total_cost_usd,
+            "results": stats.results,
+            "errors": stats.errors,
+        }
+
+    @router.post("/jobs/marketing-digest")
+    async def marketing_digest_run() -> dict[str, Any]:
+        """Build a source-grounded snapshot per active vision and generate
+        bilingual (ko+en) Threads + Instagram copy via the marketing-
+        content agent. Returns the generated post sets for operator review
+        — does not auto-publish. Same path the (default-off) cron uses."""
+        if getattr(app.state, "signal_repo", None) is None:
+            raise HTTPException(
+                status_code=503,
+                detail="marketing-digest unavailable — DATABASE_URL not configured",
+            )
+        log.info("data-pipeline: manual /jobs/marketing-digest triggered")
+        stats = await run_marketing_digest_job(app=app)
+        if stats is None:
+            raise HTTPException(status_code=503, detail="marketing-digest skipped")
+        return _marketing_digest_payload(stats)
+
+    @router.get("/jobs/marketing-digest/last")
+    async def marketing_digest_last() -> dict[str, Any]:
+        last = getattr(app.state, "last_marketing_digest_result", None)
+        if last is None:
+            raise HTTPException(
+                status_code=404,
+                detail="no marketing-digest has run since the process started",
+            )
+        return _marketing_digest_payload(last)
 
     @router.get("/jobs/runs", response_model=list[CrawlRunOut])
     async def list_runs(

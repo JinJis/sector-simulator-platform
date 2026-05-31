@@ -98,6 +98,10 @@ class RecentSignalForScoring:
     delta_regulatory: float | None
     delta_supply: float | None
     actor_short_name: str | None
+    # Primary source of the signal — used by the marketing_digest job to
+    # cite provenance. Optional (default None) so the recompute path,
+    # which doesn't need it, is unaffected.
+    source_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -283,7 +287,7 @@ WHERE c.id = $1
 """
 
 _LIST_RECENT_SIGNALS_FOR_CAP_SQL = """
-SELECT s.title, s.summary, s.source_kind, s.published_at,
+SELECT s.title, s.summary, s.source_kind, s.source_url, s.published_at,
        s.delta_technical, s.delta_economic, s.delta_regulatory, s.delta_supply,
        a.short_name AS actor_short_name
 FROM signals s
@@ -479,6 +483,7 @@ class PostgresSignalRepository:
                 delta_regulatory=r["delta_regulatory"],
                 delta_supply=r["delta_supply"],
                 actor_short_name=r["actor_short_name"],
+                source_url=r["source_url"],
             )
             for r in rows
         ]

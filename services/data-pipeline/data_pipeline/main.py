@@ -73,22 +73,36 @@ from data_pipeline.agents import (
 )
 from data_pipeline.api import (
     feasibility as api_feasibility,
+)
+from data_pipeline.api import (
     fetchers as api_fetchers,
+)
+from data_pipeline.api import (
     health as api_health,
+)
+from data_pipeline.api import (
     jobs as api_jobs,
+)
+from data_pipeline.api import (
     orchestrator as api_orchestrator,
+)
+from data_pipeline.api import (
     predictions as api_predictions,
+)
+from data_pipeline.api import (
     refresh as api_refresh,
+)
+from data_pipeline.api import (
     signals as api_signals,
+)
+from data_pipeline.crawl_run_repo import (
+    PostgresCrawlRunRepository,
 )
 from data_pipeline.cron_specs import (
     CRON_SPECS,
     build_trigger,
     enabled_key,
     schedule_key,
-)
-from data_pipeline.crawl_run_repo import (
-    PostgresCrawlRunRepository,
 )
 from data_pipeline.db.actor_reader import PostgresActorReader
 from data_pipeline.db.capability_reader import PostgresCapabilityReader
@@ -97,11 +111,9 @@ from data_pipeline.db.orchestrator_repo import PostgresOrchestratorReader
 from data_pipeline.db.proposal_writer import PostgresProposalWriter
 from data_pipeline.db.risk_reader import PostgresRiskReader
 from data_pipeline.db.signal_writer import PostgresSignalWriter
-from data_pipeline.queue import (
-    build_queue_client,
-)
 from data_pipeline.jobs.runners import (
     run_digest_daily_job,
+    run_marketing_digest_job,
     run_news_ingest_5min,
     run_orchestrator_tick_job,
     run_recompute_feasibility_job,
@@ -111,6 +123,9 @@ from data_pipeline.jobs.runners import (
 )
 from data_pipeline.jobs.signal_ingest import IngestStats, run_signal_ingest
 from data_pipeline.prediction2_repo import build_resolver_v2_repository
+from data_pipeline.queue import (
+    build_queue_client,
+)
 from data_pipeline.repo import build_repository
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -141,6 +156,7 @@ _cron_runner: dict[str, Any] = {
     "research_ingest_hourly": run_research_ingest_hourly,
     "recompute_feasibility_hourly": run_recompute_feasibility_job,
     "digest_daily": run_digest_daily_job,
+    "marketing_digest_daily": run_marketing_digest_job,
     "orchestrator_tick_15min": run_orchestrator_tick_job,
 }
 
@@ -221,6 +237,8 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
         app.state.last_signal_ingest_result = None
     if not hasattr(app.state, "last_feasibility_recompute_result"):
         app.state.last_feasibility_recompute_result = None
+    if not hasattr(app.state, "last_marketing_digest_result"):
+        app.state.last_marketing_digest_result = None
     # Signal ingest gets its own asyncpg pool (separate from `repo` and
     # `resolver_repo`) so its writes don't compete with refresh jobs.
     # Tests pre-wire `app.state.signal_repo` to swap in InMemory.

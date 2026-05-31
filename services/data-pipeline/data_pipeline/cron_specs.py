@@ -169,6 +169,18 @@ CRON_SPECS: list[CronSpec] = [
         inputs="Vector-crawled signals, external Google Web Search API.",
         outputs="Daily grounded research digest, crawl_runs table log.",
     ),
+    CronSpec(
+        id="marketing_digest_daily",
+        label="Marketing digest",
+        cadence="daily · 23:00 KST default",
+        note="balanced-tier bilingual social copy per vision · operator reviews + posts",
+        default_enabled=False,  # cost-gated; operator turns on
+        schedule_kind="cron",
+        default_schedule_value="0 14 * * *",  # 14:00 UTC = 23:00 KST
+        purpose="Builds a source-grounded snapshot per vision (binding constraint, notable signal, lead actor) and calls the marketing-content agent for ready-to-post bilingual (ko+en) Threads + Instagram copy. Does not auto-publish.",
+        inputs="capability_scores (current), signals (last 7d), actors; agent-orchestration /marketing-content/generate.",
+        outputs="Generated post sets returned in job stats (last_marketing_digest_result) for operator review.",
+    ),
 ]
 
 

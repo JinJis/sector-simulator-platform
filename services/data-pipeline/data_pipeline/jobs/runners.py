@@ -23,6 +23,7 @@ from fastapi import FastAPI
 from data_pipeline.deep_research.digest import DigestRequest, run_deep_research_digest
 from data_pipeline.deep_research.dispatcher import DispatcherClients, dispatch_tick
 from data_pipeline.deep_research.orchestrator import pick_for_tick
+from data_pipeline.jobs.marketing_digest import run_marketing_digest
 from data_pipeline.jobs.recompute_feasibility import run_recompute_feasibility
 from data_pipeline.jobs.refresh_quotes import RefreshQuotesResult, refresh_quotes
 from data_pipeline.jobs.resolve_predictions_v2 import (
@@ -283,6 +284,37 @@ async def run_recompute_feasibility_job(*, app: FastAPI):  # noqa: ANN201
     log.info(
         "[cron recompute_feasibility] DONE %s",
         getattr(stats, "model_dump", lambda: stats)(),
+    )
+    return stats
+
+
+async def run_marketing_digest_job(*, app: FastAPI):  # noqa: ANN201
+    """Marketing-content digest (cost-gated, default-off cron). Builds a
+    source-grounded snapshot per vision from app.state.signal_repo and
+    calls the marketing-content agent for a bilingual Threads + Instagram
+    post set. Returns the generated copy in stats for operator review —
+    does NOT auto-publish."""
+    repo = getattr(app.state, "signal_repo", None)
+    if repo is None:
+        log.warning("[cron marketing_digest] signal_repo unset — skipping")
+        return None
+    visions = await get_active_visions(app)
+    log.info(
+        "[cron marketing_digest] START visions=%s",
+        ",".join(visions) or "<none>",
+    )
+    stats = await run_marketing_digest(
+        sector_slugs=visions,
+        repo=repo,
+        job_config=getattr(app.state, "job_config", None),
+    )
+    app.state.last_marketing_digest_result = stats
+    log.info(
+        "[cron marketing_digest] DONE visions=%d post-sets=%d failures=%d cost=$%.4f",
+        stats.visions_processed,
+        stats.post_sets_generated,
+        stats.agent_failures,
+        stats.total_cost_usd,
     )
     return stats
 

@@ -63,6 +63,17 @@ or editing front-matter therefore does NOT invalidate the prompt cache.
 | `signal_extractor`      | fast  | `SignalScoring`          | `SignalExtractorWorkflow` |
 | `score_updater`         | balanced | `CapabilityScoreUpdate`  | `CapabilityScoreUpdaterWorkflow` |
 
+### Growth / distribution
+
+| Name                    | Tier   | Outputs                  | Workflow |
+| ----------------------- | ------ | ------------------------ | -------- |
+| `marketing_content`     | balanced | `MarketingPostSet`       | `MarketingContentWorkflow` |
+
+`marketing_content` turns a live vision snapshot (binding constraint +
+notable signal + lead actor) into bilingual (ko + en) Threads + Instagram
+copy. Assembled + triggered by the data-pipeline `marketing_digest` cron
+(cost-gated, default-off); product-led CTA to the public vision page.
+
 ### Legacy sim-builder track (pre-pivot, retained)
 
 | Name              | Tier    | Outputs                 | Workflow |

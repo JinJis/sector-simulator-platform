@@ -30,6 +30,8 @@ from agent_tools import CostMeter, LLMClient
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
+from agent_orchestration import progress
+from agent_orchestration.conductor import VisionBuilderConductor
 from agent_orchestration.repo import (
     InMemoryWorkflowRepository,
     build_repository,
@@ -45,6 +47,7 @@ from agent_orchestration.schemas import (
     DecompositionRequest,
     DriverInferenceRequest,
     FullPipelineRequest,
+    MarketingContentRunResult,
     PromptValidatorRunResult,
     ProposalPayloadDraftRequest,
     ProposalPayloadDraftResult,
@@ -59,10 +62,9 @@ from agent_orchestration.schemas import (
     VisionBuilderRunResult,
     VisionDecompositionRequest,
     VisionDecompositionRunResult,
+    VisionMarketingSnapshot,
     WorkflowRecord,
 )
-from agent_orchestration import progress
-from agent_orchestration.conductor import VisionBuilderConductor
 from agent_orchestration.workflows import (
     CapabilityScoreUpdaterWorkflow,
     CodeGenWorkflow,
@@ -71,8 +73,9 @@ from agent_orchestration.workflows import (
     DecompositionWorkflow,
     DriverInferenceWorkflow,
     FullPipelineWorkflow,
-    ProposalPayloadDrafterWorkflow,
+    MarketingContentWorkflow,
     PromptValidatorWorkflow,
+    ProposalPayloadDrafterWorkflow,
     ProposeSectorWorkflow,
     ResearchWorkflow,
     SignalExtractorWorkflow,
@@ -575,6 +578,38 @@ def create_app() -> FastAPI:
         duration_ms = int((time.perf_counter() - t0) * 1000)
         return CapabilityScoreUpdaterRunResult(
             update=update,
+            cost_usd=cost_meter.total_usd,
+            duration_ms=duration_ms,
+        )
+
+    @app.post(
+        "/marketing-content/generate",
+        response_model=MarketingContentRunResult,
+    )
+    async def marketing_content(
+        req: VisionMarketingSnapshot,
+    ) -> MarketingContentRunResult:
+        """Synchronous marketing-copy endpoint — called by the
+        data-pipeline marketing_digest job once per vision. Single
+        balanced-tier call; returns a bilingual (ko + en) Threads +
+        Instagram post set + cost roll-up."""
+        llm: LLMClient = _require_llm(app)
+        workflow = MarketingContentWorkflow(llm=llm)
+        cost_meter = CostMeter()
+        t0 = time.perf_counter()
+        try:
+            post_set = await workflow.run(req, cost_meter=cost_meter)
+        except Exception as e:
+            log.exception(
+                "marketing-content failed for %s: %s", req.vision_slug, e
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=f"marketing-content agent failed: {e}",
+            ) from e
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        return MarketingContentRunResult(
+            post_set=post_set,
             cost_usd=cost_meter.total_usd,
             duration_ms=duration_ms,
         )

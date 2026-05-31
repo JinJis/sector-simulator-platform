@@ -21,6 +21,9 @@ from agent_orchestration.workflows.legacy import (
     ProposeSectorWorkflow,
     ResearchWorkflow,
 )
+from agent_orchestration.workflows.marketing import (
+    MarketingContentWorkflow,
+)
 from agent_orchestration.workflows.scoring import (
     CapabilityScoreUpdaterWorkflow,
     SignalExtractorWorkflow,
@@ -52,6 +55,8 @@ __all__ = [
     # scoring
     "CapabilityScoreUpdaterWorkflow",
     "SignalExtractorWorkflow",
+    # marketing
+    "MarketingContentWorkflow",
     # vision builder
     "DataSourceSelectorWorkflow",
     "ProposalPayloadDrafterWorkflow",
