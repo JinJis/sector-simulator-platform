@@ -160,7 +160,7 @@ def mount_admin(app: FastAPI) -> Admin | None:
         app=app,
         engine=engine,
         base_url=ADMIN_BASE_URL,
-        title="data-pipeline admin",
+        title="Vision Admin",
         authentication_backend=AdminAuth(secret_key=secret),
         templates_dir=templates_dir,
     )
