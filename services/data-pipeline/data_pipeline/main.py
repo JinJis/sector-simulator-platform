@@ -143,6 +143,7 @@ _cron_prereq_attr: dict[str, str | None] = {
     "research_ingest_hourly": "signal_repo",
     "recompute_feasibility_hourly": "signal_repo",
     "digest_daily": "signal_repo",
+    "marketing_digest_daily": "signal_repo",
     "orchestrator_tick_15min": "crawl_runs_repo",
 }
 
