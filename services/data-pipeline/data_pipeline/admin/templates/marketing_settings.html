@@ -1,0 +1,127 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content_header %}
+<div class="row align-items-center">
+  <div class="col">
+    <h2 class="page-title"><i class="fa-solid fa-sliders me-2 text-secondary"></i>{{ title }}</h2>
+    <div class="page-pretitle">{{ subtitle }}</div>
+  </div>
+  <div class="col-auto ms-auto">
+    <a href="{{ url_for('admin:marketing_page') }}" class="btn btn-outline-secondary">
+      <i class="fa-solid fa-arrow-left me-2"></i>Back to Studio
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if success_msg %}
+<div class="col-12">
+  <div class="alert alert-success alert-dismissible" role="alert">
+    <i class="fa-solid fa-circle-check me-2"></i>{{ success_msg }}
+    <a class="btn-close" data-bs-dismiss="alert" aria-label="close"></a>
+  </div>
+</div>
+{% endif %}
+{% if error_msg %}
+<div class="col-12">
+  <div class="alert alert-danger alert-dismissible" role="alert">
+    <i class="fa-solid fa-circle-exclamation me-2"></i>{{ error_msg }}
+    <a class="btn-close" data-bs-dismiss="alert" aria-label="close"></a>
+  </div>
+</div>
+{% endif %}
+
+{# ── Publishing keys ─────────────────────────────────────────────────── #}
+<div class="col-lg-4">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title"><i class="fa-solid fa-key me-2 text-secondary"></i>Publishing keys</h3>
+    </div>
+    <div class="card-body">
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <div class="d-flex align-items-center">
+          <i class="fa-brands fa-threads fs-2 me-2"></i>
+          <div>
+            <div class="fw-bold">Threads</div>
+            <div class="text-muted small font-monospace">THREADS_API_KEY</div>
+          </div>
+        </div>
+        {% if threads_configured %}
+        <span class="badge bg-green-lt">Live</span>
+        {% else %}
+        <span class="badge bg-yellow-lt">Simulation</span>
+        {% endif %}
+      </div>
+      <div class="d-flex align-items-center justify-content-between border-top pt-3">
+        <div class="d-flex align-items-center">
+          <i class="fa-brands fa-instagram fs-2 me-2 text-pink"></i>
+          <div>
+            <div class="fw-bold">Instagram</div>
+            <div class="text-muted small font-monospace">INSTAGRAM_API_KEY</div>
+          </div>
+        </div>
+        {% if instagram_configured %}
+        <span class="badge bg-green-lt">Live</span>
+        {% else %}
+        <span class="badge bg-yellow-lt">Simulation</span>
+        {% endif %}
+      </div>
+      <p class="text-muted small mt-3 mb-0">
+        Keys are read from the environment. Without a live key, publishing runs in
+        Simulation Mode (nothing is posted) so you can rehearse the full flow safely.
+      </p>
+    </div>
+  </div>
+</div>
+
+{# ── Custom tone & example guidelines ────────────────────────────────── #}
+<div class="col-lg-8">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title"><i class="fa-solid fa-pen-nib me-2 text-success"></i>Custom tone &amp; example guidelines</h3>
+    </div>
+    <div class="card-body">
+      <p class="text-muted small">
+        Optional. When you tick <span class="fw-medium">“Apply custom style guidelines”</span>
+        in the Studio, the agent treats these as a strict override for tone and structure.
+      </p>
+      <form action="{{ url_for('admin:marketing_save_guidelines') }}" method="POST">
+        <div class="subheader fw-bold mb-2"><i class="fa-brands fa-threads me-2"></i>Threads</div>
+        <div class="row mb-4 g-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-bold text-muted">Tone &amp; style</label>
+            <textarea name="threads_tone" class="form-control" rows="4"
+              placeholder="e.g. Conversational, punchy, emoji-lite, lead with the bottleneck.">{{ threads_tone }}</textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-bold text-muted">Example structure</label>
+            <textarea name="threads_examples" class="form-control font-monospace" rows="4"
+              style="font-size:.82rem;" placeholder="🔥 [HOOK]&#10;&#10;[BODY]&#10;&#10;📍 [CTA]">{{ threads_examples }}</textarea>
+          </div>
+        </div>
+
+        <div class="subheader fw-bold mb-2 border-top pt-3"><i class="fa-brands fa-instagram me-2 text-pink"></i>Instagram</div>
+        <div class="row mb-4 g-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-bold text-muted">Tone &amp; style</label>
+            <textarea name="instagram_tone" class="form-control" rows="4"
+              placeholder="e.g. Engaging storyteller, visually structured, line-broken beats.">{{ instagram_tone }}</textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-bold text-muted">Example structure</label>
+            <textarea name="instagram_examples" class="form-control font-monospace" rows="4"
+              style="font-size:.82rem;" placeholder="✨ [HOOK]&#10;&#10;[BODY]&#10;&#10;🔗 [CTA]">{{ instagram_examples }}</textarea>
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-end border-top pt-3">
+          <button type="submit" class="btn btn-success fw-bold">
+            <i class="fa-solid fa-floppy-disk me-2"></i>Save guidelines
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

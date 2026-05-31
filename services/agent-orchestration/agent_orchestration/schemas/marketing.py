@@ -74,9 +74,7 @@ class VisionMarketingSnapshot(BaseModel):
     binding_constraint_score: float | None = Field(default=None, ge=0, le=100)
     binding_capability_name: str | None = None
     # A few capabilities for context (binding one flagged via is_binding).
-    capabilities: list[CapabilitySnapshot] = Field(
-        default_factory=list, max_length=12
-    )
+    capabilities: list[CapabilitySnapshot] = Field(default_factory=list, max_length=12)
     notable_signal: NotableSignal | None = None
     lead_actor_name: str | None = None
     audience: str = Field(
@@ -94,6 +92,14 @@ class VisionMarketingSnapshot(BaseModel):
         default="vision_bottleneck",
         description="The marketing funnel / strategy concept to guide the LLM copy generation.",
     )
+    platform_promo: bool = Field(
+        default=False,
+        description=(
+            "True when no specific vision is selected — the post promotes the "
+            "platform itself (brand-level), not one vision's numbers. The agent "
+            "must not reference vision-specific figures in this mode."
+        ),
+    )
 
 
 # ---- Output --------------------------------------------------------------
@@ -104,9 +110,7 @@ class PostVariant(BaseModel):
 
     hook: str = Field(..., max_length=300, description="Scroll-stopping first line.")
     body: str = Field(..., max_length=1200)
-    cta: str = Field(
-        ..., max_length=300, description="Product-led invite linking the vision page."
-    )
+    cta: str = Field(..., max_length=300, description="Product-led invite linking the vision page.")
 
 
 class MarketingPost(BaseModel):

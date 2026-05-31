@@ -19,9 +19,7 @@ from agent_tools import CostMeter
 
 
 def _post_set() -> MarketingPostSet:
-    variant = PostVariant(
-        hook="Hook line", body="Body insight.", cta="Explore it free →"
-    )
+    variant = PostVariant(hook="Hook line", body="Body insight.", cta="Explore it free →")
     return MarketingPostSet(
         headline_insight="Rad-hard compute is the bottleneck for orbital DCs.",
         angle="bottleneck reveal",
@@ -55,9 +53,7 @@ def _make_request(
         binding_constraint_score=binding_constraint_score,
         binding_capability_name="Radiation-hard compute",
         capabilities=[
-            CapabilitySnapshot(
-                name="Radiation-hard compute", composite=41.0, is_binding=True
-            ),
+            CapabilitySnapshot(name="Radiation-hard compute", composite=41.0, is_binding=True),
             CapabilitySnapshot(name="Launch cost", composite=72.0),
         ],
         notable_signal=notable_signal,
@@ -87,9 +83,7 @@ class TestMarketingContentWorkflow:
         assert sent["model"] == "gemini-3.5-flash"
 
     @pytest.mark.asyncio
-    async def test_user_turn_includes_snapshot_facts(
-        self, fake_llm, fake_anthropic
-    ) -> None:
+    async def test_user_turn_includes_snapshot_facts(self, fake_llm, fake_anthropic) -> None:
         fake_anthropic.models.parsed_factory = lambda **_: _post_set()
         wf = MarketingContentWorkflow(llm=fake_llm)
         sig = NotableSignal(
@@ -111,9 +105,7 @@ class TestMarketingContentWorkflow:
         assert "AMD" in joined
 
     @pytest.mark.asyncio
-    async def test_no_signal_does_not_fabricate(
-        self, fake_llm, fake_anthropic
-    ) -> None:
+    async def test_no_signal_does_not_fabricate(self, fake_llm, fake_anthropic) -> None:
         """With no notable signal the prompt must explicitly tell the
         agent not to invent one."""
         fake_anthropic.models.parsed_factory = lambda **_: _post_set()
@@ -122,6 +114,25 @@ class TestMarketingContentWorkflow:
         sent = fake_anthropic.models.requests[-1]
         joined = repr(sent.get("contents") or sent.get("messages"))
         assert "do not invent" in joined.lower()
+
+    @pytest.mark.asyncio
+    async def test_platform_promo_is_brand_level(self, fake_llm, fake_anthropic) -> None:
+        """With no vision selected (platform_promo) the turn promotes the
+        platform itself and forbids naming a specific vision's figures."""
+        fake_anthropic.models.parsed_factory = lambda **_: _post_set()
+        wf = MarketingContentWorkflow(llm=fake_llm)
+        req = VisionMarketingSnapshot(
+            vision_name="Vision Feasibility Monitor",
+            vision_slug="",
+            vision_url="http://localhost:3000/visions",
+            platform_promo=True,
+            campaign_concept="high_level_pitch",
+        )
+        await wf.run(req, cost_meter=CostMeter())
+        sent = fake_anthropic.models.requests[-1]
+        joined = repr(sent.get("contents") or sent.get("messages"))
+        assert "brand-level promotion" in joined.lower()
+        assert "do not name a specific" in joined.lower()
 
 
 class TestMarketingContentValidation:
@@ -138,9 +149,7 @@ class TestMarketingContentValidation:
 
 class TestMarketingContentEndpoint:
     @pytest.mark.asyncio
-    async def test_post_returns_post_set_with_cost(
-        self, fake_llm, fake_anthropic
-    ) -> None:
+    async def test_post_returns_post_set_with_cost(self, fake_llm, fake_anthropic) -> None:
         from agent_orchestration.main import create_app
         from agent_orchestration.repo import InMemoryWorkflowRepository
         from agent_orchestration.workflows import WorkflowRunner

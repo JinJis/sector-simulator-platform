@@ -3,7 +3,7 @@
 플랫폼이 가진 모든 에이전트(LLM 기반 워크플로) 능력을 한 곳에 정리한
 문서입니다. Vision Builder + signal pipeline + legacy sim-builder
 3개 트랙으로 나뉘어 있어요. **Last updated**: 2026-05-31 (marketing
-content agent + marketing_digest cron 추가).
+content agent + marketing_digest cron 추가, 전략-우선 Marketing Studio UI 재구성).
 
 소스 진실:
 - 워크플로 구현 — `services/agent-orchestration/agent_orchestration/workflows/`
@@ -164,12 +164,13 @@ signal pipeline이 만든 점수 + 신호를 마케팅 카피로 바꾸는 distr
 | | |
 |---|---|
 | **tier** | balanced (adaptive thinking) |
-| **input** | `VisionMarketingSnapshot` — binding-constraint(병목) capability + 현재 readiness + 가장 임팩트 큰 최근 signal(+source_url) + lead actor + vision page URL |
+| **input** | `VisionMarketingSnapshot` — binding-constraint(병목) capability + 현재 readiness + 가장 임팩트 큰 최근 signal(+source_url) + lead actor + vision page URL. `campaign_concept`로 5개 퍼널 전략(hook/bottleneck/pitch/actor-race/evidence) 중 하나 선택, `platform_promo=true`면 특정 vision 없이 플랫폼 자체를 홍보(숫자 미사용) |
 | **output** | `MarketingPostSet` — Threads + Instagram 포스트(각 ko + en 변형 + hashtags) + `source_refs` |
 | **prompt** | [`prompts/marketing_content.md`](../prompts/marketing_content.md) |
 | **트리거** | `marketing_digest` cron (cost-gated, **기본 off** — `digest_daily`와 동일하게 operator가 켬). `/jobs/marketing-digest`로 수동 실행도 가능 |
 | **provenance** | snapshot에 있는 숫자만 사용 — 새 수치 생성 금지. CTA는 항상 무료 vision page로 (product-led). 투자 권유 문구 금지 |
 | **assembler** | `data-pipeline/data_pipeline/jobs/marketing_digest.py` — current capability score로 composite 계산, 최저 composite = binding constraint, 최근 window에서 \|delta\| 최대 signal 선택. 생성된 카피는 자동 게시하지 않고 `last_marketing_digest_result`에 담아 operator 검토용으로 반환 |
+| **운영 UI** | SQLAdmin **Marketing Studio** (`data-pipeline:8003/admin/marketing`) — 전략 카드 선택 → 카피 생성 → Threads/Instagram 검토·발행. 키/톤 가이드라인은 `/admin/marketing/settings` |
 
 ---
 

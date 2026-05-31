@@ -1,120 +1,117 @@
 {% extends "sqladmin/layout.html" %}
 
+{% block head %}
+<style>
+  .copy-editor { font-size: .88rem; line-height: 1.45; resize: vertical; }
+  .char-count { font-variant-numeric: tabular-nums; }
+</style>
+{% endblock %}
+
 {% block content_header %}
 <div class="row align-items-center">
   <div class="col">
-    <h2 class="page-title">{{ title }}</h2>
+    <h2 class="page-title"><i class="fa-solid fa-pen-to-square me-2 text-primary"></i>{{ title }}</h2>
     <div class="page-pretitle">{{ subtitle }}</div>
   </div>
   <div class="col-auto ms-auto">
-    <a href="{{ url_for('admin:marketing_planner') }}" class="btn btn-outline-secondary">
-      <i class="fa-solid fa-arrow-left me-2"></i>Back to Planner
+    <a href="{{ url_for('admin:marketing_page') }}?vision_slug={{ active_vision }}&campaign_concept={{ campaign_concept }}"
+       class="btn btn-outline-secondary">
+      <i class="fa-solid fa-arrow-left me-2"></i>Back to Studio
     </a>
   </div>
 </div>
 {% endblock %}
 
 {% block content %}
+{# ── Campaign summary ────────────────────────────────────────────────── #}
 <div class="col-12">
-  {# ─── Campaign Insights / Metadata Summary Card ────────────────────────── #}
-  <div class="card shadow-sm mb-4 border-0" style="border-left: 4px solid #206bc4 !important;">
-    <div class="card-body p-3">
-      <div class="row align-items-center">
+  <div class="card">
+    <div class="card-body">
+      <div class="row align-items-center g-3">
         <div class="col">
-          <div class="text-muted subheader small mb-1">Active Vision Campaign Context</div>
-          <h3 class="text-dark fw-bold mb-0">
-            <span class="badge bg-blue-lt font-monospace me-2">{{ active_vision }}</span>
-            {{ headline_insight }}
-          </h3>
-          <div class="text-muted small mt-2">
-            <i class="fa-solid fa-bullseye me-1"></i><strong>Marketing Angle</strong>: {{ angle }}
-            <span class="mx-2">•</span>
-            <i class="fa-solid fa-compass me-1"></i><strong>Strategy</strong>: 
-            {% if campaign_concept == 'vision_bottleneck' %}
-              <span class="badge bg-blue-lt">Liebig Bottleneck</span>
-            {% elif campaign_concept == 'early_hype' %}
-              <span class="badge bg-purple-lt">Early Hype Grabber</span>
-            {% elif campaign_concept == 'high_level_pitch' %}
-              <span class="badge bg-green-lt">Product High-Level Pitch</span>
-            {% elif campaign_concept == 'actor_race' %}
-              <span class="badge bg-orange-lt">Lead Actor Race</span>
-            {% elif campaign_concept == 'grounded_digest' %}
-              <span class="badge bg-teal-lt">Evidence Grounded Digest</span>
+          <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
+            {% if platform_promo %}
+            <span class="badge bg-secondary-lt"><i class="fa-solid fa-globe me-1"></i>{{ target_label }}</span>
             {% else %}
-              <span class="badge bg-secondary-lt">{{ campaign_concept }}</span>
+            <span class="badge bg-blue-lt font-monospace">{{ target_label }}</span>
             {% endif %}
+            <span class="badge bg-{{ strategy.color }}-lt">
+              <i class="fa-solid {{ strategy.icon }} me-1"></i>{{ strategy.name }}
+            </span>
+            {% if angle %}<span class="text-muted small"><i class="fa-solid fa-bullseye me-1"></i>{{ angle }}</span>{% endif %}
           </div>
+          <h3 class="fw-bold mb-0">{{ headline_insight or "Generated campaign" }}</h3>
         </div>
         <div class="col-auto text-end">
-          <div class="text-muted small">LLM API Generation Cost</div>
-          <div class="fs-3 fw-bold text-dark font-monospace">{{ "%.4f" | format(cost_usd) }} USD</div>
+          <div class="text-muted small">Generation cost</div>
+          <div class="fs-2 fw-bold font-monospace">${{ "%.4f" | format(cost_usd) }}</div>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<div class="col-12">
-  <div class="row row-cards">
-    {# Threads copy review card #}
-    <div class="col-md-6">
-      <div class="card shadow-sm border-0" style="min-height: 32rem;">
-        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-3">
-          <span class="fw-bold fs-3"><i class="fa-brands fa-threads me-2"></i>Threads Post Curation</span>
-          <span class="badge bg-white text-dark font-monospace fw-bold">{{ "%.4f" | format(cost_usd / 2) }} USD</span>
-        </div>
-        <div class="card-body p-4">
-          <form action="{{ url_for('admin:marketing_publish') }}" method="POST">
-            <input type="hidden" name="vision_slug" value="{{ active_vision }}" />
-            <input type="hidden" name="platform" value="threads" />
-            
-            <div class="mb-4">
-              <label class="form-label fw-bold text-muted small mb-2">Review & Customize Copy (Ko + En)</label>
-              <textarea name="copy" class="form-control font-monospace p-3 border rounded bg-light" rows="16" style="font-size: 0.88rem; line-height: 1.4; resize: vertical;">{{ generated_posts.threads or '' }}</textarea>
-              <small class="text-muted d-block mt-2" style="line-height: 1.3;">
-                Edit the copy above freely. Correct any translations, tweak formatting, or refine details before publishing.
-              </small>
-            </div>
-            
-            <div class="d-grid pt-2 border-top mt-4">
-              <button type="submit" class="btn btn-dark btn-lg fw-bold shadow-sm">
-                <i class="fa-solid fa-paper-plane me-2 fs-4"></i>Publish Campaign to Threads
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
+{# ── Per-platform editors ────────────────────────────────────────────── #}
+{% set platforms = [
+  {"key": "threads", "label": "Threads", "icon": "fa-threads", "configured": threads_configured, "btn": "btn-dark"},
+  {"key": "instagram", "label": "Instagram", "icon": "fa-instagram", "configured": instagram_configured, "btn": "btn-pink"}
+] %}
+{% for p in platforms %}
+<div class="col-lg-6">
+  <div class="card h-100">
+    <div class="card-header d-flex align-items-center justify-content-between">
+      <h3 class="card-title"><i class="fa-brands {{ p.icon }} me-2"></i>{{ p.label }}</h3>
+      {% if p.configured %}
+      <span class="badge bg-green-lt">Publishes live</span>
+      {% else %}
+      <span class="badge bg-yellow-lt">Simulation mode</span>
+      {% endif %}
     </div>
-
-    {# Instagram copy review card #}
-    <div class="col-md-6">
-      <div class="card shadow-sm border-0" style="min-height: 32rem;">
-        <div class="card-header bg-pink text-white d-flex justify-content-between align-items-center py-3" style="background-color: #e1306c !important;">
-          <span class="fw-bold fs-3"><i class="fa-brands fa-instagram me-2"></i>Instagram Post Curation</span>
-          <span class="badge bg-white text-pink font-monospace fw-bold" style="color: #e1306c !important;">{{ "%.4f" | format(cost_usd / 2) }} USD</span>
+    <div class="card-body d-flex flex-column">
+      {% if generated_posts.get(p.key) %}
+      <form action="{{ url_for('admin:marketing_publish') }}" method="POST" class="d-flex flex-column flex-grow-1">
+        <input type="hidden" name="vision_slug" value="{{ active_vision }}">
+        <input type="hidden" name="platform" value="{{ p.key }}">
+        <div class="d-flex justify-content-between align-items-baseline mb-1">
+          <label class="form-label small fw-bold text-muted mb-0">Copy (Ko + En) — edit freely</label>
+          <span class="text-muted small char-count" data-count-for="{{ p.key }}"></span>
         </div>
-        <div class="card-body p-4">
-          <form action="{{ url_for('admin:marketing_publish') }}" method="POST">
-            <input type="hidden" name="vision_slug" value="{{ active_vision }}" />
-            <input type="hidden" name="platform" value="instagram" />
-            
-            <div class="mb-4">
-              <label class="form-label fw-bold text-muted small mb-2">Review & Customize Copy (Ko + En)</label>
-              <textarea name="copy" class="form-control font-monospace p-3 border rounded bg-light" rows="16" style="font-size: 0.88rem; line-height: 1.4; resize: vertical;">{{ generated_posts.instagram or '' }}</textarea>
-              <small class="text-muted d-block mt-2" style="line-height: 1.3;">
-                Edit the copy above freely. Correct any translations, tweak formatting, or refine details before publishing.
-              </small>
-            </div>
-            
-            <div class="d-grid pt-2 border-top mt-4">
-              <button type="submit" class="btn btn-danger btn-lg fw-bold shadow-sm" style="background-color: #e1306c !important; border-color: #e1306c !important;">
-                <i class="fa-solid fa-paper-plane me-2 fs-4"></i>Publish Campaign to Instagram
-              </button>
-            </div>
-          </form>
+        <textarea name="copy" class="form-control copy-editor font-monospace flex-grow-1"
+                  rows="16" data-counter="{{ p.key }}">{{ generated_posts.get(p.key) }}</textarea>
+        <div class="d-grid mt-3">
+          <button type="submit" class="btn {{ p.btn }} fw-bold">
+            <i class="fa-solid fa-paper-plane me-2"></i>
+            {% if p.configured %}Publish to {{ p.label }}{% else %}Simulate publish{% endif %}
+          </button>
         </div>
+      </form>
+      {% else %}
+      <div class="text-muted text-center my-auto py-5">
+        <i class="fa-regular fa-face-frown fs-1 d-block mb-2"></i>
+        No {{ p.label }} copy was returned for this run.
       </div>
+      {% endif %}
     </div>
   </div>
 </div>
+{% endfor %}
+{% endblock %}
+
+{% block head_tail %}
+<style>.btn-pink{background:#e1306c;border-color:#e1306c;color:#fff;}.btn-pink:hover{background:#c92a5f;border-color:#c92a5f;color:#fff;}</style>
+{% endblock %}
+
+{% block tail %}
+<script>
+(function () {
+  document.querySelectorAll('textarea[data-counter]').forEach(function (ta) {
+    var key = ta.getAttribute('data-counter');
+    var out = document.querySelector('[data-count-for="' + key + '"]');
+    if (!out) return;
+    function render() { out.textContent = ta.value.length + ' chars'; }
+    ta.addEventListener('input', render);
+    render();
+  });
+})();
+</script>
 {% endblock %}

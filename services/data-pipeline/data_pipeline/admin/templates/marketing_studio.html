@@ -1,0 +1,230 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block head %}
+<style>
+  .mkt-target select { font-size: 1rem; }
+  .strategy-grid .strategy-card {
+    cursor: pointer;
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius);
+    transition: box-shadow .12s ease, border-color .12s ease, opacity .12s ease;
+    height: 100%;
+    margin: 0;
+    position: relative;
+  }
+  .strategy-card .strategy-radio { position: absolute; opacity: 0; pointer-events: none; }
+  .strategy-card:hover { border-color: var(--tblr-primary); }
+  .strategy-card.is-selected {
+    border-color: var(--tblr-primary);
+    box-shadow: 0 0 0 2px var(--tblr-primary);
+    background: var(--tblr-primary-lt);
+  }
+  .strategy-card.is-disabled {
+    opacity: .45;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+  .strategy-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 2.25rem; height: 2.25rem; border-radius: .5rem; font-size: 1.05rem;
+    flex: 0 0 auto;
+  }
+  .strategy-check {
+    position: absolute; top: .65rem; right: .7rem;
+    color: var(--tblr-primary); font-size: 1.15rem; opacity: 0;
+    transition: opacity .12s ease;
+  }
+  .strategy-card.is-selected .strategy-check { opacity: 1; }
+  .strategy-example {
+    border-left: 3px solid var(--tblr-border-color);
+    padding-left: .6rem; color: var(--tblr-secondary);
+  }
+  .strategy-card.is-selected .strategy-example { border-left-color: var(--tblr-primary); }
+  .needs-vision-tag { display: none; }
+  .strategy-card.is-disabled .needs-vision-tag { display: inline-block; }
+</style>
+{% endblock %}
+
+{% block content_header %}
+<div class="row align-items-center">
+  <div class="col">
+    <h2 class="page-title"><i class="fa-solid fa-bullhorn me-2 text-primary"></i>{{ title }}</h2>
+    <div class="page-pretitle">{{ subtitle }}</div>
+  </div>
+  <div class="col-auto ms-auto">
+    <a href="{{ url_for('admin:marketing_settings') }}" class="btn btn-outline-secondary">
+      <i class="fa-solid fa-sliders me-2"></i>Settings
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if success_msg %}
+<div class="col-12">
+  <div class="alert alert-success alert-dismissible" role="alert">
+    <i class="fa-solid fa-circle-check me-2"></i>{{ success_msg }}
+    <a class="btn-close" data-bs-dismiss="alert" aria-label="close"></a>
+  </div>
+</div>
+{% endif %}
+{% if error_msg %}
+<div class="col-12">
+  <div class="alert alert-danger alert-dismissible" role="alert">
+    <i class="fa-solid fa-circle-exclamation me-2"></i>{{ error_msg }}
+    <a class="btn-close" data-bs-dismiss="alert" aria-label="close"></a>
+  </div>
+</div>
+{% endif %}
+
+<div class="col-12">
+  <form action="{{ url_for('admin:marketing_generate') }}" method="POST"
+        id="studioForm" data-promo-fallback="{{ promo_fallback_concept }}">
+    <div class="card">
+      <div class="card-body">
+
+        {# ── Step 1 · target ─────────────────────────────────────────── #}
+        <div class="mkt-target mb-4">
+          <div class="d-flex align-items-baseline mb-2">
+            <span class="badge bg-primary-lt me-2">1</span>
+            <label class="form-label fw-bold mb-0" for="visionSelect">Target</label>
+          </div>
+          <select name="vision_slug" id="visionSelect" class="form-select">
+            <option value="" {% if not selected_vision %}selected{% endif %}>
+              🌐 No specific vision — promote the platform itself
+            </option>
+            <optgroup label="Live visions">
+              {% for slug, name in visions %}
+              <option value="{{ slug }}" {% if selected_vision == slug %}selected{% endif %}>
+                {{ name }} ({{ slug }})
+              </option>
+              {% endfor %}
+            </optgroup>
+          </select>
+          <small class="text-muted d-block mt-2">
+            Pick a live vision to ground the copy in its real bottleneck, capability
+            scores, top signal and lead actor — or keep it general to promote the
+            platform brand.
+          </small>
+        </div>
+
+        {# ── Step 2 · strategy cards ─────────────────────────────────── #}
+        <div class="mb-4">
+          <div class="d-flex align-items-baseline mb-2">
+            <span class="badge bg-primary-lt me-2">2</span>
+            <label class="form-label fw-bold mb-0">Strategy</label>
+          </div>
+          <div class="row row-cards strategy-grid g-3">
+            {% for s in strategies %}
+            <div class="col-12 col-md-6 col-xl-4">
+              <label class="strategy-card p-3 d-block"
+                     data-key="{{ s.key }}"
+                     data-needs-vision="{{ 'true' if s.needs_vision else 'false' }}">
+                <input class="strategy-radio" type="radio" name="campaign_concept"
+                       value="{{ s.key }}" {% if selected_concept == s.key %}checked{% endif %}>
+                <i class="fa-solid fa-circle-check strategy-check"></i>
+                <div class="d-flex align-items-center mb-2">
+                  <span class="strategy-icon bg-{{ s.color }}-lt text-{{ s.color }}">
+                    <i class="fa-solid {{ s.icon }}"></i>
+                  </span>
+                  <div class="ms-2">
+                    <div class="fw-bold lh-1">{{ s.name }}</div>
+                    <span class="badge bg-{{ s.color }}-lt mt-1">{{ s.funnel }}</span>
+                  </div>
+                </div>
+                <div class="fw-medium text-{{ s.color }} small">{{ s.tagline }}</div>
+                <div class="text-muted small mt-1">{{ s.desc }}</div>
+                <div class="strategy-example small fst-italic mt-2">{{ s.example }}</div>
+                <span class="needs-vision-tag badge bg-secondary-lt mt-2">
+                  <i class="fa-solid fa-lock me-1"></i>needs a vision
+                </span>
+              </label>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        {# ── Step 3 · options + generate ─────────────────────────────── #}
+        <div class="d-flex flex-wrap align-items-center gap-3 border-top pt-3">
+          <label class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" name="apply_guidelines"
+                   id="applyGuidelines" value="true"
+                   {% if guidelines_configured %}checked{% else %}disabled{% endif %}>
+            <span class="form-check-label fw-medium">
+              Apply custom style guidelines
+              {% if not guidelines_configured %}
+              <a href="{{ url_for('admin:marketing_settings') }}" class="ms-1 small">— set them up</a>
+              {% endif %}
+            </span>
+          </label>
+
+          <div class="ms-auto d-flex align-items-center gap-3">
+            <span class="text-muted small">
+              Publishing:
+              {% if threads_configured %}
+                <span class="badge bg-green-lt"><i class="fa-brands fa-threads me-1"></i>Threads live</span>
+              {% else %}
+                <span class="badge bg-yellow-lt"><i class="fa-brands fa-threads me-1"></i>Threads sim</span>
+              {% endif %}
+              {% if instagram_configured %}
+                <span class="badge bg-green-lt"><i class="fa-brands fa-instagram me-1"></i>IG live</span>
+              {% else %}
+                <span class="badge bg-yellow-lt"><i class="fa-brands fa-instagram me-1"></i>IG sim</span>
+              {% endif %}
+            </span>
+            <button type="submit" class="btn btn-primary btn-lg fw-bold">
+              <i class="fa-solid fa-wand-magic-sparkles me-2"></i>Generate copy
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block tail %}
+<script>
+(function () {
+  var form = document.getElementById('studioForm');
+  if (!form) return;
+  var cards = Array.prototype.slice.call(form.querySelectorAll('.strategy-card'));
+  var visionSelect = document.getElementById('visionSelect');
+  var fallback = form.getAttribute('data-promo-fallback');
+
+  function radioOf(card) { return card.querySelector('.strategy-radio'); }
+
+  function syncSelected() {
+    cards.forEach(function (c) {
+      c.classList.toggle('is-selected', radioOf(c).checked && !c.classList.contains('is-disabled'));
+    });
+  }
+
+  // Disable vision-specific strategies when no vision is targeted; if one was
+  // selected, hop to the platform-promo fallback strategy.
+  function syncAvailability() {
+    var promo = visionSelect.value === '';
+    var needReselect = false;
+    cards.forEach(function (c) {
+      var locked = promo && c.getAttribute('data-needs-vision') === 'true';
+      c.classList.toggle('is-disabled', locked);
+      var r = radioOf(c);
+      r.disabled = locked;
+      if (locked && r.checked) { r.checked = false; needReselect = true; }
+    });
+    if (needReselect) {
+      var target = cards.filter(function (c) { return c.getAttribute('data-key') === fallback; })[0];
+      if (target) radioOf(target).checked = true;
+    }
+    syncSelected();
+  }
+
+  cards.forEach(function (c) {
+    radioOf(c).addEventListener('change', syncSelected);
+  });
+  visionSelect.addEventListener('change', syncAvailability);
+  syncAvailability();
+})();
+</script>
+{% endblock %}
