@@ -387,6 +387,24 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+# ─── AgentWorkflow (Orchestrated Workflows) ───────────────────────────
+
+
+class AgentWorkflow(Base):
+    __tablename__ = "agent_workflows"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    kind: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String)
+    input: Mapped[dict] = mapped_column(JSONB)
+    output: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cost_usd: Mapped[float] = mapped_column(Numeric, default=0.0)
+    user_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 # ─── JobConfig (Scheduler dynamic configurations) ──────────────────────
 
 

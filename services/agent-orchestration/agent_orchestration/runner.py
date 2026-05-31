@@ -174,6 +174,57 @@ class WorkflowRunner:
             pass
         return await self.get(wid)
 
+    async def run_synchronous(
+        self,
+        *,
+        kind: str,
+        request: BaseModel,
+        run_fn: Callable[[CostMeter], Awaitable[BaseModel]],
+    ) -> tuple[BaseModel, WorkflowRecord]:
+        """Run a workflow synchronously, but still persist the full execution
+        record (status, input, output, error, cost_usd) to the database
+        repository for cost auditing and monitoring.
+        """
+        wid = f"wf_{secrets.token_hex(8)}"
+        now = datetime.now(UTC)
+        meter = CostMeter()
+        record = WorkflowRecord(
+            id=wid,
+            kind=kind,
+            status=WorkflowStatus.running,
+            created_at=now,
+            updated_at=now,
+            input=request.model_dump(),
+        )
+        await self._repo.create(record)
+
+        try:
+            output = await run_fn(meter)
+            cost = round(meter.total_usd, 6)
+            record = record.model_copy(
+                update={
+                    "status": WorkflowStatus.succeeded,
+                    "updated_at": datetime.now(UTC),
+                    "output": output.model_dump(),
+                    "cost_usd": cost,
+                }
+            )
+            await self._repo.update(record)
+            return output, record
+        except Exception as e:
+            log.exception("synchronous workflow %s failed", wid)
+            cost = round(meter.total_usd, 6)
+            record = record.model_copy(
+                update={
+                    "status": WorkflowStatus.failed,
+                    "updated_at": datetime.now(UTC),
+                    "error": str(e),
+                    "cost_usd": cost,
+                }
+            )
+            await self._repo.update(record)
+            raise
+
     # ---- read ----
 
     async def get(self, wid: str) -> WorkflowRecord | None:

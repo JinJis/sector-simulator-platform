@@ -305,15 +305,21 @@ def create_app() -> FastAPI:
     ) -> SignalExtractorRunResult:
         """Synchronous extractor endpoint — called by the signal_ingest
         cron once per raw Signal. Single fast-tier call (~$0.001 each at
-        current pricing), so we run inline rather than through the
-        WorkflowRunner queue. Returns the scoring + cost roll-up.
+        current pricing), run synchronously through the runner to ensure
+        persistence and audit logging. Returns the scoring + cost roll-up.
         """
+        runner: WorkflowRunner = app.state.runner
         llm: LLMClient = _require_llm(app)
         workflow = SignalExtractorWorkflow(llm=llm)
-        cost_meter = CostMeter()
         t0 = time.perf_counter()
+
+        async def run_fn(meter: CostMeter):
+            return await workflow.run(req, cost_meter=meter)
+
         try:
-            scoring = await workflow.run(req, cost_meter=cost_meter)
+            scoring, record = await runner.run_synchronous(
+                kind=workflow.kind, request=req, run_fn=run_fn
+            )
         except Exception as e:
             log.exception(
                 "signal-extractor failed for %s/%s: %s",
@@ -328,7 +334,7 @@ def create_app() -> FastAPI:
         duration_ms = int((time.perf_counter() - t0) * 1000)
         return SignalExtractorRunResult(
             scoring=scoring,
-            cost_usd=cost_meter.total_usd,
+            cost_usd=record.cost_usd,
             duration_ms=duration_ms,
         )
 
@@ -341,16 +347,20 @@ def create_app() -> FastAPI:
     ) -> ProposalPayloadDraftResult:
         """M55 follow-up — fill a community proposal's `proposed_payload`
         from the (target_kind, sector, title, body) the user typed in the
-        wizard's first 3 steps. Single fast-tier call (~$0.001 each), so
-        regenerate is cheap; user just confirms instead of hand-typing
-        the per-kind form. Caller (sector-service tRPC) re-validates
-        with the existing Zod schemas before persisting."""
+        wizard's first 3 steps. Single fast-tier call (~$0.001 each), run
+        synchronously through the runner to ensure persistence and audit logging."""
+        runner: WorkflowRunner = app.state.runner
         llm: LLMClient = _require_llm(app)
         workflow = ProposalPayloadDrafterWorkflow(llm=llm)
-        cost_meter = CostMeter()
         t0 = time.perf_counter()
+
+        async def run_fn(meter: CostMeter):
+            return await workflow.run(req, cost_meter=meter)
+
         try:
-            payload_model = await workflow.run(req, cost_meter=cost_meter)
+            payload_model, record = await runner.run_synchronous(
+                kind=workflow.kind, request=req, run_fn=run_fn
+            )
         except Exception as e:
             log.exception("proposal-payload draft failed: %s", e)
             raise HTTPException(
@@ -361,7 +371,7 @@ def create_app() -> FastAPI:
         return ProposalPayloadDraftResult(
             target_kind=req.target_kind,
             payload=payload_model.model_dump(),
-            cost_usd=cost_meter.total_usd,
+            cost_usd=record.cost_usd,
             duration_ms=duration_ms,
         )
 
@@ -553,14 +563,21 @@ def create_app() -> FastAPI:
         """Synchronous score-updater endpoint — called by the
         recompute_feasibility cron once per (vision × capability) per
         day. Single balanced-tier call with extended thinking; ~$0.01-0.03
-        each at current pricing. Returns the update + cost roll-up.
+        each at current pricing, run synchronously through the runner to
+        ensure persistence and audit logging. Returns the update + cost roll-up.
         """
+        runner: WorkflowRunner = app.state.runner
         llm: LLMClient = _require_llm(app)
         workflow = CapabilityScoreUpdaterWorkflow(llm=llm)
-        cost_meter = CostMeter()
         t0 = time.perf_counter()
+
+        async def run_fn(meter: CostMeter):
+            return await workflow.run(req, cost_meter=meter)
+
         try:
-            update = await workflow.run(req, cost_meter=cost_meter)
+            update, record = await runner.run_synchronous(
+                kind=workflow.kind, request=req, run_fn=run_fn
+            )
         except Exception as e:
             log.exception(
                 "capability-score-updater failed for %s/%s: %s",
@@ -575,7 +592,7 @@ def create_app() -> FastAPI:
         duration_ms = int((time.perf_counter() - t0) * 1000)
         return CapabilityScoreUpdaterRunResult(
             update=update,
-            cost_usd=cost_meter.total_usd,
+            cost_usd=record.cost_usd,
             duration_ms=duration_ms,
         )
 
