@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sqladmin import ModelView
+from sqladmin.filters import AllUniqueStringValuesFilter
 
 from data_pipeline.admin.models import JobConfig
 
@@ -15,7 +16,10 @@ class JobConfigView(ModelView, model=JobConfig):
 
     column_list = ["key", "value", "kind", "group", "description", "updated_at"]
     column_searchable_list = ["key", "group"]
-    column_filters = [JobConfig.group, JobConfig.kind]
+    column_filters = [
+        AllUniqueStringValuesFilter(JobConfig.group, title="Config Group"),
+        AllUniqueStringValuesFilter(JobConfig.kind, title="Type/Kind"),
+    ]
     column_sortable_list = ["key", "group", "updated_at"]
 
     # Restrict forms to only editable/safe columns. Editing 'key' or 'kind'
