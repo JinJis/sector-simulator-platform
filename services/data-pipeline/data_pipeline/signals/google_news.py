@@ -48,9 +48,10 @@ _TAG_RE = re.compile(r"<[^>]+>")
 
 
 def _build_query(keywords: list[str]) -> str:
-    """OR-join the keyword list with quoted phrases. Google News parses
-    quotes as exact-match; OR keeps the search broad."""
-    parts = [f'"{kw.strip()}"' for kw in keywords if kw.strip()]
+    """OR-join the keyword list. Unquoted phrases allow Google News to
+    perform broad term matching, which yields much better coverage for
+    specialised capability keywords than strict exact-phrase quotes."""
+    parts = [kw.strip() for kw in keywords if kw.strip()]
     return " OR ".join(parts)
 
 

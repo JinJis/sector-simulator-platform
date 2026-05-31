@@ -237,6 +237,7 @@ Bring up only specific services:
 
 - [docs/tasks/current.md](./docs/tasks/current.md) — live milestone status
 - [docs/architecture/composition.md](./docs/architecture/composition.md) — Phase 4 data-pipeline + fetcher + bot + UX ground-truth
+- [services/data-pipeline/README.md](./services/data-pipeline/README.md) — 데이터 파이프라인 수집 주기 및 데이터베이스 ERD 아키텍처 분석서 (Pure Markdown)
 - [docs/adr/](./docs/adr/) — Architectural Decision Records
 - [docs/agent-capabilities.md](./docs/agent-capabilities.md) — agent / workflow inventory
 - [docs/archive/](./docs/archive/) — historical Phase 3 memos (pivot, refactor inventory)

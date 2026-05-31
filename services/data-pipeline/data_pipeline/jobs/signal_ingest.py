@@ -228,6 +228,8 @@ async def run_signal_ingest(
                         log.info("%s → 0 raw signals", tag)
 
                     for raw in raw_signals:
+                        if await repo.signal_exists(raw.source_url, cap.id):
+                            continue
                         scoring = None
                         if not skip_extractor:
                             stats.extractor_calls += 1

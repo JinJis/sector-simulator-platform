@@ -153,9 +153,11 @@ async def run_recompute_feasibility(
     *,
     sector_slugs: list[str],
     repo: SignalRepository,
+    job_config: Any = None,
     agent_url: str | None = None,
     sim_url: str | None = None,
-    window_days: int = _RECENT_SIGNALS_WINDOW_DAYS,
+    window_days: int | None = None,
+    limit: int | None = None,
 ) -> RecomputeStats:
     """One recompute pass. Updates capability scores via the score-
     updater agent then triggers vision-level recompute on the sim
@@ -165,6 +167,18 @@ async def run_recompute_feasibility(
         agent_url = os.environ.get("AGENT_ORCHESTRATION_URL", _DEFAULT_AGENT_URL)
     if sim_url is None:
         sim_url = os.environ.get("SIMULATION_SERVICE_URL", _DEFAULT_SIM_URL)
+
+    if window_days is None:
+        if job_config is not None:
+            window_days = await job_config.get_typed("RECOMPUTE_WINDOW_DAYS", default=7, kind="int")
+        else:
+            window_days = 7
+
+    if limit is None:
+        if job_config is not None:
+            limit = await job_config.get_typed("RECOMPUTE_LIMIT", default=100, kind="int")
+        else:
+            limit = 100
 
     stats = RecomputeStats(started_at=datetime.now(UTC))
     since = datetime.now(UTC) - timedelta(days=window_days)
@@ -181,7 +195,7 @@ async def run_recompute_feasibility(
                 stats.capabilities_processed += 1
                 current = await repo.get_current_capability_score(cap.id)
                 signals = await repo.list_recent_signals_for_capability(
-                    cap.id, since=since, limit=50
+                    cap.id, since=since, limit=limit
                 )
                 signal_payloads = [
                     {

@@ -385,3 +385,22 @@ class AuditLog(Base):
     payload: Mapped[dict] = mapped_column(JSONB)
     author_label: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+# ─── JobConfig (Scheduler dynamic configurations) ──────────────────────
+
+
+class JobConfig(Base):
+    __tablename__ = "job_configs"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[str] = mapped_column(String(2048))
+    kind: Mapped[str] = mapped_column(String(32))
+    group: Mapped[str] = mapped_column(String(64))
+    description: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    def __str__(self) -> str:
+        return f"{self.key} = {self.value}"
+

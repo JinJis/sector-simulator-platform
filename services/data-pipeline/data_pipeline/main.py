@@ -436,6 +436,24 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
                 default_when_unset=spec.default_schedule_value,
             )
         )
+    seed_keys.append(
+        EnvSeedKey(
+            key="RECOMPUTE_WINDOW_DAYS",
+            kind="int",
+            group="feasibility",
+            description="Feasibility Recompute 윈도우 조회 기간 (일 단위)",
+            default_when_unset="7",
+        )
+    )
+    seed_keys.append(
+        EnvSeedKey(
+            key="RECOMPUTE_LIMIT",
+            kind="int",
+            group="feasibility",
+            description="최근 시그널 델타 조회 개수 한도",
+            default_when_unset="100",
+        )
+    )
     await seed_from_env(app.state.job_config, seed_keys)
 
     # Build the scheduler unconditionally. Schedule values + enabled

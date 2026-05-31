@@ -133,6 +133,8 @@ class SignalRepository(Protocol):
 
     async def upsert_signal(self, signal: SignalInsert) -> str: ...
 
+    async def signal_exists(self, source_url: str, capability_id: str) -> bool: ...
+
     # M40b — recompute support
     async def get_current_capability_score(
         self, capability_id: str
@@ -196,6 +198,9 @@ class InMemorySignalRepository:
         self._next_id += 1
         self._signals[key] = sid
         return sid
+
+    async def signal_exists(self, source_url: str, capability_id: str) -> bool:
+        return (source_url, capability_id) in self._signals
 
     async def get_current_capability_score(
         self, capability_id: str
@@ -427,6 +432,15 @@ class PostgresSignalRepository:
             )
         assert row is not None
         return row["id"]
+
+    async def signal_exists(self, source_url: str, capability_id: str) -> bool:
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT 1 FROM signals WHERE source_url = $1 AND capability_id = $2",
+                source_url,
+                capability_id,
+            )
+            return row is not None
 
     async def get_current_capability_score(
         self, capability_id: str

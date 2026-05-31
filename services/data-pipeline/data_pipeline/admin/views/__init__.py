@@ -23,6 +23,7 @@ from data_pipeline.admin.views.risk import RiskView
 from data_pipeline.admin.views.sector import SectorView
 from data_pipeline.admin.views.signal import SignalView
 from data_pipeline.admin.views.user import UserView
+from data_pipeline.admin.views.job_config import JobConfigView
 
 # Order here is the order they appear in the SQLAdmin sidebar — keep
 # domain-grouped (Vision-tied first, then Operations) so the cockpit
@@ -36,6 +37,7 @@ ALL_VIEWS: list[type[ModelView]] = [
     ActorView,
     CrawlRunView,
     CommunityProposalView,
+    JobConfigView,
     UserView,
     AuditLogView,
 ]

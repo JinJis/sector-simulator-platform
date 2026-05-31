@@ -139,7 +139,7 @@ async def run_news_ingest_5min(*, app: FastAPI):  # noqa: ANN201
         sector_slugs=visions,
         repo=repo,
         sources=sources,
-        lookback_days=1,
+        lookback_days=14,
         per_capability_limit=10,
     )
     app.state.last_signal_ingest_result = stats
@@ -274,7 +274,11 @@ async def run_recompute_feasibility_job(*, app: FastAPI):  # noqa: ANN201
         "[cron recompute_feasibility] START visions=%s",
         ",".join(visions) or "<none>",
     )
-    stats = await run_recompute_feasibility(sector_slugs=visions, repo=repo)
+    stats = await run_recompute_feasibility(
+        sector_slugs=visions,
+        repo=repo,
+        job_config=getattr(app.state, "job_config", None),
+    )
     app.state.last_feasibility_recompute_result = stats
     log.info(
         "[cron recompute_feasibility] DONE %s",
