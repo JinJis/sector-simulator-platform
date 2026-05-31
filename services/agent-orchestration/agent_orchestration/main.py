@@ -646,12 +646,18 @@ def create_app() -> FastAPI:
         data-pipeline marketing_digest job once per vision. Single
         balanced-tier call; returns a bilingual (ko + en) Threads +
         Instagram post set + cost roll-up."""
+        runner: WorkflowRunner = app.state.runner
         llm: LLMClient = _require_llm(app)
         workflow = MarketingContentWorkflow(llm=llm)
-        cost_meter = CostMeter()
         t0 = time.perf_counter()
+
+        async def run_fn(meter: CostMeter):
+            return await workflow.run(req, cost_meter=meter)
+
         try:
-            post_set = await workflow.run(req, cost_meter=cost_meter)
+            post_set, record = await runner.run_synchronous(
+                kind=workflow.kind, request=req, run_fn=run_fn
+            )
         except Exception as e:
             log.exception(
                 "marketing-content failed for %s: %s", req.vision_slug, e
@@ -663,7 +669,7 @@ def create_app() -> FastAPI:
         duration_ms = int((time.perf_counter() - t0) * 1000)
         return MarketingContentRunResult(
             post_set=post_set,
-            cost_usd=cost_meter.total_usd,
+            cost_usd=record.cost_usd,
             duration_ms=duration_ms,
         )
 
