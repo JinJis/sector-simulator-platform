@@ -53,8 +53,10 @@ touched. Three questions:
 2. Simpler than it needs to be? Trim — but never drop the core.
 3. Cross-references still resolve?
 
+⚠️ **CRITICAL TWIN DUAL-WRITE SYNC RULE**: `GEMINI.md` and `CLAUDE.md` are exact developer guidelines mirror twins. Regardless of the AI assistant model tier you are running (Gemini or Claude), if you modify `GEMINI.md`, you **MUST** apply the exact same modification to `CLAUDE.md` within the same turn, and vice versa. No drift between these two operational contexts is tolerated under any circumstances.
+
 Important MD files (review when in scope):
-- `GEMINI.md`, `README.md`, `DESIGN.md`
+- `GEMINI.md`, `CLAUDE.md`, `README.md`, `DESIGN.md`
 - `docs/tasks/current.md`, `docs/architecture/composition.md`,
   `docs/agent-capabilities.md`, `docs/adr/*.md`
 - `packages/*/README.md`, `prompts/README.md`,
@@ -93,12 +95,13 @@ Core abstractions:
 
 **Phase 4 (real-time intelligence) — steady state. M55 admin reset
 shipped; M56 ingest-pipeline verification + tz/source cleanup
-shipped (see current.md).** Phase 4 originally shipped M48–M54:
+shipped; M57 dynamic lookback recompute (7d lookback, 100 limits default)
+& JobConfig admin tuning View shipped (see current.md).** Phase 4 originally shipped M48–M54:
 crawler service, 6 per-surface fetchers, bot proposals, Live Pulse
 UX, an `apps/admin/` Next.js cockpit, vision visualizations, and 4
 seeded visions. Those landed and the data path works.
 
-What changed in M55: the `apps/admin/` console got tangled
+What changed in M55-M57: the `apps/admin/` console got tangled
 (login + tRPC + 14 hand-rolled pages, drift between trigger UIs and
 the actual fetcher contracts), so we **deleted it and moved the
 admin surface into SQLAdmin** mounted at `data-pipeline:8003/admin`:
@@ -110,8 +113,11 @@ admin surface into SQLAdmin** mounted at `data-pipeline:8003/admin`:
   pause/resume/run-now)
 - a custom **Vision Builder** wizard (prompt → review → commit,
   forwarding to the same sector-service tRPC that powered the React form)
+- a custom **Job Configs** view mapping `job_configs` table to SQLAdmin (allowing
+  administrators to dynamically change lookback windows `RECOMPUTE_WINDOW_DAYS=7` and
+  signal limit `RECOMPUTE_LIMIT=100` in real-time without restarting Docker)
 
-Side effects: `apps/admin/` deleted, `services/sector-service/src/trpc/crawler.ts` deleted (its only consumer was apps/admin), port 3100 freed. The historical M48–M54 milestone log lives in git; [docs/tasks/current.md](./docs/tasks/current.md) is now M55-focused.
+Side effects: `apps/admin/` deleted, `services/sector-service/src/trpc/crawler.ts` deleted (its only consumer was apps/admin), port 3100 freed. The historical M48–M54 milestone log lives in git; [docs/tasks/current.md](./docs/tasks/current.md) is now M57-focused.
 
 What didn't change: data pipeline (data-pipeline + agent-
 orchestration), Prisma schema, scoring engine, public web app at
@@ -129,7 +135,7 @@ slice = one PR.
 
 | Layer | Stack |
 |---|---|
-| Frontend (`apps/web`) | Next.js 15 (App Router, RSC), TS strict, shadcn/ui + Tailwind, Recharts, React Flow, TanStack Query, tRPC client. Admin surface is SQLAdmin (Tabler) at `data-pipeline:8003/admin` — see M55 in current.md. |
+| Frontend (`apps/web`) | Next.js 15 (App Router, RSC), TS strict, shadcn/ui + Tailwind, Recharts, React Flow, TanStack Query, tRPC client. Admin surface is SQLAdmin (Tabler) with custom QueueView + JobConfigView mounted at `data-pipeline:8003/admin` — see M55-M57 in current.md. |
 | Backend Node (`services/sector-service`) | Fastify + tRPC, Prisma (Postgres), Zod, Node 20 |
 | Backend Python (`services/{simulation,data-pipeline,agent-orchestration}-service`) | FastAPI, NumPy/Pandas/SciPy, PyMC (Monte Carlo), Pydantic v2, Python 3.12+ |
 | Agent / LLM | Google Gemini (all tiers) via Vertex AI — `google-genai` SDK only (F9, 2026-05-28). Per-tier model in the routing block below. |
@@ -226,11 +232,10 @@ pnpm dev --filter web                    # single app
 docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 
 # Tests
-pnpm test                                # all unit
-pnpm test --filter <pkg>
-pnpm test:integration
-pnpm test:e2e                            # Playwright
-pnpm test:agent-evals                    # offline by default; GEMINI_EVAL_LIVE=1 for live
+pnpm test                                # Runs unit tests in Node/Python packages with package.json test scripts
+pnpm --filter <pkg> test                 # Run unit tests for a specific Node/Python package (e.g., @platform/sector-service)
+uv run --package <pkg> pytest            # Run pytest for a specific Python service (e.g., data-pipeline, agent-orchestration)
+uv run pytest tests/agent_evals          # Run agent behavior evals (offline by default; GEMINI_EVAL_LIVE=1 for live API mode)
 
 # Quality gates (must pass before merge)
 pnpm typecheck                           # tsc + mypy
@@ -273,10 +278,9 @@ pnpm deploy:prod                         # main merge → GitHub Actions
 - PR template: changes / test plan / UI screenshots
 
 ### Tests
-- Unit: beside source (`foo.ts` + `foo.test.ts`)
-- Integration: `tests/integration/`
-- E2E: Playwright in `tests/e2e/`
-- Agent evals: `tests/agent_evals/<workflow>/cases.py` (underscore dir)
+- Unit & Integration: Beside source or in service subdirectories (e.g., `services/sector-service/tests/`, `services/simulation-service/tests/`, `services/data-pipeline/tests/`, `packages/agent-tools/tests/`)
+- Agent evals: Located in `tests/agent_evals/` (filesystem has underscore; run via `uv run pytest tests/agent_evals`)
+- E2E: Playwright E2E test suite is currently deprecated/retired
 - Coverage targets: services 70% / apps 50%
 
 ### LLM calls
@@ -333,6 +337,13 @@ pnpm deploy:prod                         # main merge → GitHub Actions
 2. Client: `const t = useT();` then `t("namespace.key")`
 3. Server (RSC): `const t = await getT();` (reads cookie)
 4. Korean tone uses natural, friendly polite form (존댓말), avoiding literal translations.
+
+### New JobConfig parameter & SQLAdmin view (AI Agent Pattern)
+1. Define the parameter keys (e.g., `RECOMPUTE_WINDOW_DAYS`, `RECOMPUTE_LIMIT`) as `EnvSeedKey` inside `services/data-pipeline/data_pipeline/main.py :: lifespan` so they seed on boot.
+2. Create/Mirror the database table in SQLAlchemy inside `services/data-pipeline/data_pipeline/admin/models.py` (e.g., `class JobConfig(Base)`).
+3. Create the SQLAdmin view module inside `services/data-pipeline/data_pipeline/admin/views/<name>.py` setting restrictive `form_columns` (e.g., `["value", "description"]`) to keep the operational columns safe.
+4. Register the view class in `ALL_VIEWS` inside `services/data-pipeline/data_pipeline/admin/views/__init__.py`.
+5. Fetch dynamic settings at runtime using `await job_config.get_typed("KEY", default, kind="int"|"string"|"bool")` inside scheduled runner scripts.
 
 ---
 
@@ -400,8 +411,9 @@ Current ADRs:
 
 - [DESIGN.md](./DESIGN.md) — vision, personas, features, NFRs
 - [docs/tasks/current.md](./docs/tasks/current.md) — live milestone status
-- [docs/architecture/composition.md](./docs/architecture/composition.md) —
-  Phase 4 data-pipeline + fetcher + bot + UX ground-truth
+- [services/data-pipeline/README.md](./services/data-pipeline/README.md) — Data Pipeline Ingestion Cycles & Database ERD Architecture Guide (English)
+- [services/data-pipeline/README.ko.md](./services/data-pipeline/README.ko.md) — 데이터 파이프라인 수집 주기 및 데이터베이스 ERD 아키텍처 분석서 (한글 버전, 평어체 해설)
+- [docs/architecture/composition.md](./docs/architecture/composition.md) — Phase 4 data-pipeline + fetcher + bot + UX ground-truth
 - [docs/adr/](./docs/adr/) — ADRs
 - [docs/agent-capabilities.md](./docs/agent-capabilities.md) — agent / workflow inventory
 - [docs/archive/](./docs/archive/) — historical Phase 3 memos (pivot, refactor inventory)
