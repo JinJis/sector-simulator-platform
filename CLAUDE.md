@@ -1,10 +1,9 @@
 # CLAUDE.md
 
-매 세션 읽는 운영 컨텍스트. 짧고 actionable. 제품/전략은
-[DESIGN.md](./DESIGN.md), 현재 작업은
-[docs/tasks/current.md](./docs/tasks/current.md), Phase 4 데이터
-파이프라인 알고리즘 설계는
-[docs/architecture/composition.md](./docs/architecture/composition.md).
+Developer operational context read before every session. Short and actionable.
+Product & strategy details live in [DESIGN.md](./DESIGN.md), current milestones in
+[docs/tasks/current.md](./docs/tasks/current.md), and Phase 4 data-pipeline
+algorithm design in [docs/architecture/composition.md](./docs/architecture/composition.md).
 
 ---
 
@@ -73,15 +72,15 @@ from overcomplication, clarifying questions arrive *before* implementation.
 > every signal that moves it, and roll it up into one number you can
 > glance at in 5 seconds.
 
-핵심 abstractions:
+Core abstractions:
 - **Vision** = 1 row in `Sector` table with `is_vision_eligible=true`
   (DB column name preserved through pivot).
-- **Capability** = 비전을 구성하는 기술/경제/규제/공급 요건 (4-dim score).
-- **Signal** = 매일 들어오는 source-grounded 이벤트 (arXiv / 특허 / 뉴스 /
-  공시). Extractor 에이전트가 capability score delta로 변환.
-- **Actor** = capability를 끌어가는 회사 / 연구소 / 정부 기관.
-- **Risk / FeasibilityIndex** = 보조 도메인 — risk 카탈로그 + Bayesian
-  rollup. (Phase 3 archive: `docs/archive/pivot.md §3` for original framing.)
+- **Capability** = Tech, economic, regulatory, or supply prerequisite for a vision (4-dim score).
+- **Signal** = Daily source-grounded events (arXiv / patent / news / filing).
+  Converted to capability score deltas by the Extractor agent.
+- **Actor** = Company, lab, or government body driving capabilities.
+- **Risk / FeasibilityIndex** = Auxiliary domains — risk catalog + Bayesian rollup.
+  (See Phase 3 archive: `docs/archive/pivot.md §3` for original framing.)
 
 ---
 
@@ -120,8 +119,8 @@ orchestration), Prisma schema, scoring engine, public web app at
 Phase 3 context lives in
 [docs/archive/pivot.md](./docs/archive/pivot.md).
 
-매 변경 시작 전: composition.md 관련 §-section → current.md → 한
-슬라이스 = 한 PR.
+Before starting any change: composition.md related §-section → current.md → one
+slice = one PR.
 
 ---
 
@@ -332,7 +331,7 @@ pnpm deploy:prod                         # main merge → GitHub Actions
 1. Add ko + en pair in `apps/web/src/lib/i18n/dict.ts`
 2. Client: `const t = useT();` then `t("namespace.key")`
 3. Server (RSC): `const t = await getT();` (reads cookie)
-4. Korean tone goes natural-friendly 존댓말, not 번역체
+4. Korean tone uses natural, friendly polite form (존댓말), avoiding literal translations.
 
 ---
 
@@ -370,13 +369,13 @@ Target: per-user month LLM cost < $30 (Pro plan goal $20-$30/mo).
 - Every data point: `source_url` + `timestamp` + `confidence`
 - LLM cannot fabricate numbers → schema enforces `source_ref` on drafts
 
-### 한국어 / English
+### Korean / English
 - Code / variables / commits / ADR: **English**
 - User-facing UI text: i18n (ko/en parity; ko default)
 - Translation registry: `apps/web/src/lib/i18n/dict.ts` — all visible
   strings go here as `{ ko, en }` pairs. Tone in both languages: friendly,
-  not formal-translation-ese.
-- Comments / internal docs: 혼용 OK
+  avoiding literal translation styles.
+- Comments / internal docs: Mixed English and Korean is permitted.
 
 ---
 

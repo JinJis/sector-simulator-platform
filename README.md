@@ -5,6 +5,8 @@
 > every signal that moves it, and roll it up into one number you can
 > glance at in 5 seconds.
 
+*Looking for the Korean translation? See [README.ko.md](./README.ko.md) (한국어 버전).*
+
 For strategy / personas / business model see [DESIGN.md](./DESIGN.md). For
 coding conventions see [CLAUDE.md](./CLAUDE.md). For active milestone
 status see [docs/tasks/current.md](./docs/tasks/current.md). For the
@@ -237,7 +239,9 @@ Bring up only specific services:
 
 - [docs/tasks/current.md](./docs/tasks/current.md) — live milestone status
 - [docs/architecture/composition.md](./docs/architecture/composition.md) — Phase 4 data-pipeline + fetcher + bot + UX ground-truth
-- [services/data-pipeline/README.md](./services/data-pipeline/README.md) — 데이터 파이프라인 수집 주기 및 데이터베이스 ERD 아키텍처 분석서 (Pure Markdown)
+- [README.ko.md](./README.ko.md) — 한국어 버전의 리포지토리 종합 아키텍처 해설서 (평어체)
+- [services/data-pipeline/README.md](./services/data-pipeline/README.md) — Data Pipeline Ingestion Cycles & Database ERD Architecture Guide (English)
+- [services/data-pipeline/README.ko.md](./services/data-pipeline/README.ko.md) — 데이터 파이프라인 수집 주기 및 데이터베이스 ERD 아키텍처 분석서 (한글 버전, 평어체 해설)
 - [docs/adr/](./docs/adr/) — Architectural Decision Records
 - [docs/agent-capabilities.md](./docs/agent-capabilities.md) — agent / workflow inventory
 - [docs/archive/](./docs/archive/) — historical Phase 3 memos (pivot, refactor inventory)
