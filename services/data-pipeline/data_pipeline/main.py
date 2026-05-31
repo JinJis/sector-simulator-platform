@@ -113,7 +113,6 @@ from data_pipeline.db.risk_reader import PostgresRiskReader
 from data_pipeline.db.signal_writer import PostgresSignalWriter
 from data_pipeline.jobs.runners import (
     run_digest_daily_job,
-    run_marketing_digest_job,
     run_news_ingest_5min,
     run_orchestrator_tick_job,
     run_recompute_feasibility_job,
@@ -143,7 +142,6 @@ _cron_prereq_attr: dict[str, str | None] = {
     "research_ingest_hourly": "signal_repo",
     "recompute_feasibility_hourly": "signal_repo",
     "digest_daily": "signal_repo",
-    "marketing_digest_daily": "signal_repo",
     "orchestrator_tick_15min": "crawl_runs_repo",
 }
 
@@ -157,7 +155,6 @@ _cron_runner: dict[str, Any] = {
     "research_ingest_hourly": run_research_ingest_hourly,
     "recompute_feasibility_hourly": run_recompute_feasibility_job,
     "digest_daily": run_digest_daily_job,
-    "marketing_digest_daily": run_marketing_digest_job,
     "orchestrator_tick_15min": run_orchestrator_tick_job,
 }
 
@@ -471,6 +468,55 @@ async def lifespan(app: FastAPI):  # noqa: ANN201
             group="feasibility",
             description="최근 시그널 델타 조회 개수 한도",
             default_when_unset="100",
+        )
+    )
+    seed_keys.append(
+        EnvSeedKey(
+            key="MARKETING_TONE_THREADS",
+            kind="string",
+            group="marketing",
+            description="Threads 말투 / 스타일 지침 (operator-defined)",
+            default_when_unset=(
+                "Conversational, brief, highly punchy, professional but direct, "
+                "and formatted with visual line breaks. Allergy to excessive hype. "
+                "Focus on the core technical/economic constraint."
+            ),
+        )
+    )
+    seed_keys.append(
+        EnvSeedKey(
+            key="MARKETING_EXAMPLES_THREADS",
+            kind="string",
+            group="marketing",
+            description="Threads 예시 포스트",
+            default_when_unset=(
+                "🔥 [KO_HOOK]\n[KO_BODY]\n📍 [KO_CTA]\n\n"
+                "✨ [EN_HOOK]\n[EN_BODY]\n🔗 [EN_CTA]"
+            ),
+        )
+    )
+    seed_keys.append(
+        EnvSeedKey(
+            key="MARKETING_TONE_INSTAGRAM",
+            kind="string",
+            group="marketing",
+            description="Instagram 말투 / 스타일 지침 (operator-defined)",
+            default_when_unset=(
+                "Slightly more narrative/storytelling, aesthetic, visual-focused. "
+                "Structured using emojis. Clear separation between sections."
+            ),
+        )
+    )
+    seed_keys.append(
+        EnvSeedKey(
+            key="MARKETING_EXAMPLES_INSTAGRAM",
+            kind="string",
+            group="marketing",
+            description="Instagram 예시 포스트",
+            default_when_unset=(
+                "🔥 [KO_HOOK]\n[KO_BODY]\n📍 [KO_CTA]\n\n"
+                "✨ [EN_HOOK]\n[EN_BODY]\n🔗 [EN_CTA]"
+            ),
         )
     )
     await seed_from_env(app.state.job_config, seed_keys)

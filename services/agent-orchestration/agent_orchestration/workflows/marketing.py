@@ -117,6 +117,14 @@ class MarketingContentWorkflow:
                 "the binding-constraint story instead; do not invent a signal.)"
             )
 
+        if getattr(request, "custom_guidelines", None):
+            parts.append(
+                f"\n\n## Custom Tone & Example Guidelines (CRITICAL OVERRIDE)\n"
+                f"Please strictly apply the following operator-defined custom tone, "
+                f"style, and example post guidelines for each platform:\n"
+                f"{request.custom_guidelines}"
+            )
+
         platforms = ", ".join(request.platforms)
         parts.append(
             f"\n\nWrite one post per platform ({platforms}), each with ko + en "

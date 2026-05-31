@@ -30,6 +30,7 @@ from data_pipeline.admin.format import register_jinja_filters
 from data_pipeline.admin.queue_view import QueueView
 from data_pipeline.admin.views import ALL_VIEWS
 from data_pipeline.admin.views.cost_tracker import LLMCostTrackerView
+from data_pipeline.admin.views.marketing import LLMMarketingView
 from data_pipeline.admin.vision_builder_view import VisionBuilderView
 
 log = logging.getLogger(__name__)
@@ -187,6 +188,8 @@ def mount_admin(app: FastAPI) -> Admin | None:
     admin.add_base_view(VisionBuilderView)
     # LLM Costs Tracker — financial engineering cockpit.
     admin.add_base_view(LLMCostTrackerView)
+    # Marketing Cockpit — manual SNS generation, review, and publish.
+    admin.add_base_view(LLMMarketingView)
 
     # Register the secure dashboard endpoints on the main FastAPI app
     from data_pipeline.admin.dashboard_api import router as dashboard_api_router

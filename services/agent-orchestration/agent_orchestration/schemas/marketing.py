@@ -86,6 +86,10 @@ class VisionMarketingSnapshot(BaseModel):
     platforms: list[MarketingPlatform] = Field(
         default_factory=lambda: list(_DEFAULT_PLATFORMS), max_length=2
     )
+    custom_guidelines: str | None = Field(
+        default=None,
+        description="Custom tone, style, or example guidelines to override defaults.",
+    )
 
 
 # ---- Output --------------------------------------------------------------
