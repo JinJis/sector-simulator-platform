@@ -10,7 +10,7 @@ class AuditLogView(_BaseModelView, model=m.AuditLog):
     name = "Audit log"
     name_plural = "Audit log"
     icon = "fa-solid fa-clipboard-list"
-    category = "Operations"
+    category = "Audits"
 
     column_list = [
         m.AuditLog.action,

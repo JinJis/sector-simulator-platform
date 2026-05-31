@@ -1,0 +1,256 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content_header %}
+<div class="row align-items-center">
+  <div class="col">
+    <h2 class="page-title">{{ title }}</h2>
+    <div class="page-pretitle">{{ subtitle }}</div>
+  </div>
+  <div class="col-auto">
+    <span class="text-muted small">checked {{ now_utc | kst('%H:%M:%S', true) }}</span>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{# ─── Top Metrics Cards ─────────────────────────────────────────── #}
+<div class="col-12">
+  <div class="row row-cards">
+    <div class="col-sm-6 col-lg-4">
+      <div class="card card-sm shadow-sm" style="border-top: 3px solid #206bc4;">
+        <div class="card-body">
+          <div class="subheader text-blue">Grand Total Spend</div>
+          <div class="h1 m-0 font-monospace fw-bold text-dark">
+            ${{ "%.4f" | format(total_spent) }}
+          </div>
+          <div class="text-muted small mt-1">
+            Combined workflows + fetcher runs
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-4">
+      <div class="card card-sm shadow-sm" style="border-top: 3px solid #2fb344;">
+        <div class="card-body">
+          <div class="subheader text-green">Average Daily Run Spend</div>
+          {% set daily_avg = 0.0 %}
+          {% if daily_spent %}
+            {% set sum_costs = [] %}
+            {% for d in daily_spent %}
+              {% set _ = sum_costs.append(d.cost) %}
+            {% endfor %}
+            {% set daily_avg = (sum_costs | sum) / (daily_spent | length) %}
+          {% endif %}
+          <div class="h1 m-0 font-monospace fw-bold text-dark">
+            ${{ "%.4f" | format(daily_avg) }}
+          </div>
+          <div class="text-muted small mt-1">
+            Based on the last {{ daily_spent | length }} active days
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-4">
+      <div class="card card-sm shadow-sm" style="border-top: 3px solid #f59e0b;">
+        <div class="card-body">
+          <div class="subheader text-warning">Active Gemini Models</div>
+          <div class="h1 m-0 font-monospace fw-bold text-dark">4</div>
+          <div class="text-muted small mt-1">
+            gemini-3.1-pro, 3.5-flash, 3.5-flash-lite, 2.5-flash
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ─── Sector Spend Breakdown ────────────────────────────────────── #}
+<div class="col-md-6 col-lg-6">
+  <div class="card shadow-sm" style="min-height: 26rem;">
+    <div class="card-header bg-light border-bottom">
+      <h3 class="card-title"><i class="fa-solid fa-chart-pie me-2 text-blue"></i>Spend by Sector / Vision</h3>
+    </div>
+    <div class="card-body">
+      {% if sector_spent %}
+      <div class="space-y-3">
+        {% for s in sector_spent %}
+          {% set pct = 0.0 %}
+          {% if total_spent > 0 %}
+            {% set pct = (s.cost / total_spent) * 100 %}
+          {% endif %}
+          <div>
+            <div class="d-flex justify-between align-items-center mb-1" style="font-size: 0.85rem;">
+              <span class="fw-bold text-primary">{{ s.sector }}</span>
+              <span class="font-monospace fw-bold">${{ "%.4f" | format(s.cost) }} <span class="text-muted small">({{ "%.1f" | format(pct) }}%)</span></span>
+            </div>
+            <div class="progress progress-xs">
+              <div class="progress-bar bg-blue" style="width: {{ pct }}%"></div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-muted text-center py-4">No sector spend tracked yet.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ─── Daily Trend last 30 days ───────────────────────────────────── #}
+<div class="col-md-6 col-lg-6">
+  <div class="card shadow-sm" style="min-height: 26rem;">
+    <div class="card-header bg-light border-bottom">
+      <h3 class="card-title"><i class="fa-solid fa-chart-line me-2 text-green"></i>Daily Spend Trend (Last 30 Days)</h3>
+    </div>
+    <div class="card-body p-0" style="max-height: 22rem; overflow-y: auto;">
+      {% if daily_spent %}
+      <table class="table table-vcenter card-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th class="text-end">Spend (USD)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in daily_spent %}
+          <tr>
+            <td class="font-monospace small">{{ d.date }}</td>
+            <td class="text-end font-monospace fw-bold text-dark">
+              ${{ "%.4f" | format(d.cost) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-muted text-center py-4">No daily trend tracked yet.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ─── Spend by Ingest Fetcher Category ──────────────────────────── #}
+<div class="col-md-6 col-lg-6">
+  <div class="card shadow-sm" style="min-height: 22rem;">
+    <div class="card-header bg-light border-bottom">
+      <h3 class="card-title"><i class="fa-solid fa-spider me-2 text-cyan"></i>Spend by Ingest / Fetcher Run</h3>
+    </div>
+    <div class="table-responsive" style="max-height: 18rem; overflow-y: auto;">
+      {% if fetcher_spent %}
+      <table class="table table-vcenter card-table">
+        <thead>
+          <tr>
+            <th>Fetcher Kind</th>
+            <th class="text-center">Runs</th>
+            <th class="text-end">Total Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in fetcher_spent %}
+          <tr>
+            <td>
+              <span class="badge bg-cyan-lt font-monospace">{{ f.fetcher_kind }}</span>
+            </td>
+            <td class="text-center font-monospace">{{ f.count }}</td>
+            <td class="text-end font-monospace fw-bold text-dark">
+              ${{ "%.4f" | format(f.cost) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-muted text-center py-4">No fetcher runs logged.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ─── Spend by Agent Workflow Category ─────────────────────────── #}
+<div class="col-md-6 col-lg-6">
+  <div class="card shadow-sm" style="min-height: 22rem;">
+    <div class="card-header bg-light border-bottom">
+      <h3 class="card-title"><i class="fa-solid fa-robot me-2 text-purple"></i>Spend by Agent Workflow</h3>
+    </div>
+    <div class="table-responsive" style="max-height: 18rem; overflow-y: auto;">
+      {% if workflow_spent %}
+      <table class="table table-vcenter card-table">
+        <thead>
+          <tr>
+            <th>Workflow / Conductor</th>
+            <th class="text-center">Runs</th>
+            <th class="text-end">Total Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for w in workflow_spent %}
+          <tr>
+            <td>
+              <span class="badge bg-purple-lt font-monospace">{{ w.kind }}</span>
+            </td>
+            <td class="text-center font-monospace">{{ w.count }}</td>
+            <td class="text-end font-monospace fw-bold text-dark">
+              ${{ "%.4f" | format(w.cost) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-muted text-center py-4">No agent workflows logged.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ─── Recent Agent Workflows Granular Logs ─────────────────────── #}
+<div class="col-12">
+  <div class="card shadow-sm">
+    <div class="card-header bg-light border-bottom">
+      <h3 class="card-title"><i class="fa-solid fa-list me-2 text-secondary"></i>Recent Orchestrated Workflow Costs</h3>
+    </div>
+    <div class="table-responsive">
+      {% if recent_workflows %}
+      <table class="table table-vcenter card-table table-striped">
+        <thead>
+          <tr>
+            <th>Workflow ID</th>
+            <th>Kind</th>
+            <th>Status</th>
+            <th>Time (KST)</th>
+            <th class="text-end">Cost (USD)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for w in recent_workflows %}
+          <tr>
+            <td class="font-monospace small text-muted">{{ w.id }}</td>
+            <td>
+              <span class="badge bg-purple-lt font-monospace fw-semibold">{{ w.kind }}</span>
+            </td>
+            <td>
+              {% if w.status == 'succeeded' %}
+              <span class="badge bg-green-lt">succeeded</span>
+              {% elif w.status == 'failed' %}
+              <span class="badge bg-red-lt">failed</span>
+              {% else %}
+              <span class="badge bg-yellow-lt">{{ w.status }}</span>
+              {% endif %}
+            </td>
+            <td class="font-monospace small">
+              {{ w.created_at | kst('%Y-%m-%d %H:%M:%S') }} KST
+            </td>
+            <td class="text-end font-monospace fw-bold text-dark">
+              ${{ "%.4f" | format(w.cost_usd) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-muted text-center py-4">No recent workflows found.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

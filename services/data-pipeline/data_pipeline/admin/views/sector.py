@@ -18,7 +18,7 @@ class SectorView(_BaseModelView, model=m.Sector):
     name = "Vision"
     name_plural = "Visions"
     icon = "fa-solid fa-bullseye"
-    category = "Vision"
+    category = "Tables"
 
     column_list = [
         m.Sector.slug,

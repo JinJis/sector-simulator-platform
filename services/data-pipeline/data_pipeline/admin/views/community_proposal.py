@@ -22,7 +22,7 @@ class CommunityProposalView(_BaseModelView, model=m.CommunityProposal):
     name = "Community proposal"
     name_plural = "Community proposals"
     icon = "fa-solid fa-comments"
-    category = "Operations"
+    category = "Jobs"
 
     column_list = [
         m.CommunityProposal.sector_slug,

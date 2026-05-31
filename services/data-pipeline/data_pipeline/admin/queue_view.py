@@ -216,14 +216,14 @@ async def _scheduler_rows(app: FastAPI) -> tuple[list[_SchedulerRowVM], bool]:
 class QueueView(BaseView):
     """Live ARQ queue depth + APScheduler cron list with pause/resume.
 
-    `category="Operations"` slots it next to CrawlRun / CommunityProposal
+    `category="Jobs"` slots it next to CrawlRun / CommunityProposal
     in the sidebar; the `fa-bolt` icon mirrors the lightning-bolt
     visual we used for the legacy /admin/data-pipeline/queue tab.
     """
 
     name = "Queue + Crons"
     icon = "fa-solid fa-bolt"
-    category = "Operations"
+    category = "Jobs"
     identity = "queue"  # used in URL name (admin:queue)
 
     @expose("/queue", methods=["GET"])
