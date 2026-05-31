@@ -15,7 +15,7 @@ class JobConfigView(ModelView, model=JobConfig):
 
     column_list = ["key", "value", "kind", "group", "description", "updated_at"]
     column_searchable_list = ["key", "group"]
-    column_filters = ["group", "kind"]
+    column_filters = [JobConfig.group, JobConfig.kind]
     column_sortable_list = ["key", "group", "updated_at"]
 
     # Restrict forms to only editable/safe columns. Editing 'key' or 'kind'
