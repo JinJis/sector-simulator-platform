@@ -99,7 +99,7 @@ class MarketingContentWorkflow:
             tier="balanced",
             system=system,
             user=user,
-            max_tokens=3072,
+            max_tokens=8192,
             # Bilingual copy with a consistent insight across ko/en
             # benefits from a little planning before it commits to the
             # hook — cheap at balanced tier, better parity.

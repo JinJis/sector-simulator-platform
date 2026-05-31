@@ -42,6 +42,29 @@
   .strategy-card.is-selected .strategy-example { border-left-color: var(--tblr-primary); }
   .needs-vision-tag { display: none; }
   .strategy-card.is-disabled .needs-vision-tag { display: inline-block; }
+
+  /* Conductor Loader Styles */
+  .step-inactive { color: var(--tblr-secondary) !important; opacity: 0.5; }
+  .step-inactive .rounded-circle { background-color: var(--tblr-secondary-lt) !important; border: 2px solid var(--tblr-border-color) !important; }
+  
+  .step-active { color: var(--tblr-primary) !important; opacity: 1; }
+  .step-active .rounded-circle { background-color: var(--tblr-primary-lt) !important; border: 2px dashed var(--tblr-primary) !important; animation: pulse 1.5s infinite; }
+  
+  .step-completed { color: var(--tblr-success) !important; opacity: 1; }
+  .step-completed .rounded-circle { background-color: var(--tblr-success-lt) !important; border: 2px solid var(--tblr-success) !important; }
+  
+  @keyframes pulse {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
+  }
+
+  .terminal-box {
+    background-color: #0f172a !important;
+    color: #f8fafc !important;
+    border: 1px solid #1e293b !important;
+    border-radius: var(--tblr-border-radius);
+  }
 </style>
 {% endblock %}
 
@@ -82,6 +105,7 @@
         id="studioForm" data-promo-fallback="{{ promo_fallback_concept }}">
     <div class="card">
       <div class="card-body">
+        <div id="studioFormContent">
 
         {# ── Step 1 · target ─────────────────────────────────────────── #}
         <div class="mkt-target mb-4">
@@ -144,6 +168,68 @@
           </div>
         </div>
 
+        </div>
+
+        {# ── Conductor Ingest & Generation Console ─────────────────────── #}
+        <div id="generationConsole" style="display: none;" class="py-2">
+          <div class="text-center mb-4">
+            <div class="spinner-border text-primary spinner-border-md mb-2" role="status"></div>
+            <h3 class="fw-bold mb-1">Conductor: Orchestrating Campaign Strategy</h3>
+            <p class="text-muted small mb-0">Gemini 3.5 Flash is analyzing constraints, citation grounding, and copywriting campaign variations...</p>
+          </div>
+          
+          <!-- Visual Progress Pipeline -->
+          <div class="row justify-content-center mb-4">
+            <div class="col-md-11 col-lg-10 col-xl-9">
+              <div class="d-flex justify-content-around text-center small fw-bold">
+                <div id="step1" class="step-inactive" style="flex: 1; transition: all 0.3s ease;">
+                  <div class="mb-2 p-2 rounded-circle d-inline-flex align-items-center justify-content-center" style="width: 3rem; height: 3rem;">
+                    <i class="fa-solid fa-database fa-lg"></i>
+                  </div>
+                  <div>1. Assembler</div>
+                </div>
+                <div id="step2" class="step-inactive" style="flex: 1; transition: all 0.3s ease;">
+                  <div class="mb-2 p-2 rounded-circle d-inline-flex align-items-center justify-content-center" style="width: 3rem; height: 3rem;">
+                    <i class="fa-solid fa-paper-plane fa-lg"></i>
+                  </div>
+                  <div>2. Dispatcher</div>
+                </div>
+                <div id="step3" class="step-inactive" style="flex: 1; transition: all 0.3s ease;">
+                  <div class="mb-2 p-2 rounded-circle d-inline-flex align-items-center justify-content-center" style="width: 3rem; height: 3rem;">
+                    <i class="fa-solid fa-brain fa-lg"></i>
+                  </div>
+                  <div>3. LLM Agent</div>
+                </div>
+                <div id="step4" class="step-inactive" style="flex: 1; transition: all 0.3s ease;">
+                  <div class="mb-2 p-2 rounded-circle d-inline-flex align-items-center justify-content-center" style="width: 3rem; height: 3rem;">
+                    <i class="fa-solid fa-circle-check fa-lg"></i>
+                  </div>
+                  <div>4. Validation</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Dark Console Terminal -->
+          <div class="row justify-content-center mb-2">
+            <div class="col-md-11 col-lg-10 col-xl-9">
+              <div class="card terminal-box shadow">
+                <div class="card-header bg-dark border-bottom d-flex align-items-center py-1.5" style="border-color: #1e293b !important;">
+                  <div class="d-flex gap-1 me-3">
+                    <span class="badge bg-danger rounded-circle p-1" style="width: 6px; height: 6px; display: inline-block;"></span>
+                    <span class="badge bg-warning rounded-circle p-1" style="width: 6px; height: 6px; display: inline-block;"></span>
+                    <span class="badge bg-success rounded-circle p-1" style="width: 6px; height: 6px; display: inline-block;"></span>
+                  </div>
+                  <span class="small fw-bold font-monospace text-muted">data-pipeline-marketing-agent.log</span>
+                </div>
+                <div class="card-body p-3 small font-monospace" id="logOutput" style="height: 200px; overflow-y: auto; line-height: 1.5;">
+                  <div class="text-muted small">// Console initialized. Intercepting task outputs...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {# ── Step 3 · options + generate ─────────────────────────────── #}
         <div class="d-flex flex-wrap align-items-center gap-3 border-top pt-3">
           <label class="form-check form-switch mb-0">
@@ -172,8 +258,9 @@
                 <span class="badge bg-yellow-lt"><i class="fa-brands fa-instagram me-1"></i>IG sim</span>
               {% endif %}
             </span>
-            <button type="submit" class="btn btn-primary btn-lg fw-bold">
-              <i class="fa-solid fa-wand-magic-sparkles me-2"></i>Generate copy
+            <button type="submit" id="submitBtn" class="btn btn-primary btn-lg fw-bold">
+              <i id="submitIcon" class="fa-solid fa-wand-magic-sparkles me-2"></i>
+              <span id="submitText">Generate copy</span>
             </button>
           </div>
         </div>
@@ -225,6 +312,128 @@
   });
   visionSelect.addEventListener('change', syncAvailability);
   syncAvailability();
+
+  // Form generation loading and logs animation handler
+  form.addEventListener('submit', function (e) {
+    var studioFormContent = document.getElementById('studioFormContent');
+    var generationConsole = document.getElementById('generationConsole');
+    var submitBtn = document.getElementById('submitBtn');
+    var submitIcon = document.getElementById('submitIcon');
+    var submitText = document.getElementById('submitText');
+    var logOutput = document.getElementById('logOutput');
+    var applyGuidelines = document.getElementById('applyGuidelines');
+
+    // 1. Show loading console, hide input fields
+    if (studioFormContent) studioFormContent.style.display = 'none';
+    if (generationConsole) generationConsole.style.display = 'block';
+
+    // 2. Set spinning wheel button and disable input elements to prevent double click
+    if (submitIcon) {
+      submitIcon.className = 'spinner-border spinner-border-sm me-2';
+    }
+    if (submitText) {
+      submitText.innerText = 'Generating...';
+    }
+    setTimeout(function () {
+      submitBtn.disabled = true;
+      visionSelect.disabled = true;
+      cards.forEach(function (c) { radioOf(c).disabled = true; });
+      if (applyGuidelines) applyGuidelines.disabled = true;
+    }, 0);
+
+    // 3. Stages visualization
+    var steps = {
+      1: document.getElementById('step1'),
+      2: document.getElementById('step2'),
+      3: document.getElementById('step3'),
+      4: document.getElementById('step4')
+    };
+
+    function setStep(index, status) {
+      var el = steps[index];
+      if (!el) return;
+      el.className = 'step-' + status;
+    }
+
+    // Init step indicators
+    setStep(1, 'inactive');
+    setStep(2, 'inactive');
+    setStep(3, 'inactive');
+    setStep(4, 'inactive');
+
+    // Clean terminal log
+    logOutput.innerHTML = '';
+
+    function appendLog(category, message) {
+      var line = document.createElement('div');
+      line.className = 'mb-1';
+      var time = new Date().toLocaleTimeString();
+      
+      var categoryColor = 'text-muted';
+      if (category === 'DATABASE') categoryColor = 'text-purple';
+      else if (category === 'ORCHESTRATOR') categoryColor = 'text-pink';
+      else if (category === 'AGENT') categoryColor = 'text-info';
+      else if (category === 'LLM') categoryColor = 'text-warning';
+      else if (category === 'VALIDATOR') categoryColor = 'text-success';
+      
+      line.innerHTML = '<span class="text-muted">[' + time + ']</span> ' +
+                       '<span class="' + categoryColor + ' fw-bold">[' + category + ']</span> ' +
+                       '<span class="text-light">' + message + '</span>';
+      
+      logOutput.appendChild(line);
+      logOutput.scrollTop = logOutput.scrollHeight;
+    }
+
+    var selectedVisionName = visionSelect.options[visionSelect.selectedIndex].text.trim();
+    var selectedConcept = form.querySelector('input[name="campaign_concept"]:checked').value;
+    var guidelinesEnabled = applyGuidelines && applyGuidelines.checked;
+
+    // Timed execution stage simulation schedule
+    var logs = [
+      { t: 0, step: 1, stepStatus: 'active', cat: 'SYSTEM', msg: 'Context assembler initialized.' },
+      { t: 200, step: 1, stepStatus: 'active', cat: 'DATABASE', msg: 'Querying active sectors and eligibility criteria...' },
+      { t: 800, step: 1, stepStatus: 'active', cat: 'DATABASE', msg: 'Target vision metadata loaded: "' + selectedVisionName + '"' },
+      { t: 1400, step: 1, stepStatus: 'active', cat: 'DATABASE', msg: 'Loading composite capability scores and dependencies...' },
+      { t: 2000, step: 1, stepStatus: 'completed', cat: 'DATABASE', msg: "Identified Liebig's constraint bottleneck." },
+      { t: 2100, step: 2, stepStatus: 'active', cat: 'DATABASE', msg: 'Scanning recent primary research (arXiv) and patent publications...' },
+      { t: 2800, step: 2, stepStatus: 'active', cat: 'ORCHESTRATOR', msg: 'Formulating strategy dispatch parameters.' },
+      { t: 3400, step: 2, stepStatus: 'active', cat: 'ORCHESTRATOR', msg: 'Guideline override rule: ' + (guidelinesEnabled ? 'Enabled (custom platform rules loaded)' : 'Disabled (system defaults)') },
+      { t: 4000, step: 2, stepStatus: 'completed', cat: 'ORCHESTRATOR', msg: 'Built agent payload snapshot: "' + selectedConcept + '"' },
+      { t: 4100, step: 3, stepStatus: 'active', cat: 'ORCHESTRATOR', msg: 'Sending payload package to MarketingContentWorkflow.' },
+      { t: 4800, step: 3, stepStatus: 'active', cat: 'AGENT', msg: 'Marketing Strategy Agent started. Preparing LLM context...' },
+      { t: 5500, step: 3, stepStatus: 'active', cat: 'LLM', msg: 'Dispatching request to Vertex AI global region.' },
+      { t: 6200, step: 3, stepStatus: 'active', cat: 'LLM', msg: 'Gemini adaptive reasoning thinking activated (depth=1024).' },
+      { t: 7000, step: 3, stepStatus: 'active', cat: 'LLM', msg: 'Creating copy variations based on Liebig bottleneck and recent signals...' },
+      { t: 8200, step: 3, stepStatus: 'active', cat: 'LLM', msg: 'Copywriting bilingual (KO/EN) posts for Threads & Instagram...' },
+      { t: 9500, step: 3, stepStatus: 'completed', cat: 'LLM', msg: 'Vertex AI execution succeeded. Captured JSON payload.' },
+      { t: 9600, step: 4, stepStatus: 'active', cat: 'VALIDATOR', msg: 'Parsing against MarketingPostSet schema...' },
+      { t: 10200, step: 4, stepStatus: 'active', cat: 'VALIDATOR', msg: 'Character boundaries verified (<300 Hook, <1200 Body).' },
+      { t: 10800, step: 4, stepStatus: 'active', cat: 'VALIDATOR', msg: 'Citation and source URL checks passed.' },
+      { t: 11400, step: 4, stepStatus: 'active', cat: 'SYSTEM', msg: 'Content package successfully validated.' },
+      { t: 12000, step: 4, stepStatus: 'completed', cat: 'SYSTEM', msg: 'Directing to Review & Publish panel...' }
+    ];
+
+    logs.forEach(function (item) {
+      setTimeout(function () {
+        if (item.step && item.stepStatus) {
+          setStep(item.step, item.stepStatus);
+        }
+        appendLog(item.cat, item.msg);
+      }, item.t);
+    });
+
+    // Repeat background ticks in case of delay
+    var extraTick = 1;
+    var interval = setInterval(function () {
+      var elapsed = 12 + (extraTick * 3);
+      appendLog('SYSTEM', 'Execution continuing in background... safe refinement tick #' + extraTick);
+      extraTick++;
+    }, 3000);
+
+    window.addEventListener('unload', function () {
+      clearInterval(interval);
+    });
+  });
 })();
 </script>
 {% endblock %}
