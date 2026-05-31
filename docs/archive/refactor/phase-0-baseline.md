@@ -1,4 +1,8 @@
-# Phase 0 baseline — read-only discovery
+# [ARCHIVED] Phase 0 baseline — read-only discovery
+
+> **Archived 2026-05-31.** This was the refactor-era baseline document.
+> The refactoring phase described here is successfully completed and shipped (M55-M57).
+> Kept as historical reference.
 
 **Audience**: Principal Engineer · **Generated**: 2026-05-29 · **Scope**:
 multi-week refactoring effort. All claims are evidence-backed unless

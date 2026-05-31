@@ -1,27 +1,13 @@
-# Current task — M55 (admin reset) + M56 (ingest pipeline verify)
+# Current tasks — M55 (admin reset) + M56 (ingest pipeline verify) + M57 (dynamic lookback & JobConfig tuning)
 
-**Last updated**: 2026-05-28. Phase 4 (M48–M54) is shipped and in
-steady state. M55 reset the admin surface. M56 stood the data-
-pipeline stack up against live arxiv + crawl4ai and traced six bugs
-that prevented any new signal from landing in Postgres — see the
-M56 commit for the cluster + a verified end-to-end ingest write
-(arxiv `TCBiRRT` paper → `signals` row).
+**Last updated**: 2026-05-31. Phase 4 (M48–M54) is shipped and in steady state.
+- **M55** reset the admin surface, deleting the tangled Next.js `apps/admin/` console and replacing it with **SQLAdmin** mounted on `data-pipeline:8003/admin`.
+- **M56** verified the ingest pipeline against live arXiv + Google News RSS feeds, fixing six critical asyncpg timezone and HTTP redirection bugs.
+- **M57** shipped dynamic lookback recompute windows (`RECOMPUTE_WINDOW_DAYS=7` and signal query limit `RECOMPUTE_LIMIT=100`) by seeding parameter keys into the database as `JobConfig` rows and surfacing a custom, real-time **Job Configs** tuning dashboard directly within SQLAdmin.
 
-M55 reset the admin surface: the `apps/admin/` Next.js console —
-login, ~14 hand-rolled pages, tRPC client wrappers, repeated drift
-between trigger UIs and the actual fetcher contracts — was deleted
-and replaced with **SQLAdmin** mounted on the data-pipeline FastAPI
-at `data-pipeline:8003/admin`.
+Everything in [composition.md](../architecture/composition.md) and the new [system-design.md](../architecture/system-design.md) remains ground-truth.
 
-What survived M55: the data pipeline itself (data-pipeline +
-agent-orchestration), the Prisma schema, the scoring engine, the
-public user app at `apps/web /visions`, and the four seeded visions.
-Everything in [composition.md](../architecture/composition.md) is
-still ground-truth — only the operator-facing surface changed.
-
-Historical M48–M54 detail (milestone sequence, per-fetcher specs,
-Product Polish MP1-MP7, the three architectural refactors that landed
-in late May 2026) lives in git log + [docs/archive/](../archive/).
+Historical details (milestones, fetcher specs, product polish, refactoring baselines) live in the git log and under [docs/archive/](../archive/).
 
 ---
 
