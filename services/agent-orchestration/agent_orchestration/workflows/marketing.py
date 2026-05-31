@@ -117,6 +117,63 @@ class MarketingContentWorkflow:
                 "the binding-constraint story instead; do not invent a signal.)"
             )
 
+        concept = getattr(request, "campaign_concept", "vision_bottleneck")
+        strategy_prompts = {
+            "vision_bottleneck": (
+                "### CAMPAIGN STRATEGY: Liebig's Constraint Story (Default)\n"
+                "- Focus: Frame the feasibility score around Liebig's Law of the Minimum. "
+                "Highlight the weakest capability gating the entire vision (the bottleneck) "
+                "and detail the recent signals (arXiv/patents/news) that moved it."
+            ),
+            "early_hype": (
+                "### CAMPAIGN STRATEGY: Early Inflow Grabber (TOF / Attention & Hook)\n"
+                "- Focus: Maximize early user acquisition, attention, and debate.\n"
+                "- Style: Bold, high-energy, slightly contrarian, and engaging. Open with a "
+                "provocative, scroll-stopping question about the feasibility of this tech (e.g., "
+                "'Is LEO satellite edge computing a multi-billion dollar breakthrough or just "
+                "VC hype?').\n"
+                "- Goal: Grab attention immediately, frame our platform as the ultimate hype-free "
+                "BS detector for frontier technology, and prompt the reader to click and check "
+                "the empirical data."
+            ),
+            "high_level_pitch": (
+                "### CAMPAIGN STRATEGY: High-Level Product Pitch (TOF/MOF / Acquisition)\n"
+                "- Focus: Product-led introduction. Promote the Vision Feasibility Monitor "
+                "itself.\n"
+                "- Style: Authoritative, clear, value-focused, highly accessible.\n"
+                "- Core concept: Explain how our platform operates. We take a bold "
+                "deep-tech vision, decompose it into a capability tree, crawl "
+                "peer-reviewed papers (arXiv) and patent filings (USPTO) daily, "
+                "and mathematically roll up all signal deltas into a 5-second "
+                "feasibility index. It's collective, source-grounded truth.\n"
+                "- Goal: Drive clear value proposition comprehension and early user acquisition."
+            ),
+            "actor_race": (
+                "### CAMPAIGN STRATEGY: Lead Actor Competitive Dynamics (BOF / Ecosystem Race)\n"
+                "- Focus: Showcase the ecosystem race between top organizations "
+                "(startups, labs, corps) pursuing these capabilities.\n"
+                "- Style: Competitive, business-oriented, analytical. Frame it as a "
+                "technology race.\n"
+                "- Goal: Highlight that we track actor contributions, and invite readers "
+                "to explore the platform to see who holds the commercial lead."
+            ),
+            "grounded_digest": (
+                "### CAMPAIGN STRATEGY: Evidence-Grounded Truth (MOF/BOF / Trust & Authority)\n"
+                "- Focus: Position the platform as the ultimate source of truth against "
+                "vague tech journalism.\n"
+                "- Style: Fact-oriented, precise, objective, completely anti-hype.\n"
+                "- Core concept: We don't guess, predict, or write PR hype. Every "
+                "score delta drills to a verifiable primary source. The capability "
+                "scores are peer-review grounded.\n"
+                "- Goal: Win trust of serious developers, deeptech researchers, and "
+                "long-term investors."
+            )
+        }
+        parts.append(
+            f"\n\n## Campaign Strategy & Objective\n"
+            f"{strategy_prompts.get(concept, strategy_prompts['vision_bottleneck'])}"
+        )
+
         if getattr(request, "custom_guidelines", None):
             parts.append(
                 f"\n\n## Custom Tone & Example Guidelines (CRITICAL OVERRIDE)\n"

@@ -90,6 +90,10 @@ class VisionMarketingSnapshot(BaseModel):
         default=None,
         description="Custom tone, style, or example guidelines to override defaults.",
     )
+    campaign_concept: str = Field(
+        default="vision_bottleneck",
+        description="The marketing funnel / strategy concept to guide the LLM copy generation.",
+    )
 
 
 # ---- Output --------------------------------------------------------------

@@ -1,0 +1,155 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content_header %}
+<div class="row align-items-center">
+  <div class="col">
+    <h2 class="page-title">{{ title }}</h2>
+    <div class="page-pretitle">{{ subtitle }}</div>
+  </div>
+  <div class="col-auto ms-auto">
+    <a href="{{ url_for('admin:marketing_planner') }}" class="btn btn-primary shadow-sm px-4 py-2">
+      <i class="fa-solid fa-compass me-2"></i>Launch Content Planner
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{# ─── Top Status Banner ─────────────────────────────────────────── #}
+{% if success_msg %}
+<div class="col-12">
+  <div class="alert alert-success alert-dismissible shadow-sm border-0" role="alert" style="border-left: 4px solid #2fb344 !important;">
+    <div class="d-flex">
+      <div>
+        <i class="fa-solid fa-circle-check text-success me-2 fs-4"></i>
+      </div>
+      <div>
+        <h4 class="alert-title fw-bold text-success">Success</h4>
+        <div class="text-muted small">{{ success_msg }}</div>
+      </div>
+    </div>
+    <a class="btn-close" data-bs-dismiss="alert" aria-label="close"></a>
+  </div>
+</div>
+{% endif %}
+
+{% if error_msg %}
+<div class="col-12">
+  <div class="alert alert-danger alert-dismissible shadow-sm border-0" role="alert" style="border-left: 4px solid #d63939 !important;">
+    <div class="d-flex">
+      <div>
+        <i class="fa-solid fa-circle-exclamation text-danger me-2 fs-4"></i>
+      </div>
+      <div>
+        <h4 class="alert-title fw-bold text-danger">Error</h4>
+        <div class="text-muted small">{{ error_msg }}</div>
+      </div>
+    </div>
+    <a class="btn-close" data-bs-dismiss="alert" aria-label="close"></a>
+  </div>
+</div>
+{% endif %}
+
+<div class="col-lg-4">
+  {# ─── Platform Keys Card ─────────────────────────────────────────── #}
+  <div class="card shadow-sm mb-4">
+    <div class="card-header bg-light border-bottom">
+      <h3 class="card-title fw-bold">
+        <i class="fa-solid fa-gears me-2 text-secondary"></i>Publishing Keys
+      </h3>
+    </div>
+    <div class="card-body">
+      <div class="space-y-3">
+        <div class="d-flex align-items-center justify-content-between">
+          <div class="d-flex align-items-center">
+            <i class="fa-brands fa-threads text-dark fs-3 me-2"></i>
+            <div>
+              <div class="fw-bold">Threads API</div>
+              <div class="text-muted small">`THREADS_API_KEY`</div>
+            </div>
+          </div>
+          {% if threads_configured %}
+            <span class="badge bg-green-lt fw-bold">Configured</span>
+          {% else %}
+            <span class="badge bg-warning-lt fw-bold">Simulation Mode</span>
+          {% endif %}
+        </div>
+
+        <div class="d-flex align-items-center justify-content-between border-top pt-3">
+          <div class="d-flex align-items-center">
+            <i class="fa-brands fa-instagram text-pink fs-3 me-2"></i>
+            <div>
+              <div class="fw-bold">Instagram Graph</div>
+              <div class="text-muted small">`INSTAGRAM_API_KEY`</div>
+            </div>
+          </div>
+          {% if instagram_configured %}
+            <span class="badge bg-green-lt fw-bold">Configured</span>
+          {% else %}
+            <span class="badge bg-warning-lt fw-bold">Simulation Mode</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ─── Navigation / Quick Help Card ─────────────────────────────────── #}
+  <div class="card bg-primary-lt shadow-sm">
+    <div class="card-body">
+      <h3 class="fw-bold text-primary mb-2"><i class="fa-solid fa-lightbulb me-2"></i>Workflow Guide</h3>
+      <p class="text-muted small mb-3" style="line-height: 1.4;">
+        This cockpit separates platform configuration and content curation. Fill out platform tone requirements, launch the planner to choose a vision, review generated copy, and publish manually with one click.
+      </p>
+      <a href="{{ url_for('admin:marketing_planner') }}" class="btn btn-primary w-100 fw-bold">
+        <i class="fa-solid fa-compass me-2"></i>Go to Planner
+      </a>
+    </div>
+  </div>
+</div>
+
+<div class="col-lg-8">
+  {# ─── Guidelines Settings Card ───────────────────────────────────── #}
+  <div class="card shadow-sm">
+    <div class="card-header bg-light border-bottom">
+      <h3 class="card-title fw-bold">
+        <i class="fa-solid fa-sliders me-2 text-success"></i>Custom Tone & Examples Guidelines
+      </h3>
+    </div>
+    <div class="card-body">
+      <form action="{{ url_for('admin:marketing_save_guidelines') }}" method="POST">
+        <!-- Threads Guidelines -->
+        <div class="subheader text-dark fw-bold mb-2"><i class="fa-brands fa-threads me-2 text-dark fs-3"></i>Threads Post Guidelines</div>
+        <div class="row mb-4">
+          <div class="col-md-6 mb-3 mb-md-0">
+            <label class="form-label fw-bold text-muted small">Platform Tone & Style</label>
+            <textarea name="threads_tone" class="form-control font-monospace" rows="4" placeholder="e.g., Conversational, punchy, emoji-lite, focus on bottleneck." style="font-size: 0.82rem; resize: vertical;">{{ threads_tone or '' }}</textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-bold text-muted small">Example Target Content / Structure</label>
+            <textarea name="threads_examples" class="form-control font-monospace" rows="4" placeholder="e.g., 🔥 [HOOK]\n\n[BODY]\n\n📍 [CTA]" style="font-size: 0.82rem; resize: vertical;">{{ threads_examples or '' }}</textarea>
+          </div>
+        </div>
+
+        <!-- Instagram Guidelines -->
+        <div class="subheader text-dark fw-bold mb-2 border-top pt-4"><i class="fa-brands fa-instagram me-2 text-pink fs-3"></i>Instagram Post Guidelines</div>
+        <div class="row mb-4">
+          <div class="col-md-6 mb-3 mb-md-0">
+            <label class="form-label fw-bold text-muted small">Platform Tone & Style</label>
+            <textarea name="instagram_tone" class="form-control font-monospace" rows="4" placeholder="e.g., Engaging storyteller style, visually structured using emojis." style="font-size: 0.82rem; resize: vertical;">{{ instagram_tone or '' }}</textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-bold text-muted small">Example Target Content / Structure</label>
+            <textarea name="instagram_examples" class="form-control font-monospace" rows="4" placeholder="e.g., ✨ [HOOK]\n\n[BODY]\n\n🔗 [CTA]" style="font-size: 0.82rem; resize: vertical;">{{ instagram_examples or '' }}</textarea>
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-end mt-3 border-top pt-3">
+          <button type="submit" class="btn btn-success px-4 py-2 fw-bold">
+            <i class="fa-solid fa-floppy-disk me-2"></i>Save Style Guidelines
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

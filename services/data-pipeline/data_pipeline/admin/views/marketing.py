@@ -54,17 +54,6 @@ class LLMMarketingView(BaseView):
         if engine is None:
             return Response(content="Database engine not loaded", status_code=500)
 
-        async with engine.connect() as conn:
-            # Query active sectors (is_vision_eligible = True, status = 'live')
-            res = await conn.execute(
-                text(
-                    "SELECT slug, name FROM sectors "
-                    "WHERE is_vision_eligible = TRUE AND status = 'live' "
-                    "ORDER BY slug ASC"
-                )
-            )
-            visions = [(r[0], r[1]) for r in res.fetchall()]
-
         threads_key = os.environ.get("THREADS_API_KEY", "")
         instagram_key = os.environ.get("INSTAGRAM_API_KEY", "")
 
@@ -83,24 +72,48 @@ class LLMMarketingView(BaseView):
 
         return await self.templates.TemplateResponse(
             request,
-            "marketing_cockpit.html",
+            "marketing_dashboard.html",
             context={
                 "title": "Marketing Cockpit",
-                "subtitle": (
-                    "Manual social content builder. Generate high-impact "
-                    "bilingual copy, review/edit, and publish to social platforms."
-                ),
-                "visions": visions,
+                "subtitle": "Platform Status & Custom Style Guidelines Settings.",
                 "threads_configured": _is_configured(threads_key),
                 "instagram_configured": _is_configured(instagram_key),
-                "active_vision": None,
-                "generated_posts": None,
                 "threads_tone": threads_tone,
                 "threads_examples": threads_examples,
                 "instagram_tone": instagram_tone,
                 "instagram_examples": instagram_examples,
-                "has_applied_guidelines": "true",
                 "success_msg": request.query_params.get("success_msg"),
+                "error_msg": request.query_params.get("error_msg"),
+            },
+        )
+
+    @expose("/marketing/planner", methods=["GET"])
+    async def marketing_planner(self, request: Request) -> Response:
+        app = _parent_app(request)
+        engine = getattr(app.state, "_sqladmin_engine", None)
+        if engine is None:
+            return Response(content="Database engine not loaded", status_code=500)
+
+        async with engine.connect() as conn:
+            # Query active sectors (is_vision_eligible = True, status = 'live')
+            res = await conn.execute(
+                text(
+                    "SELECT slug, name FROM sectors "
+                    "WHERE is_vision_eligible = TRUE AND status = 'live' "
+                    "ORDER BY slug ASC"
+                )
+            )
+            visions = [(r[0], r[1]) for r in res.fetchall()]
+
+        return await self.templates.TemplateResponse(
+            request,
+            "marketing_planner.html",
+            context={
+                "title": "Social Content Planner",
+                "subtitle": "Select a live vision to initiate a localized social campaign.",
+                "visions": visions,
+                "active_vision": None,
+                "has_applied_guidelines": "true",
                 "error_msg": request.query_params.get("error_msg"),
             },
         )
@@ -115,6 +128,7 @@ class LLMMarketingView(BaseView):
         form_data = await request.form()
         vision_slug = form_data.get("vision_slug")
         apply_guidelines = form_data.get("apply_guidelines") or "false"
+        campaign_concept = form_data.get("campaign_concept") or "vision_bottleneck"
 
         if not vision_slug:
             return Response(content="Missing vision_slug parameter", status_code=400)
@@ -129,7 +143,7 @@ class LLMMarketingView(BaseView):
             )
             visions = [(r[0], r[1]) for r in res.fetchall()]
 
-        # Load guidelines values from job_config to preserve UI settings
+        # Load guidelines values from job_config to preserve settings in fallback
         job_config = getattr(app.state, "job_config", None)
         threads_tone = ""
         threads_examples = ""
@@ -146,19 +160,12 @@ class LLMMarketingView(BaseView):
         if repo is None:
             return await self.templates.TemplateResponse(
                 request,
-                "marketing_cockpit.html",
+                "marketing_planner.html",
                 context={
-                    "title": "Marketing Cockpit",
-                    "subtitle": "Manual social content builder.",
+                    "title": "Social Content Planner",
+                    "subtitle": "Select a live vision to initiate a localized social campaign.",
                     "visions": visions,
-                    "threads_configured": False,
-                    "instagram_configured": False,
                     "active_vision": vision_slug,
-                    "generated_posts": None,
-                    "threads_tone": threads_tone,
-                    "threads_examples": threads_examples,
-                    "instagram_tone": instagram_tone,
-                    "instagram_examples": instagram_examples,
                     "has_applied_guidelines": apply_guidelines,
                     "error_msg": "signal_repo not configured — DATABASE_URL is required.",
                 },
@@ -190,23 +197,19 @@ class LLMMarketingView(BaseView):
             msg = f"Vision '{vision_slug}' has no capabilities (nothing to generate yet)."
             return await self.templates.TemplateResponse(
                 request,
-                "marketing_cockpit.html",
+                "marketing_planner.html",
                 context={
-                    "title": "Marketing Cockpit",
-                    "subtitle": "Manual social content builder.",
+                    "title": "Social Content Planner",
+                    "subtitle": "Select a live vision to initiate a localized social campaign.",
                     "visions": visions,
-                    "threads_configured": False,
-                    "instagram_configured": False,
                     "active_vision": vision_slug,
-                    "generated_posts": None,
-                    "threads_tone": threads_tone,
-                    "threads_examples": threads_examples,
-                    "instagram_tone": instagram_tone,
-                    "instagram_examples": instagram_examples,
                     "has_applied_guidelines": apply_guidelines,
                     "error_msg": msg,
                 },
             )
+
+        # Set the campaign strategy / funnel concept
+        snapshot["campaign_concept"] = campaign_concept
 
         # Inject custom tone and examples guidelines if requested by operator
         if apply_guidelines == "true":
@@ -231,19 +234,12 @@ class LLMMarketingView(BaseView):
             msg = "Failed to generate marketing copy via LLM Agent. Check agent logs."
             return await self.templates.TemplateResponse(
                 request,
-                "marketing_cockpit.html",
+                "marketing_planner.html",
                 context={
-                    "title": "Marketing Cockpit",
-                    "subtitle": "Manual social content builder.",
+                    "title": "Social Content Planner",
+                    "subtitle": "Select a live vision to initiate a localized social campaign.",
                     "visions": visions,
-                    "threads_configured": False,
-                    "instagram_configured": False,
                     "active_vision": vision_slug,
-                    "generated_posts": None,
-                    "threads_tone": threads_tone,
-                    "threads_examples": threads_examples,
-                    "instagram_tone": instagram_tone,
-                    "instagram_examples": instagram_examples,
                     "has_applied_guidelines": apply_guidelines,
                     "error_msg": msg,
                 },
@@ -275,29 +271,20 @@ class LLMMarketingView(BaseView):
             ).strip()
             formatted_posts[platform] = formatted_text
 
-        threads_key = os.environ.get("THREADS_API_KEY", "")
-        instagram_key = os.environ.get("INSTAGRAM_API_KEY", "")
-
         return await self.templates.TemplateResponse(
             request,
-            "marketing_cockpit.html",
+            "marketing_review.html",
             context={
-                "title": "Marketing Cockpit",
-                "subtitle": "Manual social content builder.",
-                "visions": visions,
-                "threads_configured": _is_configured(threads_key),
-                "instagram_configured": _is_configured(instagram_key),
+                "title": "Campaign Review & Publish",
+                "subtitle": (
+                    "Review generated copy, edit text fields, and publish directly."
+                ),
                 "active_vision": vision_slug,
                 "generated_posts": formatted_posts,
                 "headline_insight": headline_insight,
                 "angle": angle,
                 "cost_usd": cost_usd,
-                "threads_tone": threads_tone,
-                "threads_examples": threads_examples,
-                "instagram_tone": instagram_tone,
-                "instagram_examples": instagram_examples,
-                "has_applied_guidelines": apply_guidelines,
-                "success_msg": "Marketing copy generated successfully!",
+                "campaign_concept": campaign_concept,
             },
         )
 
