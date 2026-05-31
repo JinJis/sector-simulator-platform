@@ -1,12 +1,4 @@
-# Current Tasks — Milestone: Public Vision Builder, Gamification & Conceptual UX
-
-This document represents the active milestone tasks. All prior milestones (M55 admin reset, M56 ingest pipeline verification, M57 dynamic tuning) have been shipped and verified.
-
-Refer to [docs/architecture/system-design.md](../architecture/system-design.md) and [docs/architecture/composition.md](../architecture/composition.md) for the core architectural blueprints.
-
----
-
-## Active Milestone Specification
+# Milestone: Public Vision Builder, Gamification & Conceptual UX
 
 This milestone enhances the **Sector Simulator Platform** with three primary capabilities:
 1. **User-Facing Vision Builder**: Migrating the administrative wizard into a secure, user-facing, stateless multi-step wizard that respects private drafts and a community upvoting consensus before publication.
@@ -15,9 +7,9 @@ This milestone enhances the **Sector Simulator Platform** with three primary cap
 
 ---
 
-### 1. User-Facing Vision Builder & Consensus Publication
+## 1. User-Facing Vision Builder & Consensus Publication
 
-#### Database Design
+### Database Design
 Extend the Prisma schema (`packages/db/prisma/schema.prisma`) to support private drafts and consensus upvoting:
 
 ```prisma
@@ -47,7 +39,7 @@ model SectorUpvote {
 }
 ```
 
-#### tRPC Routing & Middleware (`services/sector-service/src/trpc/`)
+### tRPC Routing & Middleware (`services/sector-service/src/trpc/`)
 1. **Auth Gate**: Introduce a `practitionerProcedure` helper in `init.ts` that verifies the caller is logged in and has a role/tier of `practitioner` or higher.
 2. **Mutation: `visionBuilder.propose`**:
    * Authenticated call. Fetches existing slugs + global actor keys.
@@ -68,7 +60,7 @@ model SectorUpvote {
      * If the `Sector.upvotes_count` reaches `N = 5` upvotes from other Practitioners:
      * Automatically set `is_private = false` (making it a public live vision).
 
-#### UI/UX Requirements (`apps/web/`)
+### UI/UX Requirements (`apps/web/`)
 * **Route**: `/visions/new`
 * **Component**: Port the multi-step builder flow from SQLAdmin Jinja templates into standard Next.js JSX components (`apps/web/src/app/visions/new/page.tsx`):
   1. **Prompt Input Screen**: Elegant text area for the prompt + rich text editor for an optional research brief. Action triggers tRPC `visionBuilder.propose`.
@@ -78,9 +70,9 @@ model SectorUpvote {
 
 ---
 
-### 2. User Tiering & Leveling System (Gamification)
+## 2. User Tiering & Leveling System (Gamification)
 
-#### Database Design
+### Database Design
 Extend the Prisma schema to capture user tiers, XP progression, and subscription status:
 
 ```prisma
@@ -101,7 +93,7 @@ model User {
 }
 ```
 
-#### Progression & Permission Matrix
+### Progression & Permission Matrix
 
 | Tier | Unlock Method | Permissions Granted | XP Threshold |
 |---|---|---|---|
@@ -110,7 +102,7 @@ model User {
 | **Visionary** | Appointed by Masters **OR** 3 published public visions | Instant publicization of any sector with 1 upvote. Moderation queue access to review all drafts. | `5,000 XP` |
 | **Master** | Admin env seed / flag | Global overrides, full access to SQLAdmin, managing crons/queue. | N/A |
 
-#### XP Earning Rules
+### XP Earning Rules
 Create an internal event handler helper `services/sector-service/src/lib/progression.ts`:
 ```typescript
 export async function awardXP(prisma: PrismaClient, userId: string, action: string): Promise<void> {
@@ -122,7 +114,7 @@ export async function awardXP(prisma: PrismaClient, userId: string, action: stri
 }
 ```
 
-##### XP Rewards Chart:
+#### XP Rewards Chart:
 * `complete_profile`: `+50 XP`
 * `submit_signal_feedback`: `+10 XP`
 * `submit_community_proposal`: `+50 XP`
@@ -132,19 +124,19 @@ export async function awardXP(prisma: PrismaClient, userId: string, action: stri
 
 ---
 
-### 3. Conceptual Explanatory UX Toggles
+## 3. Conceptual Explanatory UX Toggles
 
 Introduce rich, premium, interactive overlays that educate the user on the underlying complex feasibility equations and agent workflows.
 
-#### Educational Components to Add
+### Educational Components to Add
 
-##### A. Liebig's Law of the Minimum (Feasibility Index)
+#### 1. Liebig's Law of the Minimum (Feasibility Index)
 * **UI Placement**: Located adjacent to the main **Feasibility Gauge** (the radial dial).
 * **Interaction**: A subtle Info Icon `(?)` that reveals a popover or collapsible alert block explaining:
   > "The overall Vision Feasibility is governed by **Liebig's Law of the Minimum**. Rather than averaging the readiness of all capabilities, the gauge reflects the score of the most restrictive bottleneck capability. In short, a system is only as ready as its weakest link."
 * **Visuals**: A micro-chart demonstrating an array of variables bounded by a low line representing the "Liebig threshold".
 
-##### B. Signal Extractor Score Delta Calibration
+#### 2. Signal Extractor Score Delta Calibration
 * **UI Placement**: Located on **Signal Row** details or under the "Live Pulse" overview page.
 * **Interaction**: A sliding "How Delta is Determined" panel explaining the technical, economic, regulatory, and supply dimensions:
   * **`±1-2` (Incremental)**: Regional approvals, minor prototypes, or seed funding rounds.
@@ -152,7 +144,7 @@ Introduce rich, premium, interactive overlays that educate the user on the under
   * **`±6-10` (Structural)**: Paradigm shifts, major industry entries/exits, or international treaties.
 * **Visuals**: Colour-coded pill charts mapping past signals to their respective magnitude scales.
 
-##### C. Ingestion & Scoring Lifespans (Decay Curve)
+#### 3. Ingestion & Scoring Lifespans (Decay Curve)
 * **UI Placement**: On the **Capability Score Cards** or **Feasibility Timeline**.
 * **Interaction**: Explanatory hovercard explaining the scoring engine:
   * **Weekly Crawlers**: Keyword-based sweeps across arXiv, Google News, and patents.
@@ -160,7 +152,7 @@ Introduce rich, premium, interactive overlays that educate the user on the under
   * **Temporal Decay & Daily Updates**: The daily `recompute_feasibility` cron uses the ScoreUpdater agent to reconcile all recent delta vectors and decay historical confidence over time.
   * **Deep Research digests**: Premium high-effort Gemini research briefs generated daily to catch strategic context the crawler keyword sweeps missed.
 
-#### Component Implementation
+### Component Implementation
 * Rely exclusively on reusable React components in `packages/ui/` (incorporating `shadcn/ui` primitives: Tooltip, Dialog, Accordion, HoverCard).
 * Ensure smooth CSS transitions (`transition-all duration-300 ease-in-out`) to ensure the explanation feels premium and integrated.
 

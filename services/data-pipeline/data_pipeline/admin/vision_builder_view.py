@@ -136,7 +136,7 @@ class TRPCError(RuntimeError):
 
 
 async def _trpc_mutation(
-    procedure: str, *, payload: dict[str, Any], timeout_sec: float = 120.0
+    procedure: str, *, payload: dict[str, Any], timeout_sec: float = 600.0
 ) -> dict[str, Any]:
     """Call a sector-service tRPC mutation. The Fastify adapter mounts
     the router at `/trpc/*`.
@@ -372,7 +372,7 @@ class VisionBuilderView(BaseView):
             "research_brief": research_brief or None,
         }
         try:
-            result = await _trpc_mutation("visionBuilder.propose", payload=payload)
+            result = await _trpc_mutation("visionBuilder.propose", payload=payload, timeout_sec=600.0)
         except Exception as exc:  # noqa: BLE001
             # Log the full exception server-side for grep-ability, then
             # render the form with structured error context — full
